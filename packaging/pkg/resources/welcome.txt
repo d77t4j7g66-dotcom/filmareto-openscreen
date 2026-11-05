@@ -1,0 +1,7 @@
+Filmareto OpenScreen
+
+Αυτός ο installer βάζει την εφαρμογή στο φάκελο Applications.
+
+Χρειάζεται Mac με Apple Silicon (M1 ή νεότερο) και macOS 13 ή νεότερο.
+
+Πάτα Συνέχεια και μετά Εγκατάσταση.

@@ -1,0 +1,34 @@
+#!/bin/bash
+# Runs as root after the files are copied.
+# 1. The app is not notarized, so macOS would block its first launch ("cannot be verified"):
+#    clearing the quarantine flag here is what makes a double click just work.
+# 2. The app has no stable signature, so a permission granted to an older build can silently stop
+#    working. Every install therefore wipes the app's privacy permissions, and the user grants
+#    them again from scratch. They live in the logged-in user's database, so tccutil must run as
+#    that user, not as root.
+APP="/Applications/Filmareto OpenScreen.app"
+ID="com.filmareto.openscreen"
+if [ -d "$APP" ]; then
+  /usr/bin/xattr -dr com.apple.quarantine "$APP" 2>/dev/null || true
+fi
+CONSOLE_USER=$(/usr/bin/stat -f%Su /dev/console 2>/dev/null || true)
+if [ -n "$CONSOLE_USER" ] && [ "$CONSOLE_USER" != "root" ]; then
+  CONSOLE_UID=$(/usr/bin/id -u "$CONSOLE_USER" 2>/dev/null || true)
+  # An app that is still open would keep running with the old permissions.
+  /usr/bin/pkill -x "Filmareto OpenScreen" 2>/dev/null || true
+  if [ -n "$CONSOLE_UID" ]; then
+    /bin/launchctl asuser "$CONSOLE_UID" /usr/bin/sudo -u "$CONSOLE_USER" /usr/bin/tccutil reset All "$ID" >/dev/null 2>&1 || true
+  fi
+  # The app remembers that its permissions screen was completed. With the grants wiped it has to
+  # show that screen again, so forget it too.
+  USER_HOME=$(/usr/bin/dscl . -read "/Users/$CONSOLE_USER" NFSHomeDirectory 2>/dev/null | /usr/bin/awk '{print $2}')
+  if [ -n "$USER_HOME" ]; then
+    /bin/rm -f "$USER_HOME/Library/Application Support/Filmareto OpenScreen/permissions.json" 2>/dev/null || true
+  fi
+fi
+# 3. The app updates itself from a file it is sent, which replaces its own folder. That needs the
+#    folder to belong to whoever runs the app, and an installer run as root would leave it root's.
+if [ -n "$CONSOLE_USER" ] && [ "$CONSOLE_USER" != "root" ] && [ -d "$APP" ]; then
+  /usr/sbin/chown -R "$CONSOLE_USER" "$APP" 2>/dev/null || true
+fi
+exit 0
