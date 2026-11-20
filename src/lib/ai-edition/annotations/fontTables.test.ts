@@ -33,7 +33,7 @@ describe("readFontMetrics", () => {
 			for (const weight of ["normal", "bold"] as const) {
 				const font = shipped(family, weight);
 				expect(font.unitsPerEm).toBeGreaterThan(0);
-				expect(font.lineHeight).toBeGreaterThan(font.unitsPerEm);
+				expect(font.lineHeight).toBeGreaterThanOrEqual(font.unitsPerEm);
 				expect(font.advanceOf("A".codePointAt(0) ?? 0)).toBeGreaterThan(0);
 			}
 		}

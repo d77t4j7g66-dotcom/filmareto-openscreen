@@ -172,6 +172,34 @@ contextBridge.exposeInMainWorld("electronAPI", {
 	openNotes: () => {
 		return ipcRenderer.invoke("open-notes");
 	},
+	graphics: {
+		list: () => ipcRenderer.invoke("graphics:list"),
+		render: (request: {
+			templateId: string;
+			variables: Record<string, string>;
+			width: number;
+			height: number;
+		}) => ipcRenderer.invoke("graphics:render", request),
+		preview: (request: { templateId: string; width: number; height: number }) =>
+			ipcRenderer.invoke("graphics:preview", request),
+		openFolder: () => ipcRenderer.invoke("graphics:openFolder"),
+	},
+	teleprompter: {
+		setText: (text: string) => ipcRenderer.invoke("teleprompter:setText", text),
+		perform: (action: string) => ipcRenderer.invoke("teleprompter:perform", action),
+		set: (patch: Record<string, unknown>) => ipcRenderer.invoke("teleprompter:set", patch),
+		state: () => ipcRenderer.invoke("teleprompter:state"),
+		takeMarks: () => ipcRenderer.invoke("teleprompter:takeMarks"),
+		startRun: (request: unknown) => ipcRenderer.invoke("teleprompter:startRun", request),
+		runGoto: (which: "next" | "done") => ipcRenderer.invoke("teleprompter:runGoto", which),
+		endRun: () => ipcRenderer.invoke("teleprompter:endRun"),
+		takeRun: () => ipcRenderer.invoke("teleprompter:takeRun"),
+		onState: (listener: (state: unknown) => void) => {
+			const handler = (_event: unknown, state: unknown) => listener(state);
+			ipcRenderer.on("teleprompter:state", handler);
+			return () => ipcRenderer.removeListener("teleprompter:state", handler);
+		},
+	},
 	selectSource: (source: ProcessedDesktopSource, options?: { persist?: boolean }) => {
 		return ipcRenderer.invoke("select-source", source, options);
 	},
@@ -336,21 +364,6 @@ contextBridge.exposeInMainWorld("electronAPI", {
 	openExternalUrl: (url: string) => {
 		return ipcRenderer.invoke("open-external-url", url);
 	},
-	// The star ask. The renderer reports that an export finished and is told yes or no; the
-	// counters, the take flag and the install channel stay in the main process.
-	openRepoPage: () => {
-		return ipcRenderer.invoke("star-prompt:open-repo");
-	},
-	starPromptExportFinished: () => {
-		return ipcRenderer.invoke("star-prompt:export-finished");
-	},
-	dismissStarPrompt: () => {
-		return ipcRenderer.invoke("star-prompt:dismiss");
-	},
-	// No URL argument on purpose: main builds the `ms-windows-store:` link from a constant.
-	openStoreReview: () => {
-		return ipcRenderer.invoke("star-prompt:open-store-review");
-	},
 	pickExportSavePath: (fileName: string, exportFolder?: string) => {
 		return ipcRenderer.invoke("pick-export-save-path", fileName, exportFolder);
 	},
@@ -401,6 +414,25 @@ contextBridge.exposeInMainWorld("electronAPI", {
 	/** Stretches of the recording where the picture does not change. See electron/media/screenActivity.ts. */
 	getFrozenSpans: (filePath: string, durationSec: number) => {
 		return ipcRenderer.invoke("get-frozen-spans", filePath, durationSec);
+	},
+	/** Whether Claude Code is on this Mac and signed in: the chat runs on that plan. */
+	claudeStatus: () => ipcRenderer.invoke("claude-status"),
+	claudeSignIn: () => ipcRenderer.invoke("claude-sign-in"),
+	/** The eye line of a take, or null. */
+	findFace: (filePath: string, durationSec: number) => {
+		return ipcRenderer.invoke("find-face", filePath, durationSec);
+	},
+	/** What is said in each stretch of a take, each heard on its own. */
+	hearTalkingHead: (
+		filePath: string,
+		spans: { start: number; end: number }[],
+		options: { language?: string; prompt?: string },
+	) => {
+		return ipcRenderer.invoke("hear-talking-head", filePath, spans, options);
+	},
+	/** A talking head's loudness and eye line. See electron/media/talkingHead.ts. */
+	analyseTalkingHead: (filePath: string, durationSec: number) => {
+		return ipcRenderer.invoke("analyse-talking-head", filePath, durationSec);
 	},
 	readFileChunk: (filePath: string, offset: number, length: number) => {
 		return ipcRenderer.invoke("read-file-chunk", filePath, offset, length);

@@ -17,6 +17,8 @@ pub const TEXT_ANIMATION_DURATION_MS: f32 = 700.0;
 /// fin de l'annotation est une coupe sèche alors que son arrivée est animée.
 pub const TEXT_EXIT_DURATION_MS: f32 = 300.0;
 
+pub const WORD_POP_DURATION_MS: f32 = 150.0;
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct TextAnimationState {
     pub opacity: f32,
@@ -64,6 +66,17 @@ pub fn text_animation_state(
     let name = animation.unwrap_or("none");
     if name == "none" {
         return TextAnimationState::IDLE;
+    }
+    // Un sous-titre change à chaque mot : il entre en un éclair et ne sort pas, le suivant le
+    // remplace.
+    if name == "word-pop" {
+        let t = clamp01(elapsed_ms.max(0.0) / WORD_POP_DURATION_MS);
+        return TextAnimationState {
+            opacity: clamp01(t * 2.5),
+            scale: 0.86 + 0.14 * ease_out_back(t),
+            translate_y: (1.0 - ease_out_cubic(t)) * 16.0,
+            ..TextAnimationState::IDLE
+        };
     }
     let region_ms = region_ms.max(0.0);
     let ramp = |t: f32, len: f32| if len > 0.0 { clamp01(t / len) } else { 1.0 };

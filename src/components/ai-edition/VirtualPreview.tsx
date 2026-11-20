@@ -28,6 +28,7 @@ import type {
 	AxcutZoomRegion,
 } from "@/lib/ai-edition/schema";
 import { audioGainScalar, stemGainScalar } from "@/lib/ai-edition/store/editorSettings";
+import { useProjectStore } from "@/lib/ai-edition/store/projectStore";
 import { useEditorSettings } from "@/lib/ai-edition/store/useEditorSettings";
 import { removedRawSpans } from "@/lib/ai-edition/timeline/programme-time";
 import { findActiveSpeedRegion, type SpeedRegion } from "@/lib/ai-edition/timeline/speed";
@@ -882,6 +883,23 @@ export function VirtualPreview({
 			else if (element) element.volume = Math.min(1, stemGainScalar(gainDb));
 		}
 	}, [recordingStems, settings.recordingSystemGainDb, settings.recordingMicGainDb]);
+
+	// A clip with a voice-over in place of its sound is silent here as it is in the export.
+	useEffect(
+		() =>
+			useProjectStore.subscribe((state) => {
+				const time = state.currentTimeSec;
+				const muted =
+					state.document?.timeline.clips.some(
+						(clip) =>
+							clip.audioMuted && clip.timelineStartSec <= time && time < clip.timelineEndSec,
+					) ?? false;
+				for (const element of [primaryAudioRef.current, supplementalAudioRef.current]) {
+					if (element && element.muted !== muted) element.muted = muted;
+				}
+			}),
+		[],
+	);
 
 	// Keep one AudioContext for the component. Closing and recreating it on an effect rerun
 	// permanently silences an HTMLAudioElement because createMediaElementSource may only be

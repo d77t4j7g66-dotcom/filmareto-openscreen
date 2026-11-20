@@ -1,6 +1,9 @@
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { documentSchema } from "../../../src/lib/ai-edition/schema";
 import type {
 	AiEditionAssetResult,
+	AiEditionCaptionReadResult,
 	AiEditionCaptionTranslateResult,
 	AiEditionChatBudget,
 	AiEditionChatCompactResult,
@@ -16,6 +19,7 @@ import type {
 	AiEditionMcpStatus,
 	AiEditionProjectSummary,
 } from "../../../src/native/contracts";
+import { readCaptions } from "../../ai-edition/caption-reader";
 import {
 	type CaptionTranslateSegment,
 	translateCaptionSegments,
@@ -393,31 +397,43 @@ export class AiEditionService {
 	 * `segmentId → text` map: the caller writes it into the document's caption
 	 * translation layer, so nothing here can touch the transcript SSOT.
 	 */
+	async captionsRead(
+		words: Array<{ at: number; text: string }>,
+	): Promise<AiEditionCaptionReadResult> {
+		const { askClaude } = await import("../../ai-edition/claude-subscription");
+		try {
+			const reading = await readCaptions(words, async (systemPrompt, userPrompt) => {
+				const reply = await askClaude(userPrompt, systemPrompt, join(tmpdir(), "filmareto-claude"));
+				if (reply.error) throw new Error(reply.error);
+				return reply.text;
+			});
+			return { success: true, ...reading };
+		} catch (error) {
+			return {
+				success: false,
+				keys: [],
+				emoji: {},
+				fixes: [],
+				error: error instanceof Error ? error.message : String(error),
+			};
+		}
+	}
+
 	async captionsTranslate(input: {
 		segments: CaptionTranslateSegment[];
 		targetLanguage: string;
 		sourceLanguage?: string;
 	}): Promise<AiEditionCaptionTranslateResult> {
-		const config = this.llmConfig.getConfig();
-		if (!config) {
-			return {
-				success: false,
-				segments: {},
-				error: "No AI provider is configured. Connect one in the agent settings first.",
-			};
-		}
-		const def = PROVIDER_DEFINITIONS.find((d) => d.id === config.provider);
-		const credential = def ? this.llmConfig.getCredential(def.id, def.envKeys) : null;
-		const result = await translateCaptionSegments({
+		const { askClaude } = await import("../../ai-edition/claude-subscription");
+		return translateCaptionSegments({
 			segments: input.segments,
 			targetLanguage: input.targetLanguage,
 			sourceLanguage: input.sourceLanguage,
-			provider: config.provider,
-			model: config.model,
-			apiKey: credential?.value ?? "",
-			baseUrl: config.baseUrl,
-			reasoningEffort: config.reasoningEffort,
+			ask: async (systemPrompt, userPrompt) => {
+				const reply = await askClaude(userPrompt, systemPrompt, join(tmpdir(), "filmareto-claude"));
+				if (reply.error) throw new Error(reply.error);
+				return reply.text;
+			},
 		});
-		return { ...result, model: config.model };
 	}
 }

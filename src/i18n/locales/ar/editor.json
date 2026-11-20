@@ -51,7 +51,7 @@
 		"microphoneUnavailable": "لا يمكن لهذا الإصدار من macOS تسجيل الميكروفون. يجري التسجيل بدون ميكروفون.",
 		"restartFailed": "تعذّر بدء التسجيل الجديد. تم حذف التسجيل السابق.",
 		"permissionDenied": "تم رفض إذن التسجيل. يرجى السماح بتسجيل الشاشة.",
-		"accessibilityAllowAndRetry": "اسمح بوصول تسهيلات الاستخدام لـ OpenScreen، ثم اضغط على التسجيل مرة أخرى لبدء العد التنازلي.",
+		"accessibilityAllowAndRetry": "اسمح بوصول تسهيلات الاستخدام لـ Filmareto، ثم اضغط على التسجيل مرة أخرى لبدء العد التنازلي.",
 		"cursorAccessibilityUnavailable": "إمكانية الوصول غير مفعّلة. سيستمر التسجيل، لكن تأثيرات المؤشر قد تكون محدودة. فعّلها من إعدادات النظام لاستخدام تأثيرات المؤشر كاملة.",
 		"selectSource": "يرجى تحديد مصدر للتسجيل"
 	},
@@ -104,6 +104,7 @@
 		"editorMode": "وضع المحرر",
 		"modes": {
 			"media": "الوسائط",
+			"script": "Script",
 			"edit": "تحرير",
 			"rec": "تسجيل"
 		}
@@ -182,7 +183,7 @@
 		"detectedLanguage": "اللغة المكتشفة: {{language}}",
 		"noAudioTrack": "لا يوجد مسار صوتي",
 		"noAudioTrackHint": "لا يحتوي هذا الملف على مسار صوتي — لا يوجد ما يمكن نسخه.",
-		"mediaUnreadableHint": "تعذّرت قراءة صوت هذا الملف. تأكد من أن OpenScreen يمكنه الوصول إلى المجلد الذي يوجد فيه، ثم أعد الإنشاء.",
+		"mediaUnreadableHint": "تعذّرت قراءة صوت هذا الملف. تأكد من أن Filmareto يمكنه الوصول إلى المجلد الذي يوجد فيه، ثم أعد الإنشاء.",
 		"noSpeechDetected": "لم يتم اكتشاف كلام"
 	},
 	"exportDialog": {
@@ -212,9 +213,6 @@
 		"exportedGif": "تم تصدير GIF",
 		"exportedVideo": "تم تصدير الفيديو",
 		"showInFolder": "إظهار في المجلد",
-		"starPrompt": "OpenScreen مجاني ومرخّص بموجب MIT. نجمة على GitHub تساعد الآخرين على العثور عليه.",
-		"starPromptNoThanks": "لا، شكرًا",
-		"rateOnStore": "قيّم التطبيق في متجر Microsoft",
 		"exportFailed": "فشل التصدير",
 		"failedToWriteFile": "فشلت كتابة الملف",
 		"qualityUpscaleWarning": "تكبير الدقة",
@@ -301,10 +299,12 @@
 			"feature2": "أضف ترجمات، كبّر الكاميرا، أنشئ عنواناً",
 			"feature3": "أعد كتابة قسم، أو أعِد صياغته، أو أعِد ترتيب المقاطع عند الطلب",
 			"cta": "إعداد مزوّد",
-			"disclaimer": "سيُرسَل نصّ فيديوك إلى المزوّد الذي تختاره. لا يُشارَك شيء قبل أن تربط مزوّداً."
+			"disclaimer": "سيُرسَل نصّ فيديوك إلى المزوّد الذي تختاره. لا يُشارَك شيء قبل أن تربط مزوّداً.",
+			"subtitleInstall": "The chat runs on your own Claude plan through Claude Code, which isn't on this Mac yet. Install it, sign in, and come back.",
+			"ctaInstall": "Get Claude Code"
 		},
 		"authorUser": "أنت",
-		"authorAssistant": "OpenScreen",
+		"authorAssistant": "Filmareto",
 		"rewindToMessage": "إعادة الضبط إلى هذه الرسالة",
 		"rewindTip": "إعادة الضبط إلى هذه الرسالة. يتم التراجع عن التغييرات اللاحقة.",
 		"copyMessage": "نسخ الرسالة",
@@ -326,7 +326,11 @@
 			"subtitle": "التبديل بين الجلسات أو إنشاء جلسة جديدة",
 			"empty": "لا توجد محادثات بعد.",
 			"msgsCount": "{{count}} رسالة · {{date}}"
-		}
+		},
+		"signInFirst": "Sign in to Claude to start chatting.",
+		"onPlan": "Claude · {{plan}}",
+		"claude": "Claude",
+		"working": "Working: {{tool}}…"
 	},
 	"newProjectDialog": {
 		"title": "مشروع جديد",
@@ -426,7 +430,7 @@
 	},
 	"mcpServer": {
 		"title": "خادم MCP",
-		"description": "اسمح لعملاء MCP الذين تشغّلهم بنفسك، مثل Claude Code أو Codex، باستخدام أدوات التحرير بالذكاء الاصطناعي على أي من مشاريعك، لا على المشروع المفتوح في المحرر فقط. يسجّلون الدخول بحساباتهم الخاصة، ولا يطّلع OpenScreen عليها أبدًا.",
+		"description": "اسمح لعملاء MCP الذين تشغّلهم بنفسك، مثل Claude Code أو Codex، باستخدام أدوات التحرير بالذكاء الاصطناعي على أي من مشاريعك، لا على المشروع المفتوح في المحرر فقط. يسجّلون الدخول بحساباتهم الخاصة، ولا يطّلع Filmareto عليها أبدًا.",
 		"enableLabel": "الخادم",
 		"enable": "تفعيل خادم MCP",
 		"editsLabel": "تعديلات MCP",
@@ -453,5 +457,62 @@
 	"cpuCompositor": {
 		"notice": "لا توجد بطاقة رسومات متوافقة — تتم المعالجة على المعالج، لذا يكون التشغيل أبطأ.",
 		"exportWarning": "لا توجد بطاقة رسومات متوافقة: يتم هذا التصدير على المعالج وسيستغرق وقتًا أطول بكثير من المعتاد."
+	},
+	"studio": {
+		"wholeProject": "whole project",
+		"changesOnly": "Changes only",
+		"takeAdded": "The take was added to the end of the project",
+		"makingGraphic": "Rendering the graphic…",
+		"rendering": "Rendering…",
+		"motion": "Motion",
+		"motionSmooth": "Smooth",
+		"motionHold": "Hold",
+		"motionIn": "Slow in",
+		"motionOut": "Slow out",
+		"motionEmphasis": "Punch",
+		"scene": "Scene",
+		"takes": "Takes",
+		"take": "Take",
+		"presetSaved": "“{{name}}” was added to your presets",
+		"applyToAll": "Apply to all segments",
+		"myPresets": "My presets",
+		"everyProject": "in every project",
+		"deleteNamed": "Delete {{name}}",
+		"myLook": "My look {{number}}",
+		"save": "Save",
+		"name": "Name",
+		"graphics": "Graphics",
+		"graphicsFolder": "Folder for your own HyperFrames",
+		"formatAndLayout": "Format and layout",
+		"cameraOnly": "Camera only",
+		"screen": "Screen",
+		"screenTip": "Off: records only the camera and the microphone",
+		"cameraQuality": "Camera quality",
+		"noScript": "No script: one recording, no scenes.",
+		"writeScript": "Write a script",
+		"newTake": "New take in this project",
+		"toScript": "Back to Script",
+		"continueToEdit": "Continue to Edit",
+		"fileNotAdded": "The file could not be added to the project",
+		"scenes": "Scenes",
+		"recordAll": "Record all in order",
+		"noText": "No text: speak freely.",
+		"archive": "Archive ({{count}})",
+		"fromFile": "or from a file",
+		"sceneNumber": "Scene {{number}}",
+		"scriptPlaceholder": "Write what you will say, or paste the whole script: each line with a single / starts a new scene.",
+		"newVideo": "New video",
+		"scriptTitle": "Script",
+		"sceneName": "Scene name",
+		"newScene": "New scene",
+		"continueToRecord": "Continue to Record",
+		"adaptingGraphics": "Adapting the graphics…",
+		"layoutCamera": "Camera",
+		"layoutCorner": "Corner",
+		"layoutStack": "Stacked",
+		"layoutSide": "Side by side",
+		"layoutCutout": "Cutout",
+		"layoutFree": "Free",
+		"layoutScreen": "Screen"
 	}
 }

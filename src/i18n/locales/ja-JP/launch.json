@@ -14,7 +14,7 @@
 		"microphone": "マイク：声を録音します",
 		"camera": "カメラ：自分の映像を別レイヤーとして録画し、エディターで動かせます",
 		"openStudio": "スタジオを開く：録画を編集するエディター",
-		"openNotes": "ノートを開く：録画中に読むテキスト",
+		"openNotes": "Teleprompter",
 		"openNotesPlaceholder": "ここにメモを入力...",
 		"notesToolbar": {
 			"bold": "太字",
@@ -70,8 +70,8 @@
 		"screens": "画面 ({{count}})",
 		"windows": "ウィンドウ ({{count}})",
 		"emptyTitle": "画面またはウィンドウが見つかりません",
-		"emptyDescription": "画面収録の権限を許可したばかりの場合は、このピッカーを再読み込みしてください。macOSではOpenScreenの再起動が必要な場合があります。",
-		"loadFailedDescription": "OpenScreenはキャプチャソースを読み込めませんでした。このピッカーを再読み込みしてもう一度お試しください。",
+		"emptyDescription": "画面収録の権限を許可したばかりの場合は、このピッカーを再読み込みしてください。macOSではFilmaretoの再起動が必要な場合があります。",
+		"loadFailedDescription": "Filmaretoはキャプチャソースを読み込めませんでした。このピッカーを再読み込みしてもう一度お試しください。",
 		"defaultSourceName": "画面"
 	},
 	"recording": {
@@ -79,19 +79,20 @@
 		"systemPicker": "共有する対象はシステムが確認します",
 		"start": "録画を開始",
 		"stop": "録画を停止して保存",
-		"saving": "保存中..."
+		"saving": "保存中...",
+		"noMicrophone": "The microphone is off: this take will have no sound."
 	},
 	"language": "言語",
 	"languageWithName": "言語：{{language}}",
 	"systemLanguagePrompt": {
 		"title": "システム言語を使用しますか？",
-		"description": "システム言語として{{language}}が検出されました。OpenScreenを{{language}}に切り替えますか？",
+		"description": "システム言語として{{language}}が検出されました。Filmaretoを{{language}}に切り替えますか？",
 		"switch": "{{language}}に切り替え",
 		"keepDefault": "現在の言語を保持"
 	},
 	"softwareEncoderFallback": {
 		"title": "ソフトウェアエンコードに切り替えました",
-		"description": "既定のGPUエンコーダーを開始できなかったため、OpenScreenはソフトウェアH.264エンコードに切り替えました。録画はそのまま続行されますが、CPU使用率が高くなる場合があります。",
+		"description": "既定のGPUエンコーダーを開始できなかったため、FilmaretoはソフトウェアH.264エンコードに切り替えました。録画はそのまま続行されますが、CPU使用率が高くなる場合があります。",
 		"dismiss": "OK",
 		"dontShowAgain": "今後表示しない"
 	},
@@ -108,7 +109,7 @@
 		"checkingForUpdates": "確認中…"
 	},
 	"permissions": {
-		"title": "OpenScreen にはいくつかの許可が必要です",
+		"title": "Filmareto にはいくつかの許可が必要です",
 		"subtitle": "macOS ではそれぞれ一度だけ許可します。システム設定でいつでも変更できます。",
 		"level": {
 			"required": "必須",
@@ -145,21 +146,71 @@
 			"continue": "続ける",
 			"allow": "許可",
 			"openSettings": "設定を開く",
-			"restart": "OpenScreen を再起動",
+			"restart": "Filmareto を再起動",
 			"start": "はじめる"
 		},
 		"help": {
-			"screenPrompt": "このあと macOS から、システム設定で OpenScreen をオンにするよう求められます。",
-			"screenSettings": "システム設定で OpenScreen をオンにしてください。macOS が終了して再度開くよう提案した場合は、そのまま進めてください。このウインドウが再び表示されます。",
-			"screenNotListed": "リストに OpenScreen がない場合は、＋をクリックして「アプリケーション」から OpenScreen を選んでください。",
-			"screenRestart": "許可済みです。使用するには OpenScreen の再起動が必要です。",
-			"screenRecurring": "最初の録画時に、macOS から OpenScreen がシステムのピッカーを使わずに画面へ直接アクセスしてよいか確認されます。「許可」をクリックしてください。macOS はときどき再確認します。これは正常な動作です。",
-			"systemAudioPrompt": "macOS から、OpenScreen に Mac のサウンドの録音を許可するか確認されます。",
-			"systemAudioRequested": "拒否した場合は、システム設定の「システムオーディオ録音のみ」で OpenScreen をオンにしてください。"
+			"screenPrompt": "このあと macOS から、システム設定で Filmareto をオンにするよう求められます。",
+			"screenSettings": "システム設定で Filmareto をオンにしてください。macOS が終了して再度開くよう提案した場合は、そのまま進めてください。このウインドウが再び表示されます。",
+			"screenNotListed": "リストに Filmareto がない場合は、＋をクリックして「アプリケーション」から Filmareto を選んでください。",
+			"screenRestart": "許可済みです。使用するには Filmareto の再起動が必要です。",
+			"screenRecurring": "最初の録画時に、macOS から Filmareto がシステムのピッカーを使わずに画面へ直接アクセスしてよいか確認されます。「許可」をクリックしてください。macOS はときどき再確認します。これは正常な動作です。",
+			"systemAudioPrompt": "macOS から、Filmareto に Mac のサウンドの録音を許可するか確認されます。",
+			"systemAudioRequested": "拒否した場合は、システム設定の「システムオーディオ録音のみ」で Filmareto をオンにしてください。"
 		},
 		"footer": {
 			"screenRequired": "録画には画面収録が必要です。",
 			"ready": "準備が整いました。"
 		}
+	},
+	"scene": {
+		"startCameraOnly": "Start recording, camera only",
+		"cameraOnly": "Camera only",
+		"cameraOnlyOn": "Records only the camera and the microphone",
+		"cameraOnlyOff": "Record only the camera, no screen",
+		"nextOf": "Next {{number}}/{{count}}: {{name}}",
+		"allDone": "All scenes recorded",
+		"again": "Again",
+		"againNamed": "Again: {{name}}",
+		"end": "End",
+		"toEdit": "To Edit",
+		"retrySegment": "This segment again from the start",
+		"lastSegment": "Last segment",
+		"nextSegment": "Next segment",
+		"modeVoice": "Voice",
+		"modeManual": "Constant speed",
+		"modeBullets": "Bullets",
+		"posTop": "Top",
+		"posWindow": "Window",
+		"posScreen": "Over the screen",
+		"posFull": "Full screen",
+		"scrolling": "Scrolling",
+		"speed": "Speed",
+		"listensTo": "Listens to: {{mic}}. Change it in System Settings → Sound → Input.",
+		"macInput": "the Mac's input",
+		"bulletsHint": "Each line of the text is a bullet. Move on with ↓ Line or ⌃⌥↓.",
+		"position": "Position",
+		"display": "Display",
+		"automatic": "Automatic",
+		"activeLine": "Active line",
+		"guideLine": "Guide line",
+		"width": "Width",
+		"lines": "Lines",
+		"look": "Look",
+		"letters": "Text size",
+		"lineSpacing": "Line spacing",
+		"paddingSides": "Side padding",
+		"paddingTop": "Top and bottom padding",
+		"background": "Background",
+		"hide": "Hide",
+		"pause": "Pause",
+		"start": "Start",
+		"fromSegmentStart": "From the start of the segment",
+		"prevLine": "↑ Line",
+		"nextLine": "↓ Line",
+		"text": "Text",
+		"textPlaceholder": "Write or paste the text. A line with only a / starts a new segment.",
+		"newSegment": "New segment ( / )",
+		"recHides": "Rec hides this window and starts the teleprompter."
 	}
 }

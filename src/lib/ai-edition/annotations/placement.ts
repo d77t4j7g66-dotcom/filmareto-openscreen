@@ -343,6 +343,8 @@ export function refitFrameAnnotations<T extends Region>(
 	const scale = fromAspect / toAspect;
 	return annotations.map((annotation) => {
 		if (annotation.space !== "frame") return annotation;
+		// A motion graphic fills the frame, and is rendered again for its new shape.
+		if (annotation.graphicData) return annotation;
 		if (annotation.type === "text") return fitTextInFrame(annotation, toAspect, measure);
 		const rect = rectOf(annotation);
 		const width = rect.width * scale;

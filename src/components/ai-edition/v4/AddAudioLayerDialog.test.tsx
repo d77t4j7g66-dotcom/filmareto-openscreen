@@ -71,7 +71,7 @@ function renderDialog(over: Partial<Parameters<typeof AddAudioLayerDialog>[0]> =
 		onRecordingStop: vi.fn(),
 		...over,
 	};
-	const view = render(<AddAudioLayerDialog {...props} />);
+	const view = render(<AddAudioLayerDialog countdownSec={0} {...props} />);
 	return { ...view, props };
 }
 

@@ -15,12 +15,14 @@
 import { useCallback, useEffect, useMemo, useRef } from "react";
 import type { AxcutDocument } from "../schema";
 import {
+	clipUnderPlayhead,
 	type EditorSettingsPatch,
 	type EditorSettingsSnapshot,
+	getClipEditorSettings,
 	getEditorSettings,
 } from "./editorSettings";
 import { useProjectStore } from "./projectStore";
-import { applySettingsPatch } from "./settingsPatch";
+import { applySegmentSettingsPatch } from "./settingsPatch";
 
 export interface UseEditorSettingsResult {
 	settings: EditorSettingsSnapshot;
@@ -42,13 +44,21 @@ export function useEditorSettings(): UseEditorSettingsResult {
 
 	const hasDocument = document !== null;
 
-	const settings = useMemo(() => getEditorSettings(document), [document]);
+	// The clip under the playhead: a change of clip re-renders, a frame of playback does not.
+	const activeClipId = useProjectStore(
+		(s) => clipUnderPlayhead(s.document, s.currentTimeSec)?.id ?? null,
+	);
+	const settings = useMemo(() => {
+		if (!document) return getEditorSettings(document);
+		const clip = document.timeline.clips.find((c) => c.id === activeClipId);
+		return getClipEditorSettings(document, clip);
+	}, [document, activeClipId]);
 
 	const set = useCallback(
 		async (patch: EditorSettingsPatch) => {
 			const doc = useProjectStore.getState().document;
 			if (!doc) return false;
-			const next = applySettingsPatch(doc, patch);
+			const next = applySegmentSettingsPatch(doc, patch, useProjectStore.getState().currentTimeSec);
 			// The optimistic write is not the edit — the save is. Only the one that can
 			// fail records, and it names `doc` as what Ctrl+Z returns to because by then
 			// the store already holds `next`.
@@ -101,7 +111,7 @@ export function useEditorSettings(): UseEditorSettingsResult {
 		(patch: EditorSettingsPatch) => {
 			const doc = useProjectStore.getState().document;
 			if (!doc) return;
-			const next = applySettingsPatch(doc, patch);
+			const next = applySegmentSettingsPatch(doc, patch, useProjectStore.getState().currentTimeSec);
 			if (liveDocRef.current !== doc) liveBaseRef.current = doc;
 			setDocument(next, { history: false });
 			liveDocRef.current = next;

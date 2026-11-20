@@ -1,3 +1,4 @@
+import { stopClaudeTurns } from "./ai-edition/claude-subscription";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -23,7 +24,6 @@ import {
 	usesNativeAboutPanel,
 } from "./about";
 import { flushChatPersistence } from "./ai-edition/chat-service";
-import { AppSettingsStore } from "./app-settings";
 import {
 	blockedFromInstalling,
 	checkForSelfUpdate,
@@ -43,13 +43,22 @@ import { runCli } from "./cli/cliMain";
 import { disableHttpCacheForDevServer } from "./dev-http-cache";
 import { mainLogBuffer } from "./diagnostics/main-log-buffer";
 import { buildEditMenuSubmenu, type EditorUndoRedoChannel, routeEditorUndoRedo } from "./edit-menu";
-import { canReplaceInPlace, prepareUpdate, startSwap } from "./file-update";
+import {
+	canReplaceInPlace,
+	downloadUpdate,
+	LATEST_RELEASE_URL,
+	newerReleaseUpdate,
+	prepareUpdate,
+	startSwap,
+	UPDATES_FROM_GITHUB,
+} from "./file-update";
 import { FORK_BUILD } from "./fork-build";
 import {
 	loadAndRegisterGlobalShortcut,
 	registerOpenAppShortcut,
 	unregisterAllGlobalShortcuts,
 } from "./globalShortcut";
+import { registerGraphics } from "./graphics";
 import { mainT, setMainLocale } from "./i18n";
 import {
 	getInstallChannel,
@@ -74,8 +83,8 @@ import {
 import { describeChildProcessGone, describeRenderProcessGone } from "./processGoneLog";
 import { setDisplaySleepBlocked } from "./recording/displaySleepBlocker";
 import { RecordingsDirManager } from "./recording/recordingsDirManager";
-import { offersStarPrompt, REPO_URL, storeReviewUrl } from "./star-prompt";
 import { registerSttIpc, shutdownStt } from "./stt";
+import { registerTeleprompter, teleprompterWindowClosed } from "./teleprompter";
 import { checkLatestRelease } from "./update-checker";
 import { loadUpdateMode, saveUpdateMode } from "./update-settings";
 import {
@@ -134,6 +143,18 @@ if (!app.isPackaged && process.env.OPENSCREEN_USER_DATA_DIR) {
 const recordingsDirManager = new RecordingsDirManager(app.getPath("userData"), () => isRecording);
 
 export const DEFAULT_RECORDINGS_DIR = recordingsDirManager.defaultDir;
+
+// Takes go where a person keeps video, not in Application Support, which cleaners sweep with the
+// app's other data. What is already in the default folder stays readable (`getAllowedReadDirs`).
+// shortcut: choosing the default folder again lasts until the next launch; keep a flag if anyone asks.
+if (app.isPackaged && recordingsDirManager.getInfo().isDefault) {
+	void recordingsDirManager
+		.setDir(path.join(app.getPath("videos"), app.getName()))
+		.then((dir) => {
+			RECORDINGS_DIR = dir;
+		})
+		.catch((error) => console.error("Failed to move the recordings folder:", error));
+}
 
 // Mutable: reassigned by setRecordingsDir() when the user picks another folder.
 // `handlers.ts` imports this as a live named binding, so every call site there
@@ -195,7 +216,7 @@ const isMac = process.platform === "darwin";
 const trayIconSize = isMac ? 16 : 24;
 
 // Tray Icons
-const defaultTrayIcon = getTrayIcon("openscreen.png", trayIconSize);
+const defaultTrayIcon = getTrayIcon("filmareto.png", trayIconSize);
 const recordingTrayIcon = getTrayIcon("rec-button.png", trayIconSize);
 
 function createWindow() {
@@ -277,7 +298,7 @@ function setupApplicationMenu() {
 			submenu: [
 				{
 					role: "about",
-					label: mainT("common", "actions.about") || "About OpenScreen",
+					label: mainT("common", "actions.about") || "About Filmareto",
 				},
 				{
 					label: mainT("common", "actions.permissions") || "Permissions…",
@@ -287,13 +308,6 @@ function setupApplicationMenu() {
 				{
 					label: mainT("common", "actions.saveDiagnostics") || "Save Diagnostics",
 					click: runSaveDiagnostics,
-				},
-				// Permanent and unconditional, unlike the update check below: a link to the repo
-				// is the one thing every channel may show, the Store included. Not in the tray,
-				// which is the recording surface — nothing asks for a favour mid-take.
-				{
-					label: mainT("common", "actions.starOnGithub") || "Star on GitHub",
-					click: runStarOnGithub,
 				},
 				// Omitted entirely — here, in the Help menu and in the tray — where a package
 				// manager owns the update. See `canOfferUpdateCheck`.
@@ -314,7 +328,7 @@ function setupApplicationMenu() {
 				{ type: "separator" },
 				{
 					role: "hide",
-					label: mainT("common", "actions.hide") || "Hide OpenScreen",
+					label: mainT("common", "actions.hide") || "Hide Filmareto",
 				},
 				{
 					role: "hideOthers",
@@ -450,7 +464,7 @@ function setupApplicationMenu() {
 						]
 					: []),
 				{
-					label: mainT("common", "actions.about") || "About OpenScreen",
+					label: mainT("common", "actions.about") || "About Filmareto",
 					click: runAboutDialog,
 				},
 				{ type: "separator" as const },
@@ -458,10 +472,7 @@ function setupApplicationMenu() {
 					label: mainT("common", "actions.saveDiagnostics") || "Save Diagnostics",
 					click: runSaveDiagnostics,
 				},
-				{
-					label: mainT("common", "actions.starOnGithub") || "Star on GitHub",
-					click: runStarOnGithub,
-				},
+				
 			],
 		});
 	}
@@ -584,7 +595,7 @@ async function presentAboutDialog() {
 	const heading = `${PRODUCT_NAME} ${facts.version}`;
 	const choice = await showMessageBox({
 		type: "info",
-		title: mainT("common", "actions.about") || "About OpenScreen",
+		title: mainT("common", "actions.about") || "About Filmareto",
 		message: heading,
 		detail,
 		buttons: [
@@ -607,11 +618,6 @@ function runAboutDialog() {
 }
 
 /** Menu, tray and renderer all end up here, so the link cannot drift between them. */
-function runStarOnGithub() {
-	shell.openExternal(REPO_URL).catch((error) => {
-		console.error("[star] could not open the repo page", error);
-	});
-}
 
 /** Menu and tray entry point, for the same reason `runAboutDialog` exists. */
 function runUpdateCheck() {
@@ -862,6 +868,60 @@ const UPDATE_PROBLEMS = {
 		"That update was not made by the same maker as this app, so it will not be installed.",
 } as const;
 
+/**
+ * Asks the public GitHub repo for a newer release and installs it through the same checks as a
+ * file. Returns false when GitHub cannot be reached, so the caller can offer the file instead.
+ */
+async function updateFromGitHub(): Promise<boolean> {
+	const version = app.getVersion();
+	let update: ReturnType<typeof newerReleaseUpdate>;
+	try {
+		const response = await net.fetch(LATEST_RELEASE_URL, {
+			headers: { Accept: "application/vnd.github+json" },
+			signal: AbortSignal.timeout(10_000),
+		});
+		if (!response.ok) return false;
+		update = newerReleaseUpdate(await response.json(), version);
+	} catch (error) {
+		console.warn("[update] could not ask GitHub:", error);
+		return false;
+	}
+	if (!update) {
+		await showMessageBox({
+			type: "info",
+			title: PRODUCT_NAME,
+			message: `${PRODUCT_NAME} ${version} is the latest version.`,
+		});
+		return true;
+	}
+	const ask = await showMessageBox({
+		type: "info",
+		title: PRODUCT_NAME,
+		message: `Version ${update.version} is available. You have ${version}.`,
+		detail:
+			"It downloads in the background, then asks before it restarts. Your projects and recordings are not touched.",
+		buttons: ["Download", "Cancel"],
+		defaultId: 0,
+		cancelId: 1,
+	});
+	if (ask.response !== 0) return true;
+	let download: Awaited<ReturnType<typeof downloadUpdate>> | null = null;
+	try {
+		download = await downloadUpdate(update.url, (url, init) => net.fetch(url, init));
+		await installUpdateZip(download.zipPath);
+	} catch (error) {
+		console.warn("[update] download failed:", error);
+		await showMessageBox({
+			type: "warning",
+			title: PRODUCT_NAME,
+			message: "The update could not be downloaded. Check the connection and try again.",
+		});
+	} finally {
+		if (download) await fs.rm(download.workDir, { recursive: true, force: true }).catch(() => {});
+	}
+	return true;
+}
+
 /** Updates from a zip of the app that somebody sent (see `file-update.ts`). */
 async function updateFromFile() {
 	if (process.platform !== "darwin") {
@@ -880,6 +940,7 @@ async function updateFromFile() {
 		});
 		return;
 	}
+	if (UPDATES_FROM_GITHUB && (await updateFromGitHub())) return;
 	const version = app.getVersion();
 	const ask = await showMessageBox({
 		type: "info",
@@ -899,7 +960,12 @@ async function updateFromFile() {
 	});
 	const zipPath = picked.filePaths[0];
 	if (picked.canceled || !zipPath) return;
+	await installUpdateZip(zipPath);
+}
 
+/** Checks a zip of the app and, if the person agrees, swaps it in and restarts. */
+async function installUpdateZip(zipPath: string) {
+	const version = app.getVersion();
 	const currentApp = path.resolve(process.execPath, "..", "..", "..");
 	const prepared = await prepareUpdate(zipPath, currentApp, version);
 	if (!prepared.ok) {
@@ -944,7 +1010,7 @@ async function updateFromFile() {
 
 async function checkForUpdates(onVerdict?: () => void) {
 	if (FORK_BUILD) {
-		// No release feed to ask: a new version arrives as a file somebody sends.
+		// Our own release feed, with a file somebody sends as the fallback.
 		try {
 			await updateFromFile();
 		} finally {
@@ -1113,10 +1179,10 @@ function updateTrayMenu(recording: boolean = false) {
 				isMac
 					? {
 							role: "about" as const,
-							label: mainT("common", "actions.about") || "About OpenScreen",
+							label: mainT("common", "actions.about") || "About Filmareto",
 						}
 					: {
-							label: mainT("common", "actions.about") || "About OpenScreen",
+							label: mainT("common", "actions.about") || "About Filmareto",
 							click: runAboutDialog,
 						},
 				// Right next to About, and reachable without opening any window: this is the
@@ -1236,6 +1302,7 @@ function createNotesWindowWrapper() {
 		notesWindow = createNotesWindow();
 		notesWindow.on("closed", () => {
 			notesWindow = null;
+			teleprompterWindowClosed();
 			if (mainWindow && !mainWindow.isDestroyed()) {
 				mainWindow.webContents.send("notes-window-closed");
 			}
@@ -1341,6 +1408,7 @@ app.on("before-quit", (event) => {
 });
 
 app.on("will-quit", () => {
+	stopClaudeTurns();
 	unregisterAllGlobalShortcuts();
 });
 
@@ -1466,46 +1534,6 @@ appReady?.then(async () => {
 	// Its own store instance: `AppSettingsStore` is a stateless wrapper around one JSON file, so
 	// this costs a path string, and the alternative is threading ipc/handlers.ts' instance out
 	// through a module that has no other reason to export it.
-	const starPromptSettings = new AppSettingsStore(app.getPath("userData"));
-
-	ipcMain.handle("star-prompt:export-finished", () => {
-		const { successfulExports, dismissed } = starPromptSettings.recordSuccessfulExport();
-		return {
-			offer: offersStarPrompt({
-				successfulExports,
-				dismissed,
-				recording: isRecording,
-				// Every handler in this file is registered inside `appReady`, which the CLI boot
-				// path never reaches, so this is the second lock on a shut door — see the note on
-				// `headless` in star-prompt.ts.
-				headless: cliCommand !== null,
-			}),
-			// Drives which links the prompt shows. A Store copy must not be pointed at Releases
-			// or at an .exe, so it is offered the repo root and the Store's own review page.
-			store: getInstallChannel() === "store",
-		};
-	});
-
-	// Opening the repo goes through main like the Store link does, so the renderer holds no URL
-	// at all and every surface that offers a star opens the same one.
-	ipcMain.handle("star-prompt:open-repo", () => {
-		runStarOnGithub();
-	});
-
-	// Starring and declining are the same answer to this handler: the ask is over either way.
-	ipcMain.handle("star-prompt:dismiss", () => {
-		starPromptSettings.dismissStarPrompt();
-	});
-
-	// The deep link is built in the main process and never crosses the IPC boundary as a string.
-	// `open-external-url` allows http/https/mailto only — deliberately, because handing the OS a
-	// custom scheme from a renderer that runs with `webSecurity:false` is a launch primitive —
-	// and one fixed URL is not a reason to widen that.
-	ipcMain.handle("star-prompt:open-store-review", async () => {
-		if (getInstallChannel() !== "store") return { success: false };
-		await shell.openExternal(storeReviewUrl());
-		return { success: true };
-	});
 
 	// The editor's app menu opens the SAME About box the native menu and the tray do, rather
 	// than rendering its own panel: the version block exists to be pasted into a bug report,
@@ -1564,6 +1592,8 @@ appReady?.then(async () => {
 		showMainWindow();
 	}
 
+	registerTeleprompter(() => notesWindow);
+	registerGraphics();
 	const { mcpController, mcpAppChannel } = registerIpcHandlers(
 		createEditorWindowWrapper,
 		createSourceSelectorWindowWrapper,

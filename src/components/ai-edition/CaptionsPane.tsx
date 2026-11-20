@@ -26,26 +26,43 @@ import {
 	CAPTION_INSET_Y_MAX,
 	CAPTION_PLATE_OPACITY_MAX,
 	CAPTION_PLATE_OPACITY_MIN,
-	CAPTION_STYLES,
+	CAPTION_STYLE_GROUPS,
 	captionPlateOf,
 	captionPlatePatch,
 	captionStyleOf,
+	captionStylePatch,
 	DEFAULT_CAPTION_SETTINGS,
+	insightKey,
+	patchCaptionSettings,
+	resolveCaptionLane,
 	untranslatedUnits,
+	withCaptionInsights,
 } from "@/lib/ai-edition/captions";
+import {
+	deleteCaptionTemplate,
+	readCaptionTemplates,
+	saveCaptionTemplate,
+} from "@/lib/ai-edition/captions/myTemplates";
 import {
 	CAPTION_WORDS_PER_LINE_MAX,
 	CAPTION_WORDS_PER_LINE_MIN,
 } from "@/lib/ai-edition/captions/wordsPerLine";
+import { resolveAspectRatioValue } from "@/lib/ai-edition/document/outputFormat";
+import { setDocumentWordText } from "@/lib/ai-edition/document/transcript";
+import { getEditorSettings } from "@/lib/ai-edition/store/editorSettings";
 import { useProjectStore } from "@/lib/ai-edition/store/projectStore";
 import {
 	useAssetTranscriptions,
 	useTimelineTranscriptGate,
 } from "@/lib/ai-edition/store/transcriptionStore";
 import { useCaptions } from "@/lib/ai-edition/store/useCaptions";
+import { lanePlacements } from "@/lib/ai-edition/timeline/aggregated-transcript";
+import { removedRawSpans } from "@/lib/ai-edition/timeline/programme-time";
 import { firstTimelineBusyView } from "@/lib/ai-edition/transcription/status";
+import { getAssetPath } from "@/lib/assetPath";
 import { TEXT_FONT_FAMILIES } from "@/lib/textFonts";
 import { nativeBridgeClient } from "@/native";
+import type { AiEditionCaptionReadResult } from "@/native/contracts";
 import styles from "./NewEditorShell.module.css";
 import { ChoiceRow, SliderCell, Toggle } from "./RightPanes";
 import { TextColorField } from "./TextColorField";
@@ -55,6 +72,7 @@ import { transcriptionBusyLabel } from "./transcriptionBusyLabel";
 /** Offered as translation targets. Codes double as the storage key. */
 const TRANSLATION_LANGUAGES: ReadonlyArray<{ code: string; label: string }> = [
 	{ code: "en", label: "English" },
+	{ code: "el", label: "Ελληνικά" },
 	{ code: "fr", label: "Français" },
 	{ code: "es", label: "Español" },
 	{ code: "de", label: "Deutsch" },
@@ -154,7 +172,17 @@ export function CaptionsPane({ onClose }: { onClose?: () => void } = {}) {
 	const silentMedia = gate.state === "blocked" && gate.reason === "no-audio";
 	const engineError = gate.state === "blocked" && gate.reason === "failed" ? gate.message : null;
 
-	const [target, setTarget] = useState<string>(TRANSLATION_LANGUAGES[1].code);
+	const [target, setTarget] = useState<string>("en");
+	const [styleGroup, setStyleGroup] = useState<string>(CAPTION_STYLE_GROUPS[0].id);
+	const [myTemplates, setMyTemplates] = useState(readCaptionTemplates);
+	const [templateName, setTemplateName] = useState("");
+	const [reading, setReading] = useState(false);
+	const [readNote, setReadNote] = useState<string | null>(null);
+	const [readFailed, setReadFailed] = useState(false);
+	const currentStyle = captionStyleOf(settings);
+	const frameAspect = document
+		? resolveAspectRatioValue(document, getEditorSettings(document).aspectRatio)
+		: 16 / 9;
 	const [translating, setTranslating] = useState(false);
 	const [translateError, setTranslateError] = useState<string | null>(null);
 
@@ -217,6 +245,70 @@ export function CaptionsPane({ onClose }: { onClose?: () => void } = {}) {
 			setTranslateError(error instanceof Error ? error.message : String(error));
 		} finally {
 			setTranslating(false);
+		}
+	};
+
+	/** One pass of Claude over the words as they were spoken: one undo step. */
+	const handleClaudeRead = async () => {
+		const asked = useProjectStore.getState().document;
+		if (!asked) return;
+		setReading(true);
+		setReadNote(null);
+		setReadFailed(false);
+		try {
+			// The words the captions are read from, on either lane.
+			const placements = lanePlacements(
+				resolveCaptionLane(asked, settings),
+				asked.timeline.clips,
+				asked.audioTracks ?? [],
+				removedRawSpans(asked.timeline.clips, asked.timeline.trimRanges),
+			);
+			const reads: Array<{ assetId: string; result: AiEditionCaptionReadResult }> = [];
+			let failure: string | null = null;
+			for (const assetId of new Set(placements.map((p) => p.assetId))) {
+				const transcript = asked.transcripts.find((tr) => tr.assetId === assetId);
+				const words = transcript?.words.filter((word) => word.text.trim()) ?? [];
+				if (words.length === 0) continue;
+				const result = await nativeBridgeClient.aiEdition.readCaptions(
+					words.map((word) => ({ at: insightKey(word.startSec), text: word.text })),
+				);
+				if (!result.success) {
+					failure = result.error ?? t("captions.claudeReadFailed");
+					break;
+				}
+				reads.push({ assetId, result });
+			}
+			// Onto the document as it is now: the user may have gone on working while Claude read,
+			// or opened another project, which these answers do not belong to.
+			const current = useProjectStore.getState().document;
+			if (!current || current.project.id !== asked.project.id) return;
+			let next = current;
+			const counts = { keys: 0, emoji: 0, fixes: 0 };
+			for (const { assetId, result } of reads) {
+				next = withCaptionInsights(next, assetId, { keys: result.keys, emoji: result.emoji });
+				const words = next.transcripts.find((tr) => tr.assetId === assetId)?.words ?? [];
+				for (const fix of result.fixes) {
+					const word = words.find((candidate) => insightKey(candidate.startSec) === fix.at);
+					if (word && word.text !== fix.text) {
+						next = setDocumentWordText(next, assetId, word.id, fix.text);
+						counts.fixes += 1;
+					}
+				}
+				counts.keys += result.keys.length;
+				counts.emoji += Object.keys(result.emoji).length;
+			}
+			if (reads.length > 0) {
+				// Asked for and found: show them, in the same undo step.
+				if (counts.emoji > 0) next = patchCaptionSettings(next, { emoji: true }, frameAspect);
+				await saveDocument(next, { history: true });
+			}
+			setReadFailed(failure !== null);
+			setReadNote(failure ?? t("captions.claudeReadDone", counts));
+		} catch (error) {
+			setReadFailed(true);
+			setReadNote(error instanceof Error ? error.message : String(error));
+		} finally {
+			setReading(false);
 		}
 	};
 
@@ -383,27 +475,171 @@ export function CaptionsPane({ onClose }: { onClose?: () => void } = {}) {
 				) : null}
 
 				{/* ── Style ──────────────────────────────────────────────── */}
-				{/* Named looks first: each sets font, size, colour and plate together, and is a
-				    readable pair by construction. Tuning anything below leaves none selected. */}
+				{/* Named looks first: each sets font, size, colour, light and how words move together.
+				    Tuning anything below leaves none selected. */}
 				<div className={styles.sectionLabel}>{t("captions.style")}</div>
-				<div style={{ margin: "0 var(--sp-4) 12px" }}>
-					<ChoiceRow<CaptionStyleId | "custom">
-						label={t("captions.style")}
-						disabled={disabled}
-						columns={2}
-						options={CAPTION_STYLE_IDS.map((id) => ({
-							value: id,
-							label: t(`captions.styles.${id}`),
-						}))}
-						value={captionStyleOf(settings) ?? "custom"}
-						onChange={(id) => {
-							if (id !== "custom") void set(CAPTION_STYLES[id]);
+				<div
+					style={{
+						margin: "0 var(--sp-4) 12px",
+						display: "flex",
+						flexDirection: "column",
+						gap: 10,
+					}}
+				>
+					<div
+						role="tablist"
+						aria-label={t("captions.style")}
+						style={{ display: "flex", flexWrap: "wrap", gap: 4 }}
+					>
+						{[
+							...(myTemplates.length > 0 ? ["mine"] : []),
+							...CAPTION_STYLE_GROUPS.map((g) => g.id),
+						].map((id) => (
+							<button
+								key={id}
+								type="button"
+								role="tab"
+								aria-selected={styleGroup === id}
+								onClick={() => setStyleGroup(id)}
+								style={{
+									padding: "3px 9px",
+									borderRadius: 999,
+									border: "1px solid var(--border)",
+									background: styleGroup === id ? "var(--accent)" : "transparent",
+									color: styleGroup === id ? "#fff" : "var(--fg-2)",
+									font: "500 11.5px var(--font-body)",
+									cursor: "pointer",
+								}}
+							>
+								{t(`captions.styleGroups.${id}`)}
+							</button>
+						))}
+					</div>
+					{styleGroup === "mine" ? (
+						<div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+							{myTemplates.map((template) => (
+								<div key={template.name} style={{ display: "flex", gap: 4, alignItems: "center" }}>
+									<button
+										type="button"
+										disabled={disabled}
+										onClick={() => void set(template.settings)}
+										style={{ ...selectStyle, flex: 1, textAlign: "left" }}
+									>
+										{template.name}
+									</button>
+									<button
+										type="button"
+										aria-label={t("captions.deleteTemplate", { name: template.name })}
+										onClick={() => setMyTemplates(deleteCaptionTemplate(template.name))}
+										style={{ ...selectStyle, minWidth: 32, padding: 0, textAlign: "center" }}
+									>
+										×
+									</button>
+								</div>
+							))}
+						</div>
+					) : (
+						<div
+							role="group"
+							aria-label={t(`captions.styleGroups.${styleGroup}`)}
+							style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}
+						>
+							{(CAPTION_STYLE_GROUPS.find((g) => g.id === styleGroup)?.styles ?? []).map((id) => (
+								<CaptionStyleTile
+									key={id}
+									id={id}
+									label={t(`captions.styles.${id}`)}
+									selected={currentStyle === id}
+									disabled={disabled}
+									onPick={() => void set(captionStylePatch(id, frameAspect))}
+								/>
+							))}
+						</div>
+					)}
+					<form
+						style={{ display: "flex", gap: 4 }}
+						onSubmit={(event) => {
+							event.preventDefault();
+							const name = templateName.trim();
+							if (!name) return;
+							setMyTemplates(saveCaptionTemplate(name, settings));
+							setTemplateName("");
+							setStyleGroup("mine");
 						}}
-					/>
+					>
+						<input
+							value={templateName}
+							onChange={(event) => setTemplateName(event.target.value)}
+							placeholder={t("captions.templateName")}
+							aria-label={t("captions.templateName")}
+							style={{ ...selectStyle, flex: 1, minWidth: 0, cursor: "text" }}
+						/>
+						<button type="submit" disabled={!templateName.trim()} style={selectStyle}>
+							{t("captions.saveTemplate")}
+						</button>
+					</form>
+					<button
+						type="button"
+						disabled={disabled || !hasTranscript || reading}
+						onClick={() => void handleClaudeRead()}
+						style={{
+							...selectStyle,
+							display: "inline-flex",
+							alignItems: "center",
+							justifyContent: "center",
+							gap: 6,
+						}}
+					>
+						{reading ? <Loader2 size={14} className="animate-spin" /> : null}
+						{reading ? t("captions.claudeReading") : t("captions.claudeRead")}
+					</button>
+					{readNote ? (
+						<p
+							style={{
+								margin: 0,
+								font: "400 11.5px/1.5 var(--font-body)",
+								color: readFailed ? "var(--danger)" : "var(--muted)",
+							}}
+						>
+							{readNote}
+						</p>
+					) : null}
+					<div
+						style={{
+							display: "flex",
+							alignItems: "center",
+							justifyContent: "space-between",
+							gap: 8,
+						}}
+					>
+						<span className={styles.fieldLabel}>{t("captions.emoji")}</span>
+						<Toggle
+							ariaLabel={t("captions.emoji")}
+							checked={settings.emoji}
+							disabled={disabled}
+							onChange={(emoji) => void set({ emoji })}
+						/>
+					</div>
+					<div
+						style={{
+							display: "flex",
+							alignItems: "center",
+							justifyContent: "space-between",
+							gap: 8,
+						}}
+					>
+						<span className={styles.fieldLabel}>{t("captions.avoidFace")}</span>
+						<Toggle
+							ariaLabel={t("captions.avoidFace")}
+							checked={settings.avoidFace}
+							disabled={disabled}
+							onChange={(avoidFace) => void set({ avoidFace })}
+						/>
+					</div>
 				</div>
 
 				{/* ── Language ───────────────────────────────────────────── */}
-				<div className={styles.sectionLabel}>{t("captions.language")}</div>
+				<div className={styles.sectionLabel}>{t("captions.translate")}</div>
 				{/* Only once there is a translation to switch to: alone, "Original" would be a
 				    button that changes nothing. */}
 				{languageOptions.length > 0 ? (
@@ -537,6 +773,40 @@ export function CaptionsPane({ onClose }: { onClose?: () => void } = {}) {
 							onCommit={() => void commit()}
 						/>
 					</div>
+					<div className={styles.paneRow}>
+						<span className={styles.label}>{t("captions.allCaps")}</span>
+						<Toggle
+							checked={settings.textCase === "upper"}
+							disabled={disabled}
+							onChange={(next) => void set({ textCase: next ? "upper" : "as-spoken" })}
+						/>
+					</div>
+					{settings.activeWordColor ? (
+						<div className={styles.paneRow}>
+							<span className={styles.label}>{t("captions.activeWordColor")}</span>
+							<TextColorField
+								label={t("captions.activeWordColor")}
+								value={settings.activeWordColor}
+								plate="transparent"
+								disabled={disabled}
+								onChange={(activeWordColor) => setLive({ activeWordColor })}
+								onCommit={() => void commit()}
+							/>
+						</div>
+					) : null}
+					{settings.emphasis !== "none" ? (
+						<div className={styles.paneRow}>
+							<span className={styles.label}>{t("captions.emphasisColor")}</span>
+							<TextColorField
+								label={t("captions.emphasisColor")}
+								value={settings.emphasisColor}
+								plate="transparent"
+								disabled={disabled}
+								onChange={(emphasisColor) => setLive({ emphasisColor })}
+								onCommit={() => void commit()}
+							/>
+						</div>
+					) : null}
 					<div className={styles.paneRow}>
 						<span className={styles.label}>{t("captions.textColor")}</span>
 						<TextColorField
@@ -691,7 +961,58 @@ export function CaptionsPane({ onClose }: { onClose?: () => void } = {}) {
 	);
 }
 
-const CAPTION_STYLE_IDS = Object.keys(CAPTION_STYLES) as CaptionStyleId[];
+/** A style, shown the way it will look: a frame the compositor drew (`scripts/caption-style-thumbs.py`). */
+function CaptionStyleTile({
+	id,
+	label,
+	selected,
+	disabled,
+	onPick,
+}: {
+	id: CaptionStyleId;
+	label: string;
+	selected: boolean;
+	disabled: boolean;
+	onPick: () => void;
+}) {
+	return (
+		<button
+			type="button"
+			aria-label={label}
+			aria-pressed={selected}
+			disabled={disabled}
+			onClick={onPick}
+			style={{
+				display: "flex",
+				flexDirection: "column",
+				gap: 6,
+				padding: 0,
+				background: "transparent",
+				border: "none",
+				cursor: disabled ? "default" : "pointer",
+				font: "500 12px var(--font-body)",
+				color: selected ? "var(--accent)" : "var(--fg-2)",
+				textAlign: "center",
+			}}
+		>
+			<img
+				src={getAssetPath(`caption-styles/${id}.webp`)}
+				alt=""
+				loading="lazy"
+				style={{
+					width: "100%",
+					aspectRatio: "16 / 9",
+					objectFit: "cover",
+					borderRadius: 10,
+					background: "#16181d",
+					outline: selected ? "2px solid var(--accent)" : "1px solid var(--border)",
+					outlineOffset: selected ? 1 : 0,
+				}}
+			/>
+			{label}
+		</button>
+	);
+}
 
 const selectStyle: React.CSSProperties = {
 	height: 32,

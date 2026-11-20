@@ -16,6 +16,18 @@ import { assetSchema, clipSchema, createEmptyDocument } from "@/lib/ai-edition/s
 import { useProjectStore } from "@/lib/ai-edition/store/projectStore";
 import { nativeBridgeClient } from "@/native";
 
+const forcedCursor = vi.hoisted(() => ({ value: null as boolean | null }));
+vi.mock("../recordedCursorTypes", async (original) => {
+	const actual = await original<typeof import("../recordedCursorTypes")>();
+	return {
+		...actual,
+		useHasRecordedCursor: () => {
+			const real = actual.useHasRecordedCursor();
+			return forcedCursor.value ?? real;
+		},
+	};
+});
+
 vi.mock("@/contexts/I18nContext", () => ({
 	useScopedT: (scope: string) => (key: string) => `${scope}.${key}`,
 }));
@@ -81,6 +93,10 @@ class StubResizeObserver {
 }
 
 describe("FloatingInspector", () => {
+	afterEach(() => {
+		forcedCursor.value = null;
+	});
+
 	const defaultProps: React.ComponentProps<typeof FloatingInspector> = {
 		facet: "layout" as const,
 		open: true,
@@ -403,7 +419,16 @@ describe("FloatingInspector", () => {
 			expect(updateZoomRotation).toHaveBeenLastCalledWith("z", undefined);
 		});
 
+		it("leaves out the focus mode and the cursor on a take with no pointer", () => {
+			forcedCursor.value = false;
+			const { tl } = zoomTl({});
+			render(<FloatingInspector {...defaultProps} tl={tl} />);
+			expect(screen.queryByRole("group", { name: "settings.zoom.focusMode.title" })).toBeNull();
+			expect(screen.queryByRole("group", { name: "settings.zoom.cursor.title" })).toBeNull();
+		});
+
 		it("picks the focus mode and the cursor with one click each", () => {
+			forcedCursor.value = true;
 			const updateZoomFocusMode = vi.fn();
 			const updateZoomHideCursor = vi.fn();
 			const { tl } = zoomTl({});
@@ -424,6 +449,7 @@ describe("FloatingInspector", () => {
 
 		it("locks the focus mode on Auto while the timeline's Auto-Focus holds it, and says why", () => {
 			editorSettings.autoFocusAll = true;
+			forcedCursor.value = true;
 			try {
 				const { tl } = zoomTl({ focusMode: "manual" });
 				render(<FloatingInspector {...defaultProps} tl={tl} />);
@@ -553,7 +579,7 @@ describe("FloatingInspector", () => {
 			render(<FloatingInspector {...defaultProps} />);
 			await readAll(read);
 			expect(cursorFacet()).toBeNull();
-			expect(screen.getByRole("button", { name: "settings.layout.title" })).toBeVisible();
+			expect(screen.getByRole("button", { name: "settings.effects.title" })).toBeVisible();
 		});
 
 		it("is offered as soon as one of several recordings has cursor data", async () => {

@@ -352,7 +352,7 @@
 .modeSwitch {
 	margin: 0 auto;
 	display: inline-grid;
-	grid-template-columns: repeat(3, minmax(0, 1fr));
+	grid-template-columns: repeat(4, minmax(0, 1fr));
 	align-items: center;
 	gap: 2px;
 	padding: 3px;
@@ -570,7 +570,260 @@
 	   its rows are laid out for. One value for the panel and for the room the preview leaves it. */
 	container-type: inline-size;
 	--inspector-w: clamp(300px, 22cqw, 380px);
+	--layout-panel-w: clamp(230px, 17cqw, 270px);
 	background: radial-gradient(ellipse 68% 54% at 52% 32%, var(--surface-1) 0%, var(--bg) 66%);
+}
+
+.voiceoverCountdown {
+	position: fixed;
+	inset: 0;
+	z-index: 60;
+	display: grid;
+	place-items: center;
+	color: #fff;
+	font-size: 180px;
+	font-weight: 800;
+	text-shadow: 0 6px 40px rgba(0, 0, 0, 0.6);
+	pointer-events: none;
+}
+
+/* ─── FORMAT AND LAYOUT MENU, LEFT OF THE PROGRAM WINDOW ───────────── */
+.layoutPanel {
+	position: absolute;
+	top: 20px;
+	left: 20px;
+	bottom: 20px;
+	width: var(--layout-panel-w);
+	z-index: 20;
+	display: flex;
+	flex-direction: column;
+	padding-block: 12px;
+	overflow-y: auto;
+	background: var(--surface-1);
+	border: 1px solid var(--border);
+	border-radius: 16px;
+	box-shadow: var(--elev-pop);
+}
+.panelTabs {
+	display: grid;
+	grid-template-columns: 1fr 1fr;
+	gap: 4px;
+	margin: 0 var(--sp-4) 8px;
+	padding: 3px;
+	border-radius: 9px;
+	background: rgba(127, 127, 127, 0.12);
+	flex: none;
+}
+.panelTabs button {
+	padding: 5px 0;
+	border: none;
+	border-radius: 7px;
+	background: transparent;
+	color: inherit;
+	font-size: 12px;
+	font-weight: 500;
+	cursor: pointer;
+}
+.panelTabs button[aria-selected="true"] {
+	background: var(--surface-1);
+	font-weight: 600;
+	box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
+}
+.graphicGrid {
+	display: grid;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+	gap: 8px;
+	padding: 0 var(--sp-4) 10px;
+}
+.graphicStill {
+	display: block;
+	width: 100%;
+	max-height: 150px;
+	border-radius: 6px;
+	overflow: hidden;
+	background: #2a2f38;
+}
+.graphicStill img {
+	display: block;
+	width: 100%;
+	height: 100%;
+	object-fit: contain;
+}
+.layoutHeading {
+	display: flex;
+	justify-content: space-between;
+	gap: 8px;
+	padding: 4px var(--sp-4) 8px;
+	font-size: 12px;
+	font-weight: 600;
+}
+.layoutHeading span {
+	font-weight: 500;
+	opacity: 0.6;
+}
+.takeRow {
+	display: flex;
+	align-items: center;
+	gap: 4px;
+	padding: 0 var(--sp-4) 8px;
+	font-size: 11px;
+	font-weight: 500;
+}
+.takeRow button {
+	min-width: 24px;
+	height: 22px;
+	border: 1.5px solid transparent;
+	border-radius: 6px;
+	background: rgba(127, 127, 127, 0.12);
+	color: inherit;
+	font-size: 11px;
+	cursor: pointer;
+}
+.takeRow button[aria-pressed="true"] {
+	border-color: #34b27b;
+}
+.layoutGrid {
+	display: grid;
+	grid-template-columns: repeat(3, minmax(0, 1fr));
+	gap: 8px;
+	padding: 0 var(--sp-4) 10px;
+}
+.layoutTile {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: space-between;
+	gap: 5px;
+	min-width: 0;
+	padding: 6px 3px;
+	border: 1.5px solid transparent;
+	border-radius: 10px;
+	background: rgba(127, 127, 127, 0.1);
+	color: inherit;
+	font-size: 10.5px;
+	white-space: nowrap;
+	font-weight: 500;
+	cursor: pointer;
+}
+.layoutTile:hover:not(:disabled) {
+	background: rgba(127, 127, 127, 0.18);
+}
+.layoutTile[aria-pressed="true"] {
+	border-color: #34b27b;
+}
+.layoutTile:disabled,
+.layoutAll:disabled {
+	opacity: 0.4;
+	cursor: default;
+}
+.myLook {
+	position: relative;
+	min-width: 0;
+	display: grid;
+}
+.myLookName {
+	max-width: 100%;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+.myLookDelete {
+	position: absolute;
+	top: 2px;
+	right: 2px;
+	width: 16px;
+	height: 16px;
+	padding: 0;
+	border: none;
+	border-radius: 50%;
+	background: rgba(15, 23, 42, 0.65);
+	color: #fff;
+	font-size: 11px;
+	line-height: 16px;
+	opacity: 0;
+	cursor: pointer;
+}
+.myLook:hover .myLookDelete,
+.myLookDelete:focus-visible {
+	opacity: 1;
+}
+.myLookAdd {
+	justify-content: center;
+	background: none;
+	border: 1.5px dashed var(--border-hi);
+	font-size: 15px;
+	color: var(--muted);
+}
+.myLookAdd span {
+	font-size: 10.5px;
+}
+.myLookForm {
+	display: flex;
+	gap: 5px;
+	padding: 0 var(--sp-4) 10px;
+}
+.myLookForm input {
+	flex: 1;
+	min-width: 0;
+	height: 28px;
+	padding: 0 7px;
+	border: 1px solid var(--border-hi);
+	border-radius: 7px;
+	background: var(--surface);
+	color: inherit;
+	font-size: 12px;
+}
+.myLookForm button {
+	height: 28px;
+	padding: 0 9px;
+	border: none;
+	border-radius: 7px;
+	background: var(--fg);
+	color: var(--bg);
+	font-size: 12px;
+	font-weight: 600;
+	cursor: pointer;
+}
+.segmentScope {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	padding: 8px 16px;
+	border-bottom: 1px solid var(--border);
+	font-size: 12px;
+	color: var(--fg-2);
+	flex: none;
+}
+.segmentScope b {
+	padding: 1px 7px;
+	border-radius: 6px;
+	background: #34b27b;
+	color: #04221a;
+	font-weight: 600;
+}
+.tlClipThumb {
+	flex: none;
+	display: block;
+	border-radius: 3px;
+	background: rgba(255, 255, 255, 0.55);
+	color: #0f172a;
+	line-height: 0;
+}
+.layoutThumb {
+	display: block;
+	max-width: 100%;
+	border-radius: 4px;
+	overflow: hidden;
+}
+.layoutAll {
+	margin: 0 var(--sp-4);
+	padding: 6px;
+	border: none;
+	border-radius: 8px;
+	background: rgba(127, 127, 127, 0.1);
+	color: inherit;
+	font-size: 11px;
+	font-weight: 500;
+	cursor: pointer;
 }
 
 /* ─── FLOATING INSPECTOR + FACET RAIL ──────────────────────────────── */
@@ -739,6 +992,15 @@
 	display: grid;
 	place-items: center;
 	color: rgba(255, 255, 255, 0.9);
+}
+.mediaThumbFrame {
+	position: absolute;
+	inset: 0;
+	width: 100%;
+	height: 100%;
+	object-fit: cover;
+	object-position: center 25%;
+	pointer-events: none;
 }
 .mediaCardMeta {
 	display: flex;
@@ -2215,4 +2477,394 @@
 	height: 10px;
 	border-radius: 999px;
 	background: var(--danger);
+}
+
+/* ─── SCENE NAMES over the clips ─────────────── */
+.tlSceneNames {
+	position: relative;
+	height: 24px;
+	margin-bottom: 5px;
+}
+.tlSceneNames button {
+	position: absolute;
+	top: 3px;
+	display: flex;
+	align-items: center;
+	gap: 5px;
+	padding: 0 2px;
+	border: none;
+	background: none;
+	font-size: 11px;
+	font-weight: 600;
+	white-space: nowrap;
+	overflow: hidden;
+	color: var(--muted);
+	cursor: pointer;
+}
+.tlSceneNames button i {
+	flex: none;
+	width: 6px;
+	height: 6px;
+	border-radius: 50%;
+	background: var(--muted-soft);
+}
+.tlSceneNames button[data-current] {
+	color: var(--fg);
+}
+.tlSceneNames button[data-current] i {
+	background: var(--accent);
+}
+
+/* ─── SCRIPT ─────────────── */
+.scriptStage {
+	position: absolute;
+	inset: 0;
+	display: flex;
+	flex-direction: column;
+	background: var(--surface);
+}
+.scriptScroll {
+	flex: 1;
+	min-height: 0;
+	overflow-y: auto;
+}
+.scriptDoc {
+	width: min(820px, calc(100% - 48px));
+	margin: 0 auto;
+	padding: 34px 0 24px;
+}
+.scriptHeading {
+	margin: 0 0 20px 136px;
+	font-size: 13px;
+	font-weight: 600;
+	color: var(--muted);
+}
+.scriptScene {
+	position: relative;
+	display: grid;
+	grid-template-columns: 120px 3px 1fr;
+	gap: 12px;
+	padding: 9px 26px 9px 0;
+}
+.scriptName {
+	width: 100%;
+	height: 30px;
+	padding: 0 4px;
+	border: none;
+	border-radius: 6px;
+	background: none;
+	color: var(--muted);
+	font-size: 13px;
+	text-align: right;
+}
+.scriptName:focus {
+	outline: 2px solid var(--accent-ring);
+	color: var(--fg);
+}
+.scriptBar {
+	border-radius: 2px;
+	background: var(--surface-2);
+}
+.scriptScene:focus-within .scriptBar {
+	background: var(--accent);
+}
+.scriptText {
+	width: 100%;
+	min-height: 30px;
+	padding: 2px 0;
+	border: none;
+	outline: none;
+	resize: none;
+	overflow: hidden;
+	background: none;
+	color: var(--fg);
+	font: inherit;
+	font-size: 17px;
+	line-height: 1.55;
+}
+.scriptText::placeholder {
+	color: var(--muted-soft);
+}
+.scriptDelete {
+	position: absolute;
+	top: 12px;
+	right: 0;
+	width: 22px;
+	height: 22px;
+	display: grid;
+	place-items: center;
+	border: none;
+	border-radius: 6px;
+	background: none;
+	color: var(--muted);
+	opacity: 0;
+	cursor: pointer;
+}
+.scriptScene:hover .scriptDelete,
+.scriptDelete:focus-visible {
+	opacity: 1;
+}
+.scriptAdd {
+	display: inline-flex;
+	align-items: center;
+	gap: 7px;
+	margin: 14px 0 0 132px;
+	padding: 8px 10px;
+	border: none;
+	border-radius: 8px;
+	background: none;
+	color: var(--fg-2);
+	font-weight: 600;
+	cursor: pointer;
+}
+.scriptAdd:hover {
+	background: var(--surface-1);
+}
+.stageFooter {
+	flex: none;
+	display: flex;
+	align-items: center;
+	justify-content: flex-end;
+	gap: 10px;
+	padding: 12px 18px;
+	border-top: 1px solid var(--shell-rule);
+}
+.stageContinue {
+	height: 38px;
+	padding: 0 16px;
+	border: none;
+	border-radius: 10px;
+	background: var(--fg);
+	color: var(--bg);
+	font-weight: 600;
+	cursor: pointer;
+}
+.stageBack {
+	height: 38px;
+	margin-right: auto;
+	padding: 0 14px;
+	border: 1px solid var(--border-hi);
+	border-radius: 10px;
+	background: var(--surface);
+	color: var(--fg);
+	font-weight: 600;
+	cursor: pointer;
+}
+
+/* ─── RECORD: options on the left, scenes on the right ─────────────── */
+.recLeftCol {
+	flex: none;
+	width: 372px;
+	min-height: 0;
+	display: flex;
+	flex-direction: column;
+	gap: 12px;
+	overflow-y: auto;
+	scrollbar-width: thin;
+}
+.recLeftCol .recPreviewCol {
+	flex: none;
+	display: block;
+}
+.recLeftCol .recPreviewFrame {
+	width: 100%;
+	max-width: none;
+	max-height: 190px;
+}
+.recLeftCol .recPanel {
+	width: 100%;
+	flex: none;
+	overflow: visible;
+}
+.recPromptFields {
+	padding: 12px 14px 14px;
+}
+.recPromptFields h3 {
+	margin: 0 0 8px;
+	font-size: 11px;
+	font-weight: 600;
+	letter-spacing: 0.05em;
+	text-transform: uppercase;
+	color: var(--muted);
+}
+.recNoScript {
+	flex: 1;
+	min-width: 0;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	gap: 14px;
+	color: var(--muted);
+	text-align: center;
+}
+.recQuality {
+	display: flex;
+	gap: 4px;
+}
+.recQuality button {
+	padding: 3px 8px;
+	border: none;
+	border-radius: 7px;
+	background: rgba(127, 127, 127, 0.12);
+	color: inherit;
+	font-size: 12px;
+	cursor: pointer;
+}
+.recQuality button[aria-pressed="true"] {
+	background: var(--accent-soft);
+	color: var(--accent);
+	font-weight: 600;
+}
+.sceneCards {
+	flex: 1;
+	min-width: 0;
+	min-height: 0;
+	overflow-y: auto;
+	padding-right: 6px;
+	scrollbar-width: thin;
+}
+.sceneCardsHead {
+	display: flex;
+	align-items: center;
+	margin-bottom: 12px;
+	font-size: 15px;
+}
+.sceneCardsHead b {
+	font-weight: 600;
+}
+.sceneRecordAll {
+	margin-left: auto;
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	height: 34px;
+	padding: 0 13px;
+	border: 1px solid var(--border-hi);
+	border-radius: 9px;
+	background: var(--surface);
+	color: var(--fg);
+	font-size: 13px;
+	font-weight: 600;
+	cursor: pointer;
+}
+.sceneRecordAll i,
+.sceneRecord i {
+	width: 9px;
+	height: 9px;
+	border-radius: 50%;
+	background: #ef4444;
+}
+.sceneCard {
+	margin-bottom: 10px;
+	padding: 12px 16px;
+	border: 1px solid var(--border);
+	border-radius: 12px;
+	background: var(--surface);
+	box-shadow: var(--elev-pop);
+}
+.sceneCard header {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	margin-bottom: 5px;
+	font-size: 12px;
+	font-weight: 500;
+	color: var(--muted);
+}
+.sceneCard header i {
+	width: 7px;
+	height: 7px;
+	border-radius: 50%;
+	background: #f59e0b;
+}
+.sceneCard[data-done] header i {
+	background: var(--accent);
+}
+.sceneCard p {
+	margin: 0 0 10px;
+	font-size: 14px;
+	line-height: 1.5;
+	white-space: pre-wrap;
+}
+.sceneTakes {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 8px;
+}
+.sceneRecord {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	height: 34px;
+	padding: 0 14px;
+	border: none;
+	border-radius: 9px;
+	background: var(--fg);
+	color: var(--bg);
+	font-weight: 600;
+	cursor: pointer;
+}
+.sceneRecordAgain {
+	display: flex;
+	align-items: center;
+	gap: 7px;
+	height: 64px;
+	padding: 0 16px;
+	border: 1px solid var(--border-hi);
+	border-radius: 9px;
+	background: var(--surface);
+	color: var(--fg-2);
+	font-weight: 600;
+	cursor: pointer;
+}
+.sceneFromFile {
+	border: none;
+	background: none;
+	color: var(--muted);
+	font-size: 12.5px;
+	cursor: pointer;
+}
+.sceneTake {
+	position: relative;
+	height: 64px;
+	aspect-ratio: 16 / 10;
+	padding: 0;
+	overflow: hidden;
+	border: 2px solid transparent;
+	border-radius: 9px;
+	background: #0b0f14;
+	cursor: pointer;
+}
+.sceneTake[aria-pressed="true"] {
+	border-color: var(--accent);
+}
+.sceneTake video {
+	width: 100%;
+	height: 100%;
+	object-fit: cover;
+	display: block;
+}
+.sceneTake span {
+	position: absolute;
+	left: 4px;
+	bottom: 4px;
+	padding: 1px 5px;
+	border-radius: 5px;
+	background: rgba(15, 23, 42, 0.72);
+	color: #fff;
+	font-size: 10.5px;
+	font-weight: 500;
+}
+.sceneArchive {
+	display: flex;
+	align-items: center;
+	gap: 4px;
+	padding: 4px 2px;
+	border: none;
+	background: none;
+	color: var(--muted);
+	font-size: 12.5px;
+	cursor: pointer;
 }

@@ -1,22 +1,14 @@
-// Welcome view for the LM chat panel.
-//
-// Shown in the chat body when the chat has nothing it can talk to — see
-// canSendChat() in chatAvailability.ts. It replaces the `chat.emptyState` hint
-// (a dead end with no provider) only while the conversation is empty, so a user
-// who disconnects mid-project keeps their history with the composer disabled.
+// Shown in the chat body while there is no Claude to talk to: the chat runs on the user's own Claude
+// plan, through Claude Code on this Mac, so all there can be to set up is that.
 
 import { ArrowRight, Info, Sparkles } from "lucide-react";
 import { useScopedT } from "@/contexts/I18nContext";
 import styles from "./NewEditorShell.module.css";
 
 const FEATURE_KEYS = ["feature1", "feature2", "feature3"] as const;
+const INSTALL_URL = "https://claude.com/product/claude-code";
 
-interface ChatWelcomeProps {
-	/** Open the provider settings modal so the user can pick + connect one. */
-	onOpenProviderSettings: () => void;
-}
-
-export function ChatWelcome({ onOpenProviderSettings }: ChatWelcomeProps) {
+export function ChatWelcome({ installed }: { installed: boolean }) {
 	const t = useScopedT("editor");
 
 	return (
@@ -24,7 +16,9 @@ export function ChatWelcome({ onOpenProviderSettings }: ChatWelcomeProps) {
 			<header className={styles.chatWelcomeHero}>
 				<Sparkles size={20} className={styles.chatWelcomeIcon} aria-hidden="true" />
 				<h2 className={styles.chatWelcomeTitle}>{t("chat.welcome.title")}</h2>
-				<p className={styles.chatWelcomeSubtitle}>{t("chat.welcome.subtitle")}</p>
+				<p className={styles.chatWelcomeSubtitle}>
+					{installed ? t("chat.welcome.subtitle") : t("chat.welcome.subtitleInstall")}
+				</p>
 			</header>
 
 			<ul className={styles.chatWelcomeFeatures}>
@@ -33,8 +27,16 @@ export function ChatWelcome({ onOpenProviderSettings }: ChatWelcomeProps) {
 				))}
 			</ul>
 
-			<button type="button" className={styles.chatWelcomeCta} onClick={onOpenProviderSettings}>
-				{t("chat.welcome.cta")}
+			<button
+				type="button"
+				className={styles.chatWelcomeCta}
+				onClick={() =>
+					installed
+						? void window.electronAPI.claudeSignIn()
+						: void window.electronAPI.openExternalUrl(INSTALL_URL)
+				}
+			>
+				{installed ? t("chat.welcome.cta") : t("chat.welcome.ctaInstall")}
 				<ArrowRight size={16} />
 			</button>
 

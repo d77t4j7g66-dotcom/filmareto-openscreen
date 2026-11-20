@@ -1,8 +1,11 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { toast } from "sonner";
 import { useI18n, useScopedT } from "@/contexts/I18nContext";
+import { useCameraOnlyTake } from "@/hooks/useCameraOnlyTake";
 import { getAvailableLocales, getLocaleName } from "@/i18n/loader";
 import { offersEditableCursor } from "@/lib/editableCursorAvailability";
 import { canTurnMicrophoneOn } from "@/lib/microphoneAvailability";
+import { readCameraOnly, writeCameraOnly } from "@/lib/recordingMode";
 import { loadUserPreferences, saveUserPreferences } from "@/lib/userPreferences";
 import { nativeBridgeClient } from "@/native";
 import { canRecordMicrophone, getPlatform } from "@/utils/platformUtils";
@@ -21,6 +24,7 @@ import { requestCameraAccess } from "../../lib/requestCameraAccess";
 import { Toaster } from "../ui/sonner";
 import {
 	HudCameraButton,
+	HudCameraOnlyButton,
 	HudCursorButton,
 	HudDivider,
 	HudDragHandle,
@@ -33,6 +37,8 @@ import {
 	HudNotice,
 	HudRecordButton,
 	HudRecordingControls,
+	HudSceneRunControls,
+	HudSegmentControls,
 	HudSettingsButton,
 	HudSourceButton,
 	HudStudioButton,
@@ -105,9 +111,9 @@ export function LaunchWindow() {
 	const languageCode = locale.split("-")[0].toUpperCase();
 
 	const {
-		recording,
+		recording: screenRecording,
 		paused,
-		saving,
+		saving: screenSaving,
 		elapsedSeconds,
 		toggleRecording,
 		togglePaused,
@@ -136,6 +142,54 @@ export function LaunchWindow() {
 		dismissSoftwareEncoderFallbackNotice,
 		recordingPrefsLoaded,
 	} = useScreenRecorder();
+	const [cameraOnly, setCameraOnly] = useState(readCameraOnly);
+	const cameraTake = useCameraOnlyTake({
+		webcamDeviceId,
+		webcamQuality,
+		microphoneEnabled,
+		microphoneDeviceId,
+	});
+	const recording = screenRecording || cameraTake.active;
+	const saving = screenSaving || cameraTake.saving;
+	useEffect(() => {
+		if (cameraTake.error) toast.error(cameraTake.error);
+	}, [cameraTake.error]);
+	// Where the script stands while a take runs. The HUD is not the window the prompter reports to.
+	const [script, setScript] = useState<{ stageIndex: number; stageCount: number } | null>(null);
+	useEffect(() => {
+		if (!recording) {
+			setScript(null);
+			return;
+		}
+		const read = async () => {
+			const state = await window.electronAPI.teleprompter?.state();
+			setScript(
+				state?.open ? { stageIndex: state.stageIndex, stageCount: state.stageCount } : null,
+			);
+		};
+		void read();
+		const timer = setInterval(() => void read(), 400);
+		return () => clearInterval(timer);
+	}, [recording]);
+
+	// Recording the scenes of a project: after a Stop the next one waits here, with no review.
+	const [sceneRun, setSceneRun] = useState<{
+		ready: boolean;
+		next: string | null;
+		done: string | null;
+		nextNumber: number | null;
+		count: number;
+	} | null>(null);
+	useEffect(() => {
+		const read = async () => {
+			const state = await window.electronAPI.teleprompter?.state().catch(() => null);
+			setSceneRun(state?.run ?? null);
+		};
+		void read();
+		const timer = setInterval(() => void read(), 500);
+		return () => clearInterval(timer);
+	}, []);
+	const betweenScenes = sceneRun?.ready === true && !recording && !saving;
 
 	// Choosing a device and switching one on are deliberately separate concerns.
 	// The mic and camera buttons are plain on/off toggles that use whatever device
@@ -809,6 +863,11 @@ export function LaunchWindow() {
 			if (saving) {
 				return;
 			}
+			if (cameraOnly) {
+				if (!cameraTake.active && !microphoneEnabled) toast.warning(t("recording.noMicrophone"));
+				void (cameraTake.active ? cameraTake.stop() : cameraTake.start());
+				return;
+			}
 			if (recording) {
 				toggleRecording();
 				return;
@@ -845,6 +904,12 @@ export function LaunchWindow() {
 			void startWhenDevicesReady();
 		},
 		[
+			cameraOnly,
+			microphoneEnabled,
+			t,
+			cameraTake.active,
+			cameraTake.stop,
+			cameraTake.start,
 			hasSelectedSource,
 			portalOwnsSource,
 			openSourceSelector,
@@ -1180,11 +1245,13 @@ export function LaunchWindow() {
 		? t("recording.saving")
 		: recording
 			? t("recording.stop")
-			: portalOwnsSource
-				? t("recording.systemPicker")
-				: hasSelectedSource
-					? t("recording.start")
-					: t("recording.selectSource");
+			: cameraOnly
+				? t("scene.startCameraOnly")
+				: portalOwnsSource
+					? t("recording.systemPicker")
+					: hasSelectedSource
+						? t("recording.start")
+						: t("recording.selectSource");
 
 	// Stable identity, or the panel's memo boundary would break on every parent
 	// render — including the once-a-second one during a recording.
@@ -1272,7 +1339,21 @@ export function LaunchWindow() {
 					    discarded, which is why picking a window here changed
 					    nothing. The compositor's picker is the only one that
 					    decides, and it appears when recording starts. */}
-						{!portalOwnsSource && (
+						<HudCameraOnlyButton
+							on={cameraOnly}
+							locked={controlsLocked}
+							name={t("scene.cameraOnly")}
+							tooltip={
+								cameraOnly ? t("scene.cameraOnlyOn") : t("scene.cameraOnlyOff")
+							}
+							onClick={() => {
+								writeCameraOnly(!cameraOnly);
+								setCameraOnly(!cameraOnly);
+								// A take of someone talking with no sound is never the intent.
+								if (!cameraOnly && !microphoneEnabled && microphoneOffered) toggleMicrophone();
+							}}
+						/>
+						{!portalOwnsSource && !cameraOnly && (
 							<HudSourceButton
 								vertical={isVertical}
 								label={
@@ -1295,13 +1376,15 @@ export function LaunchWindow() {
 					    transparent icon button (no shared group pill), matching the
 					    design exactly: rest color is muted gray, active/enabled color
 					    is the accent green. */}
-						<HudSystemAudioButton
-							enabled={systemAudioEnabled}
-							locked={controlsLocked}
-							name={t("audio.systemAudio")}
-							tooltip={t("tooltips.systemAudio")}
-							onClick={toggleSystemAudio}
-						/>
+						{cameraOnly ? null : (
+							<HudSystemAudioButton
+								enabled={systemAudioEnabled}
+								locked={controlsLocked}
+								name={t("audio.systemAudio")}
+								tooltip={t("tooltips.systemAudio")}
+								onClick={toggleSystemAudio}
+							/>
+						)}
 						{/* The gear configures the two toggles beside it, so the three sit
 					    closer together than the bar's normal control spacing — proximity
 					    is the design's own grouping device, no extra furniture needed. */}
@@ -1332,7 +1415,7 @@ export function LaunchWindow() {
 								onClick={toggleDeviceSettings}
 							/>
 						</div>
-						{supportsCursorModeToggle && (
+						{supportsCursorModeToggle && !cameraOnly && (
 							<HudCursorButton
 								editableOverlay={cursorCaptureMode === "editable-overlay"}
 								locked={controlsLocked}
@@ -1346,7 +1429,7 @@ export function LaunchWindow() {
 							/>
 						)}
 
-						{keysSupported && (
+						{keysSupported && !cameraOnly && (
 							<HudKeysButton
 								state={keysState}
 								locked={keysLocked}
@@ -1368,15 +1451,35 @@ export function LaunchWindow() {
 
 						<HudDivider vertical={isVertical} />
 
-						<HudRecordButton
-							recording={recording}
-							paused={paused}
-							saving={saving}
-							elapsedSeconds={elapsedSeconds}
-							label={recordLabel}
-							savingLabel={t("recording.saving")}
-							onClick={handleRecordClick}
-						/>
+						{betweenScenes && sceneRun ? (
+							<HudSceneRunControls
+								vertical={isVertical}
+								next={sceneRun.next}
+								nextNumber={sceneRun.nextNumber}
+								count={sceneRun.count}
+								done={sceneRun.done}
+								onAgain={() => {
+									void window.electronAPI.teleprompter.runGoto("done").then(handleRecordClick);
+								}}
+								onDone={() => {
+									void window.electronAPI.teleprompter
+										.endRun()
+										.then(() => window.electronAPI.switchToEditor());
+								}}
+							/>
+						) : null}
+
+						{betweenScenes && sceneRun?.next === null ? null : (
+							<HudRecordButton
+								recording={recording}
+								paused={paused}
+								saving={saving}
+								elapsedSeconds={cameraTake.active ? cameraTake.elapsedSeconds : elapsedSeconds}
+								label={recordLabel}
+								savingLabel={t("recording.saving")}
+								onClick={handleRecordClick}
+							/>
+						)}
 
 						{!recording && (
 							<HudStudioButton
@@ -1386,7 +1489,17 @@ export function LaunchWindow() {
 							/>
 						)}
 
-						{recording && (
+						{recording && script ? (
+							<HudSegmentControls
+								vertical={isVertical}
+								stageIndex={script.stageIndex}
+								stageCount={script.stageCount}
+								onRetry={() => void window.electronAPI.teleprompter.perform("retakeStage")}
+								onNext={() => void window.electronAPI.teleprompter.perform("nextStage")}
+							/>
+						) : null}
+
+						{screenRecording && (
 							<HudRecordingControls
 								vertical={isVertical}
 								paused={paused}

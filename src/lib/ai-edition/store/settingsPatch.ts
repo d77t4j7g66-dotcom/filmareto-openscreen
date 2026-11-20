@@ -4,7 +4,14 @@
 import { type MeasureText, refitFrameAnnotations } from "../annotations/placement";
 import { resolveAspectRatioValue } from "../document/outputFormat";
 import type { AxcutDocument } from "../schema";
-import { type EditorSettingsPatch, getEditorSettings, patchEditorSettings } from "./editorSettings";
+import {
+	clipUnderPlayhead,
+	type EditorSettingsPatch,
+	getEditorSettings,
+	patchClipLook,
+	patchEditorSettings,
+	splitLookPatch,
+} from "./editorSettings";
 
 /**
  * `patchEditorSettings`, plus what a new frame shape does to the annotations placed on the frame:
@@ -33,4 +40,24 @@ export function applySettingsPatch(
 		measure,
 	);
 	return annotations === next.annotations ? next : { ...next, annotations };
+}
+
+/**
+ * A control moved with the playhead at `timeSec`: what belongs to a segment goes to the clip the
+ * program is showing, the rest to the project. A project of one clip keeps it all on the project,
+ * so splitting that clip later gives both halves the same look.
+ */
+export function applySegmentSettingsPatch(
+	doc: AxcutDocument,
+	patch: EditorSettingsPatch,
+	timeSec: number,
+	measure?: MeasureText,
+): AxcutDocument {
+	const clip = clipUnderPlayhead(doc, timeSec);
+	if (!clip || (doc.timeline.clips.length < 2 && !clip.look)) {
+		return applySettingsPatch(doc, patch, measure);
+	}
+	const { look, rest } = splitLookPatch(patch);
+	const next = Object.keys(rest).length > 0 ? applySettingsPatch(doc, rest, measure) : doc;
+	return Object.keys(look).length > 0 ? patchClipLook(next, clip.id, look) : next;
 }

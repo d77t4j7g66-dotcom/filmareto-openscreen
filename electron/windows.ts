@@ -607,7 +607,7 @@ export function createEditorWindow(query: Record<string, string> = {}): BrowserW
 		resizable: true,
 		alwaysOnTop: false,
 		skipTaskbar: false,
-		title: "OpenScreen",
+		title: "Filmareto",
 		backgroundColor: "#09090b",
 		show: false, // shown via ready-to-show to avoid white flash on first load
 		webPreferences: {
@@ -832,7 +832,7 @@ export function createPermissionsWindow(): BrowserWindow {
 		minimizable: false,
 		maximizable: false,
 		fullscreenable: false,
-		title: "OpenScreen",
+		title: "Filmareto",
 		backgroundColor: "#0b0c0f",
 		show: false,
 		webPreferences: {
@@ -860,19 +860,17 @@ export function createPermissionsWindow(): BrowserWindow {
 	return win;
 }
 
-// Frameless Notes Window for taking notes during a recording.
+// The teleprompter's settings. It keeps the `notes` name of the window it replaced, and hides
+// itself during a take (see electron/teleprompter).
 export function createNotesWindow(): BrowserWindow {
 	const win = new BrowserWindow({
-		width: 400,
-		height: 540,
-		minWidth: 360,
-		minHeight: 400,
-		maxWidth: 640,
-		maxHeight: 720,
-		title: "OpenScreen - Notes",
+		width: 480,
+		height: 820,
+		minWidth: 400,
+		minHeight: 520,
+		title: "Teleprompter",
 		backgroundColor: "#09090b",
 		resizable: true,
-		alwaysOnTop: true,
 		skipTaskbar: false,
 		show: false,
 		webPreferences: {
@@ -888,8 +886,6 @@ export function createNotesWindow(): BrowserWindow {
 	if (process.platform !== "darwin") {
 		win.setAutoHideMenuBar(true);
 	}
-	keepAlwaysOnTop(win);
-
 	applyContentProtection(win, "Notes");
 	win.once("ready-to-show", () => {
 		applyContentProtection(win, "Notes");

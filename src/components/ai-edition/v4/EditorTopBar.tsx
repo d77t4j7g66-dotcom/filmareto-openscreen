@@ -11,13 +11,11 @@ import {
 	Redo2,
 	RefreshCw,
 	Save,
-	Sparkles,
-	Star,
 	Sun,
 	Undo2,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import logoMark from "@/assets/openscreen-mark.png";
+import logoMark from "@/assets/filmareto-mark.png";
 import { Tooltip } from "@/components/ui/tooltip";
 import { useI18n, useScopedT } from "@/contexts/I18nContext";
 import { useShortcuts } from "@/contexts/ShortcutsContext";
@@ -28,7 +26,7 @@ import { formatFirstFixedBinding } from "@/lib/shortcuts";
 import { StylePresetsMenu } from "../StylePresetsMenu";
 import styles from "./EditorShellV4.module.css";
 
-export type EditorMode = "media" | "edit" | "rec";
+export type EditorMode = "media" | "script" | "rec" | "edit";
 
 export interface TopBarActions {
 	openProject: () => void;
@@ -38,7 +36,6 @@ export interface TopBarActions {
 	openSettings: () => void;
 	renameProject: (title: string) => void;
 	toggleChat: () => void;
-	openProviderSettings: () => void;
 	showAbout: () => void;
 	checkForUpdates: () => void;
 	undo: () => void;
@@ -59,8 +56,9 @@ interface EditorTopBarProps {
 
 const MODES: Array<{ id: EditorMode; labelKey: string }> = [
 	{ id: "media", labelKey: "topbar.modes.media" },
-	{ id: "edit", labelKey: "topbar.modes.edit" },
+	{ id: "script", labelKey: "topbar.modes.script" },
 	{ id: "rec", labelKey: "topbar.modes.rec" },
+	{ id: "edit", labelKey: "topbar.modes.edit" },
 ];
 
 export function EditorTopBar({
@@ -377,13 +375,13 @@ function AppMenu({ actions }: { actions: TopBarActions }) {
 				className={`${styles.brand} ${styles.brandBtn}`}
 				aria-haspopup="menu"
 				aria-expanded={open}
-				aria-label="OpenScreen"
+				aria-label="Filmareto"
 				onClick={() => setOpen((v) => !v)}
 			>
 				{/* Decorative: the wordmark beside it already names the app — and, being the
 				    button's only text, is also its accessible name. */}
 				<img src={logoMark} alt="" draggable={false} />
-				<span className={styles.name}>OpenScreen</span>
+				<span className={styles.name}>Filmareto</span>
 				<ChevronDown size={13} className={styles.brandChevron} aria-hidden />
 			</button>
 			{open ? (
@@ -427,19 +425,6 @@ function AppMenu({ actions }: { actions: TopBarActions }) {
 					>
 						<Keyboard size={15} />
 						{tShortcuts("title")}
-					</button>
-					{/* Settings surfaces together, above the separator. Both rows are labelled with the
-					    title of the dialog they open, so neither can drift from it — and unlike the AI
-					    panel's own entry points, this one is reachable in Media and Rec too, which is
-					    the whole reason the dialog's open state was lifted out of LeftPanel (#420). */}
-					<button
-						type="button"
-						role="menuitem"
-						className={styles.appMenuRow}
-						onClick={run(actions.openProviderSettings)}
-					>
-						<Sparkles size={15} />
-						{tEditor("providerSettings.title")}
 					</button>
 					<button
 						type="button"
@@ -514,20 +499,6 @@ function AppMenu({ actions }: { actions: TopBarActions }) {
 					    export. Unconditional: unlike the update check above, a link to the repo root
 					    is safe on every channel, the Store included. Main opens the URL, so this row
 					    and the export prompt can never point at different pages. */}
-					<button
-						type="button"
-						role="menuitem"
-						className={styles.appMenuRow}
-						data-testid="app-menu-star-on-github"
-						onClick={run(() => {
-							void window.electronAPI
-								?.openRepoPage?.()
-								.catch((err) => console.warn("[star] could not open the repo page:", err));
-						})}
-					>
-						<Star size={15} />
-						{tCommon("actions.starOnGithub")}
-					</button>
 				</div>
 			) : null}
 		</div>

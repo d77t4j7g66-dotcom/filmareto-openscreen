@@ -43,7 +43,7 @@
 		"microphoneDefaulted": "Seçilen mikrofon belirlenemedi. Varsayılan giriş kaydediliyor.",
 		"microphoneUnavailable": "Bu macOS sürümü mikrofonu kaydedemiyor. Mikrofonsuz kaydediliyor.",
 		"restartFailed": "Yeni kayıt başlatılamadı. Önceki kayıt silindi.",
-		"accessibilityAllowAndRetry": "OpenScreen için Erişilebilirlik erişimine izin verin, ardından geri sayımı başlatmak için tekrar kayda basın.",
+		"accessibilityAllowAndRetry": "Filmareto için Erişilebilirlik erişimine izin verin, ardından geri sayımı başlatmak için tekrar kayda basın.",
 		"cursorAccessibilityUnavailable": "Erişilebilirlik erişimi kapalı. Kayıt devam edecek ancak imleç efektleri sınırlı olabilir. Tüm imleç efektlerini kullanmak için Sistem Ayarları'ndan erişimi açın.",
 		"selectSource": "Lütfen kayıt için bir kaynak seçin"
 	},
@@ -104,6 +104,7 @@
 		"editorMode": "Düzenleyici modu",
 		"modes": {
 			"media": "Medya",
+			"script": "Script",
 			"edit": "Düzenle",
 			"rec": "Kayıt"
 		}
@@ -182,7 +183,7 @@
 		"detectedLanguage": "Algılanan dil: {{language}}",
 		"noAudioTrack": "Ses parçası yok",
 		"noAudioTrackHint": "Bu medyada ses parçası yok — metne dökülecek bir şey bulunmuyor.",
-		"mediaUnreadableHint": "Bu medyanın sesi okunamadı. OpenScreen'in bulunduğu klasöre erişebildiğinden emin olun, ardından yeniden oluşturun.",
+		"mediaUnreadableHint": "Bu medyanın sesi okunamadı. Filmareto'in bulunduğu klasöre erişebildiğinden emin olun, ardından yeniden oluşturun.",
 		"noSpeechDetected": "Konuşma algılanmadı"
 	},
 	"exportDialog": {
@@ -212,9 +213,6 @@
 		"exportedGif": "GIF dışa aktarıldı",
 		"exportedVideo": "Video dışa aktarıldı",
 		"showInFolder": "Klasörde göster",
-		"starPrompt": "OpenScreen ücretsizdir ve MIT lisanslıdır. GitHub'da bir yıldız, başkalarının onu bulmasına yardımcı olur.",
-		"starPromptNoThanks": "Hayır, teşekkürler",
-		"rateOnStore": "Microsoft Store'da değerlendir",
 		"exportFailed": "Dışa aktarma başarısız oldu",
 		"failedToWriteFile": "Dosya yazılamadı",
 		"qualityUpscaleWarning": "Upscale",
@@ -301,10 +299,12 @@
 			"feature2": "Altyazı ekler, kameraya yakınlaştırır, başlık üretir",
 			"feature3": "Bir bölümü yeniden yazar, ifadeyi değiştirir veya klipleri isteğe göre yeniden sıralar",
 			"cta": "Sağlayıcı kur",
-			"disclaimer": "Videonuzun transkripsiyonu seçtiğiniz sağlayıcıya gönderilecek. Bir sağlayıcı bağlamadan hiçbir şey paylaşılmaz."
+			"disclaimer": "Videonuzun transkripsiyonu seçtiğiniz sağlayıcıya gönderilecek. Bir sağlayıcı bağlamadan hiçbir şey paylaşılmaz.",
+			"subtitleInstall": "The chat runs on your own Claude plan through Claude Code, which isn't on this Mac yet. Install it, sign in, and come back.",
+			"ctaInstall": "Get Claude Code"
 		},
 		"authorUser": "Siz",
-		"authorAssistant": "OpenScreen",
+		"authorAssistant": "Filmareto",
 		"rewindToMessage": "Bu mesaja geri sar",
 		"rewindTip": "Bu mesaja geri sar. Sonraki değişiklikler geri alınır.",
 		"copyMessage": "Mesajı kopyala",
@@ -326,7 +326,11 @@
 			"subtitle": "Oturum değiştir veya oluştur",
 			"empty": "Henüz konuşma yok.",
 			"msgsCount": "{{count}} mesaj · {{date}}"
-		}
+		},
+		"signInFirst": "Sign in to Claude to start chatting.",
+		"onPlan": "Claude · {{plan}}",
+		"claude": "Claude",
+		"working": "Working: {{tool}}…"
 	},
 	"newProjectDialog": {
 		"title": "Yeni proje",
@@ -426,7 +430,7 @@
 	},
 	"mcpServer": {
 		"title": "MCP sunucusu",
-		"description": "Claude Code veya Codex gibi kendi çalıştırdığınız MCP istemcilerinin, yalnızca düzenleyicide açık olan projede değil, projelerinizin herhangi birinde yapay zekâ düzenleme araçlarını kullanmasına izin verin. Kendi hesaplarıyla oturum açarlar; OpenScreen bunları hiçbir zaman görmez.",
+		"description": "Claude Code veya Codex gibi kendi çalıştırdığınız MCP istemcilerinin, yalnızca düzenleyicide açık olan projede değil, projelerinizin herhangi birinde yapay zekâ düzenleme araçlarını kullanmasına izin verin. Kendi hesaplarıyla oturum açarlar; Filmareto bunları hiçbir zaman görmez.",
 		"enableLabel": "Sunucu",
 		"enable": "MCP sunucusunu etkinleştir",
 		"editsLabel": "MCP düzenlemeleri",
@@ -453,5 +457,62 @@
 	"cpuCompositor": {
 		"notice": "Uyumlu GPU yok — işleme CPU üzerinde yapılıyor, bu yüzden oynatma daha yavaş.",
 		"exportWarning": "Uyumlu GPU yok: bu dışa aktarma CPU üzerinde çalışır ve normalden çok daha uzun sürer."
+	},
+	"studio": {
+		"wholeProject": "whole project",
+		"changesOnly": "Changes only",
+		"takeAdded": "The take was added to the end of the project",
+		"makingGraphic": "Rendering the graphic…",
+		"rendering": "Rendering…",
+		"motion": "Motion",
+		"motionSmooth": "Smooth",
+		"motionHold": "Hold",
+		"motionIn": "Slow in",
+		"motionOut": "Slow out",
+		"motionEmphasis": "Punch",
+		"scene": "Scene",
+		"takes": "Takes",
+		"take": "Take",
+		"presetSaved": "“{{name}}” was added to your presets",
+		"applyToAll": "Apply to all segments",
+		"myPresets": "My presets",
+		"everyProject": "in every project",
+		"deleteNamed": "Delete {{name}}",
+		"myLook": "My look {{number}}",
+		"save": "Save",
+		"name": "Name",
+		"graphics": "Graphics",
+		"graphicsFolder": "Folder for your own HyperFrames",
+		"formatAndLayout": "Format and layout",
+		"cameraOnly": "Camera only",
+		"screen": "Screen",
+		"screenTip": "Off: records only the camera and the microphone",
+		"cameraQuality": "Camera quality",
+		"noScript": "No script: one recording, no scenes.",
+		"writeScript": "Write a script",
+		"newTake": "New take in this project",
+		"toScript": "Back to Script",
+		"continueToEdit": "Continue to Edit",
+		"fileNotAdded": "The file could not be added to the project",
+		"scenes": "Scenes",
+		"recordAll": "Record all in order",
+		"noText": "No text: speak freely.",
+		"archive": "Archive ({{count}})",
+		"fromFile": "or from a file",
+		"sceneNumber": "Scene {{number}}",
+		"scriptPlaceholder": "Write what you will say, or paste the whole script: each line with a single / starts a new scene.",
+		"newVideo": "New video",
+		"scriptTitle": "Script",
+		"sceneName": "Scene name",
+		"newScene": "New scene",
+		"continueToRecord": "Continue to Record",
+		"adaptingGraphics": "Adapting the graphics…",
+		"layoutCamera": "Camera",
+		"layoutCorner": "Corner",
+		"layoutStack": "Stacked",
+		"layoutSide": "Side by side",
+		"layoutCutout": "Cutout",
+		"layoutFree": "Free",
+		"layoutScreen": "Screen"
 	}
 }

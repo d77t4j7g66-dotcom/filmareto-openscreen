@@ -9,7 +9,7 @@ import { I18nProvider } from "@/contexts/I18nContext";
 import type { AxcutDocument } from "@/lib/ai-edition/schema";
 import { createEmptyDocument } from "@/lib/ai-edition/schema";
 import { useProjectStore } from "@/lib/ai-edition/store/projectStore";
-import { VideoEffectsPane } from "./RightPanes";
+import { FormatField, VideoEffectsPane } from "./RightPanes";
 
 vi.mock("sonner", () => ({ toast: { error: vi.fn(), success: vi.fn(), info: vi.fn() } }));
 
@@ -51,6 +51,7 @@ function mount(doc: AxcutDocument) {
 	useProjectStore.setState({ document: doc });
 	render(
 		<I18nProvider>
+			<FormatField />
 			<VideoEffectsPane />
 		</I18nProvider>,
 	);
@@ -77,7 +78,7 @@ describe("format fill", () => {
 
 	it("switches a 9:16 project between the whole recording and a window on the cursor", async () => {
 		mount(hdTake({ aspectRatio: "9:16" }));
-		const follow = screen.getByRole("button", { name: "Follow cursor" });
+		const follow = screen.getByRole("button", { name: "Fill" });
 		expect(screen.getByRole("button", { name: "Whole" })).toHaveAttribute("aria-pressed", "true");
 		fireEvent.click(follow);
 		await waitFor(() => expect(stored()).toBe(true));
@@ -106,6 +107,6 @@ describe("format fill", () => {
 
 	it("is not offered under a device frame", () => {
 		mount(hdTake({ aspectRatio: "9:16", frame: "laptop", formatFollowCursor: true }));
-		expect(screen.queryByRole("button", { name: "Follow cursor" })).toBeNull();
+		expect(screen.queryByRole("button", { name: "Fill" })).toBeNull();
 	});
 });

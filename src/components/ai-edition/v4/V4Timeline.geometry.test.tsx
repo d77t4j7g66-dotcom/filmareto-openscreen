@@ -24,6 +24,11 @@ vi.mock("@/contexts/I18nContext", () => ({
 vi.mock("sonner", () => ({ toast: { error: vi.fn(), info: vi.fn(), success: vi.fn() } }));
 // The audio lane's pill renders a ClipWaveform; no decode in this geometry suite.
 vi.mock("@/hooks/useAudioPeaks", () => ({ useAudioPeaks: () => null }));
+// The toolbar under test is a screen take's: the pointer tools are offered.
+vi.mock("../recordedCursorTypes", async (original) => ({
+	...(await original<typeof import("../recordedCursorTypes")>()),
+	useHasRecordedCursor: () => true,
+}));
 
 // The duration gate reads its timecode's width off a canvas context. jsdom has
 // no canvas, so every test here runs against this stub: 6px a character, the
@@ -519,7 +524,7 @@ describe("V4Timeline create-from-toolbar", () => {
 		expect(tl.clearTimeline).toHaveBeenCalledTimes(1);
 	});
 
-	it("puts Clear timeline last, behind a divider, after the Add Full Camera button", () => {
+	it("puts Clear timeline last, behind a divider", () => {
 		renderTimeline(undefined, undefined, [CAMERA_ASSET]);
 		const toolbar = toolbarOf();
 		const buttons = Array.from(toolbar.querySelectorAll("button"));
@@ -528,9 +533,6 @@ describe("V4Timeline create-from-toolbar", () => {
 
 		const divider = clear.previousElementSibling;
 		expect(divider?.className).toContain("tlToolSep");
-		expect(divider?.previousElementSibling).toBe(
-			screen.getByLabelText("buttons.addCameraFullscreen"),
-		);
 		expect(dividersIn(toolbar)).toHaveLength(2);
 	});
 
@@ -544,30 +546,9 @@ describe("V4Timeline create-from-toolbar", () => {
 		expect(screen.queryByLabelText("buttons.addCameraFullscreen")).not.toBeInTheDocument();
 	});
 
-	it("shows Add Full Camera as soon as a clip's asset carries one", () => {
+	it("leaves showing the camera to the layout menu, once a clip has one", () => {
 		renderTimeline(undefined, undefined, [CAMERA_ASSET]);
-		expect(screen.getByLabelText("buttons.addCameraFullscreen")).toBeEnabled();
-	});
-
-	// The disabled button is only half the promise: an empty lane advertises the shortcut
-	// that fills it, so on a camera-less project it was still inviting a `C` press that
-	// `addCameraFullscreen` now refuses. It borrows the Layout pane's "No Webcam" wording
-	// instead, so the two surfaces agree about the same project.
-	it("does not advertise the C shortcut on a lane that cannot be filled", () => {
-		renderTimeline();
-		expect(screen.getByText("layout.noWebcam")).toBeInTheDocument();
-		expect(screen.queryByText("hints.pressCameraFullscreen")).not.toBeInTheDocument();
-	});
-
-	it("advertises it again once a camera is on the timeline", () => {
-		renderTimeline(undefined, undefined, [
-			{
-				...NO_CAMERA_ASSET,
-				cameraTrack: { sourcePath: "/tmp/cam.webm", startMs: 0, offsetMs: 0, visible: true },
-			},
-		]);
-		expect(screen.getByText("hints.pressCameraFullscreen")).toBeInTheDocument();
-		expect(screen.queryByText("layout.noWebcam")).not.toBeInTheDocument();
+		expect(screen.queryByLabelText("buttons.addCameraFullscreen")).not.toBeInTheDocument();
 	});
 });
 
@@ -941,7 +922,6 @@ describe("V4Timeline empty-lane hints", () => {
 		expect(screen.getByText("Press Z to add zoom")).toBeInTheDocument();
 		expect(screen.getByText("Press T to add trim")).toBeInTheDocument();
 		expect(screen.getByText("Press S to add speed")).toBeInTheDocument();
-		expect(screen.getByText("Press C to add a Full Camera segment")).toBeInTheDocument();
 		expect(screen.getByText("Press M to add audio, V to record a voiceover")).toBeInTheDocument();
 	});
 
@@ -970,7 +950,6 @@ describe("V4Timeline empty-lane hints", () => {
 		expect(screen.getByText("Press Ctrl + Shift + T to add trim")).toBeInTheDocument();
 		expect(screen.getByText("Press N to add annotation")).toBeInTheDocument();
 		expect(screen.getByText("Press J to add speed")).toBeInTheDocument();
-		expect(screen.getByText("Press K to add a Full Camera segment")).toBeInTheDocument();
 		expect(
 			screen.getByText("Press U to add audio, Alt + R to record a voiceover"),
 		).toBeInTheDocument();
@@ -1031,7 +1010,6 @@ describe("V4Timeline toolbar tooltips", () => {
 			"buttons.addTrim",
 			"buttons.addSpeed",
 			"buttons.addAnnotation",
-			"buttons.addCameraFullscreen",
 			// Its menu also records a voiceover, but the key, like the lane's "Press M", adds audio.
 			"toolbar.addAudioTooltip",
 		]) {
@@ -1044,7 +1022,6 @@ describe("V4Timeline toolbar tooltips", () => {
 			"buttons.addTrim": "T",
 			"buttons.addSpeed": "S",
 			"buttons.addAnnotation": "A",
-			"buttons.addCameraFullscreen": "C",
 			"toolbar.addAudioTooltip": "M",
 		});
 	});

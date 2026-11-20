@@ -477,6 +477,15 @@ export interface AiEditionCaptionTranslateResult {
 	error?: string;
 }
 
+/** What Claude read in the captions: see `electron/ai-edition/caption-reader.ts`. */
+export interface AiEditionCaptionReadResult {
+	success: boolean;
+	keys: number[];
+	emoji: Record<number, string>;
+	fixes: Array<{ at: number; text: string }>;
+	error?: string;
+}
+
 // ---- Style presets domain -------------------------------------------------
 // One `<name>.openscreenpreset` file per preset in Documents/OpenScreen Presets. The
 // shape and its validation live in src/lib/ai-edition/stylePresets.ts, shared with main.
@@ -815,6 +824,12 @@ export type NativeBridgeRequest =
 			domain: "aiEdition";
 			action: "chat.compactNow";
 			payload: { projectId: string; sessionId: string };
+			requestId?: string;
+	  }
+	| {
+			domain: "aiEdition";
+			action: "captions.read";
+			payload: { words: Array<{ at: number; text: string }> };
 			requestId?: string;
 	  }
 	| {

@@ -35,10 +35,12 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { TOOLTIP_GAP_PX, Tooltip } from "@/components/ui/tooltip";
 import { parseCustomPlaybackSpeedInput } from "@/components/video-editor/customPlaybackSpeed";
 import { toFileUrl } from "@/components/video-editor/projectPersistence";
+import type { ZoomMotion } from "@/components/video-editor/types";
 import {
 	DEFAULT_PIP_DATA,
 	effectiveZoomScale,
 	FIXED_ROTATION_3D_PRESETS,
+	type GraphicData,
 	MAX_PLAYBACK_SPEED,
 	MAX_ZOOM_SCALE,
 	MIN_ZOOM_SCALE,
@@ -61,7 +63,9 @@ import {
 	type AnnotationTextAnimation,
 	TEXT_ANIMATION_VALUES,
 } from "@/lib/ai-edition/annotations/textAnimation";
+import { TITLE_STYLE_IDS, titleStylePatch } from "@/lib/ai-edition/captions";
 import { referenceClipDims, resolveAspectRatioValue } from "@/lib/ai-edition/document/outputFormat";
+import { clipLabel } from "@/lib/ai-edition/document/script";
 import type {
 	AxcutAnnotationRegion,
 	AxcutClip,
@@ -70,13 +74,18 @@ import type {
 	AxcutShaderEffectRange,
 } from "@/lib/ai-edition/schema";
 import { resolveShaderEffectValue } from "@/lib/ai-edition/shaderEffects";
+import { clipUnderPlayhead } from "@/lib/ai-edition/store/editorSettings";
 import { useProjectStore } from "@/lib/ai-edition/store/projectStore";
 import { rafCoalesce } from "@/lib/ai-edition/store/rafCoalesce";
 import { useEditorSettings } from "@/lib/ai-edition/store/useEditorSettings";
 import type { ShaderEffectPatch, useTimeline } from "@/lib/ai-edition/store/useTimeline";
+import { hasAnyClipWithCamera } from "@/lib/ai-edition/timeline/camera";
 import { formatSeconds } from "@/lib/ai-edition/timeline/format";
+import { sceneForFormat, sceneOf, scenesForFormat } from "@/lib/ai-edition/timeline/scenes";
 import { coalescedTrimGroups } from "@/lib/ai-edition/timeline/trim-mapping";
+import { useSceneLabels } from "@/lib/ai-edition/timeline/useSceneLabels";
 import { zoomLevelFor } from "@/lib/ai-edition/timeline/zoom-scale";
+import { getAssetPath } from "@/lib/assetPath";
 import { clampToBound } from "@/lib/projectDefaults";
 import { checkShaderEffectCode } from "@/native/compositorViewClient";
 import { annotationFootageRect, zoomScaleLimit } from "@/native/sceneDescription";
@@ -158,7 +167,14 @@ export function FloatingInspector({
 	// the cursor settings to act on, so that facet is not offered: never shown while the answer is
 	// unknown, and a choice of it that lost its footing falls back to the first facet.
 	const hasCursor = useHasRecordedCursor() === true;
-	const facets = hasCursor ? FACETS : FACETS.filter(({ id }) => id !== "cursor");
+	// The same for the camera pane: it arranges a camera beside the screen, and a take of the camera
+	// alone has none to arrange.
+	const hasCamera = useProjectStore((s) =>
+		s.document ? hasAnyClipWithCamera(s.document.assets, s.document.timeline.clips) : true,
+	);
+	const facets = FACETS.filter(
+		({ id }) => (id !== "cursor" || hasCursor) && (id !== "layout" || hasCamera),
+	);
 	// Literal keys, one call each, so `npm run i18n:check` resolves them (a key held in FACETS
 	// would not be checked).
 	const railTips: Record<Facet, string> = {
@@ -312,6 +328,44 @@ export function FloatingInspector({
 					</PopoverContent>
 				</Popover>
 			</div>
+		</div>
+	);
+}
+
+/** The words of a motion graphic. A change renders it again, so it is sent when the field is left. */
+function GraphicFields({
+	graphic,
+	tl,
+}: {
+	graphic: GraphicData;
+	tl: ReturnType<typeof useTimeline>;
+}) {
+	const te = useScopedT("editor");
+	const [rendering, setRendering] = useState(false);
+	return (
+		<div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+			{graphic.fields.map((field) => (
+				<label key={field.id} style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+					<span style={{ fontSize: 13, color: "var(--fg-2)", fontWeight: 500 }}>{field.label}</span>
+					<textarea
+						// A new render brings a new value in; the box starts over from it.
+						key={field.value}
+						defaultValue={field.value}
+						rows={2}
+						className={shell.control}
+						onBlur={async (event) => {
+							const value = event.target.value;
+							if (value === field.value) return;
+							setRendering(true);
+							await tl.updateGraphicField(graphic, field.id, value);
+							setRendering(false);
+						}}
+					/>
+				</label>
+			))}
+			{rendering ? (
+				<span style={{ fontSize: 12, color: "var(--fg-2)" }}>{te("studio.makingGraphic")}</span>
+			) : null}
 		</div>
 	);
 }
@@ -563,7 +617,7 @@ export function ZoomLevelControl({
 						type="text"
 						inputMode="decimal"
 						aria-label={ts("zoom.customScale")}
-						placeholder={hasSelectedPreset ? "" : `${requested}×`}
+						placeholder={hasSelectedPreset ? ts("zoom.customShort") : `${requested}×`}
 						value={draft}
 						onChange={(e) => setDraft(e.target.value)}
 						onBlur={commitDraft}
@@ -573,7 +627,7 @@ export function ZoomLevelControl({
 							if (e.key === "Enter") e.currentTarget.blur();
 						}}
 						className={shell.control}
-						style={{ width: 56, textAlign: "right" }}
+						style={{ width: 68, textAlign: "right" }}
 					/>
 				</div>,
 			)}
@@ -751,6 +805,7 @@ export function AnnotationSizeField({
 }
 
 function SelectionPane({ tl, onClose }: { tl: TimelineApi; onClose: () => void }) {
+	const sceneLabels = useSceneLabels();
 	const ts = useScopedT("settings");
 	const tt = useScopedT("timeline");
 	const tc = useScopedT("common");
@@ -759,6 +814,8 @@ function SelectionPane({ tl, onClose }: { tl: TimelineApi; onClose: () => void }
 	// toggle that writes it lives in the timeline toolbar, not on this component's path.
 	const { settings } = useEditorSettings();
 	const autoFocusAll = settings.autoFocusAll;
+	// Focus modes and the cursor's visibility act on recorded pointer data.
+	const hasCursor = useHasRecordedCursor() === true;
 	const focusHintId = useId();
 	const doc = useProjectStore((s) => s.document);
 	const zoomId = tl.selection?.kind === "zoom" ? tl.selection.id : null;
@@ -876,6 +933,20 @@ function SelectionPane({ tl, onClose }: { tl: TimelineApi; onClose: () => void }
 				{paneHeader(<ZoomIn size={16} />, tt("labels.zoom"), onClose, tc("actions.close"))}
 				<div style={bodyStyle}>
 					<ZoomLevelControl key={region.id} region={region} tl={tl} maxScale={zoomMaxScale} />
+					<ChoiceRow<ZoomMotion | "usual">
+						label={te("studio.motion")}
+						options={[
+							{ value: "usual", label: te("studio.motionSmooth") },
+							{ value: "hold", label: te("studio.motionHold") },
+							{ value: "in", label: te("studio.motionIn") },
+							{ value: "out", label: te("studio.motionOut") },
+							{ value: "emphasis", label: te("studio.motionEmphasis") },
+						]}
+						value={region.motion ?? "usual"}
+						onChange={(motion) =>
+							void tl.updateZoomMotion(region.id, motion === "usual" ? undefined : motion)
+						}
+					/>
 					<div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
 						{paneStack(
 							ts("zoom.camera.title"),
@@ -925,38 +996,42 @@ function SelectionPane({ tl, onClose }: { tl: TimelineApi; onClose: () => void }
 							cameraLabel(region.rotationPreset ?? "off"),
 						)}
 					</div>
-					{paneStack(
-						ts("zoom.focusMode.title"),
-						// While the global toggle is on it OVERRIDES every region, so the control shows
-						// the effective mode ("auto") and goes read-only rather than lying about a
-						// per-region value that currently has no effect. The region's own `focusMode` is
-						// never written by the toggle — that is what makes each zoom snap back to its
-						// previous value the moment the toggle goes off.
-						<ChoiceRow<"manual" | "auto">
-							label={ts("zoom.focusMode.title")}
-							options={[
-								{ value: "manual", label: ts("zoom.focusMode.manual") },
-								{ value: "auto", label: ts("zoom.focusMode.auto") },
-							]}
-							value={autoFocusAll ? "auto" : (region.focusMode ?? "manual")}
-							disabled={autoFocusAll}
-							describedBy={autoFocusAll ? focusHintId : undefined}
-							onChange={(mode) => void tl.updateZoomFocusMode(region.id, mode)}
-						/>,
-					)}
-					{paneStack(
-						ts("zoom.cursor.title"),
-						<ChoiceRow<"show" | "hide">
-							label={ts("zoom.cursor.title")}
-							options={[
-								{ value: "show", label: ts("zoom.cursor.show") },
-								{ value: "hide", label: ts("zoom.cursor.hide") },
-							]}
-							value={region.hideCursor ? "hide" : "show"}
-							onChange={(v) => void tl.updateZoomHideCursor(region.id, v === "hide")}
-						/>,
-					)}
-					{autoFocusAll || region.focusMode === "auto" ? (
+					{hasCursor
+						? paneStack(
+								ts("zoom.focusMode.title"),
+								// While the global toggle is on it OVERRIDES every region, so the control shows
+								// the effective mode ("auto") and goes read-only rather than lying about a
+								// per-region value that currently has no effect. The region's own `focusMode` is
+								// never written by the toggle — that is what makes each zoom snap back to its
+								// previous value the moment the toggle goes off.
+								<ChoiceRow<"manual" | "auto">
+									label={ts("zoom.focusMode.title")}
+									options={[
+										{ value: "manual", label: ts("zoom.focusMode.manual") },
+										{ value: "auto", label: ts("zoom.focusMode.auto") },
+									]}
+									value={autoFocusAll ? "auto" : (region.focusMode ?? "manual")}
+									disabled={autoFocusAll}
+									describedBy={autoFocusAll ? focusHintId : undefined}
+									onChange={(mode) => void tl.updateZoomFocusMode(region.id, mode)}
+								/>,
+							)
+						: null}
+					{hasCursor
+						? paneStack(
+								ts("zoom.cursor.title"),
+								<ChoiceRow<"show" | "hide">
+									label={ts("zoom.cursor.title")}
+									options={[
+										{ value: "show", label: ts("zoom.cursor.show") },
+										{ value: "hide", label: ts("zoom.cursor.hide") },
+									]}
+									value={region.hideCursor ? "hide" : "show"}
+									onChange={(v) => void tl.updateZoomHideCursor(region.id, v === "hide")}
+								/>,
+							)
+						: null}
+					{hasCursor && (autoFocusAll || region.focusMode === "auto") ? (
 						// Auto resamples the focus from cursor telemetry every frame, so there is no fixed
 						// point to reset and no gimbal on the canvas (ZoomFocusOverlay bows out) — the
 						// reset button would be a no-op. When the global toggle is what forced auto, say
@@ -1007,6 +1082,21 @@ function SelectionPane({ tl, onClose }: { tl: TimelineApi; onClose: () => void }
 	if (selection.kind === "annotation") {
 		const region = tl.annotationRegions.find((a) => a.id === selection.id);
 		if (!region) return null;
+		if (region.graphicData) {
+			return (
+				<div style={{ display: "flex", flexDirection: "column", minHeight: 0 }}>
+					{paneHeader(
+						<FileText size={16} />,
+						region.graphicData.name,
+						onClose,
+						tc("actions.close"),
+					)}
+					<div style={bodyStyle}>
+						<GraphicFields graphic={region.graphicData} tl={tl} />
+					</div>
+				</div>
+			);
+		}
 		const plate = textPlateOf(region.style);
 		const pipSource = pipSourceOf(region);
 		return (
@@ -1423,6 +1513,55 @@ function SelectionPane({ tl, onClose }: { tl: TimelineApi; onClose: () => void }
 							/>
 						</>
 					) : null}
+					{region.type === "text"
+						? paneStack(
+								ts("captions.style"),
+								<div
+									role="group"
+									aria-label={ts("captions.style")}
+									style={{
+										display: "grid",
+										gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+										gap: 6,
+										maxHeight: 220,
+										overflowY: "auto",
+									}}
+								>
+									{TITLE_STYLE_IDS.map((id) => (
+										<button
+											key={id}
+											type="button"
+											aria-label={ts(`captions.styles.${id}`)}
+											title={ts(`captions.styles.${id}`)}
+											onClick={() => {
+												tl.updateAnnotationLive(
+													region.id,
+													textEdit(region, {
+														style: { ...region.style, ...titleStylePatch(id) },
+													}),
+												);
+												commitAnnotation();
+											}}
+											style={{ padding: 0, background: "none", border: "none", cursor: "pointer" }}
+										>
+											<img
+												src={getAssetPath(`caption-styles/${id}.webp`)}
+												alt=""
+												loading="lazy"
+												style={{
+													display: "block",
+													width: "100%",
+													aspectRatio: "16 / 9",
+													objectFit: "cover",
+													borderRadius: 6,
+													outline: "1px solid var(--border)",
+												}}
+											/>
+										</button>
+									))}
+								</div>,
+							)
+						: null}
 					{region.type === "text" ? (
 						// Le nombre vaut « pixels à 1080 » (cf. annotationScale.ts) : aperçu et rendu le
 						// multiplient tous deux par la hauteur du cadre, donc il veut dire la même chose
@@ -1536,15 +1675,34 @@ function SelectionPane({ tl, onClose }: { tl: TimelineApi; onClose: () => void }
 	if (selection.kind === "cameraFullscreen") {
 		const region = tl.cameraFullscreenRegions.find((c) => c.id === selection.id);
 		if (!region) return null;
+		const portrait = frameAspect < 1;
+		const shown = sceneForFormat(sceneOf(region), portrait);
 		return (
 			<div style={{ display: "flex", flexDirection: "column", minHeight: 0 }}>
-				{paneHeader(
-					<Maximize2 size={16} />,
-					tt("labels.cameraFullscreen"),
-					onClose,
-					tc("actions.close"),
-				)}
+				{paneHeader(<Maximize2 size={16} />, te("studio.scene"), onClose, tc("actions.close"))}
 				<div style={bodyStyle}>
+					<div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+						{scenesForFormat(portrait).map((choice) => (
+							<button
+								type="button"
+								key={choice}
+								aria-pressed={shown === choice}
+								onClick={() => void tl.updateCameraFullscreenScene(region.id, choice)}
+								style={{
+									padding: "4px 8px",
+									borderRadius: 6,
+									fontSize: 12,
+									fontWeight: 500,
+									cursor: "pointer",
+									border: "none",
+									background: shown === choice ? "#34b27b" : "rgba(127,127,127,0.14)",
+									color: shown === choice ? "#fff" : "inherit",
+								}}
+							>
+								{sceneLabels[choice]}
+							</button>
+						))}
+					</div>
 					{paneRow(
 						te("inspector.cameraFullscreenAnimateIn"),
 						<Toggle
@@ -1853,14 +2011,35 @@ function FacetBody({
 		</Tooltip>
 	);
 
-	if (facet === "layout") return wrap(collapse, <LayoutPane />);
+	if (facet === "layout") return wrap(collapse, <SegmentScoped body={<LayoutPane />} />);
 	if (facet === "audio") return wrap(collapse, <AudioPane />);
 	if (facet === "cursor") return wrap(collapse, <CursorPane />);
 	if (facet === "transcript") return wrap(collapse, <TranscriptPane {...transcriptProps} />);
 	// `effects` is the fallthrough rather than a branch of its own: the union has no
 	// tail left now that captions is a popover, and a `never` check here would only
 	// restate what the type already says.
-	return wrap(collapse, <VideoEffectsPane />);
+	return wrap(collapse, <SegmentScoped body={<VideoEffectsPane />} />);
+}
+
+/** A pane whose controls act on one segment, saying which, once there is more than one. */
+function SegmentScoped({ body }: { body: React.ReactNode }) {
+	const te = useScopedT("editor");
+	const named = useProjectStore((s) => {
+		const clips = s.document?.timeline.clips ?? [];
+		if (clips.length < 2) return null;
+		const clip = clipUnderPlayhead(s.document, s.currentTimeSec);
+		return clip ? clipLabel(s.document, clip, clips.indexOf(clip)) : null;
+	});
+	return (
+		<>
+			{named ? (
+				<div className={styles.segmentScope}>
+					{te("studio.changesOnly")} <b>{named}</b>
+				</div>
+			) : null}
+			{body}
+		</>
+	);
 }
 
 function wrap(collapse: React.ReactNode, body: React.ReactNode) {

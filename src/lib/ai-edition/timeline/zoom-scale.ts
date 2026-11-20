@@ -82,14 +82,21 @@ export const MAX_SOURCE_MAGNIFICATION = 2;
 export const MAGNIFICATION_REFERENCE_PX = 1080;
 
 /**
+ * Every clip can be zoomed this far, however big it already is at rest. A 1080p camera filling a
+ * vertical frame is already at 1.78×, and softness is the editor's call: a limit below this left
+ * it no zoom at all, the level row empty and every zoom on the timeline doing nothing.
+ */
+export const ALWAYS_AVAILABLE_ZOOM = 2.2;
+
+/**
  * The deepest zoom that keeps a clip at or under `MAX_SOURCE_MAGNIFICATION`, given its
- * magnification at rest (screen box px ÷ source px, crop included). Never below 1: a clip
- * already past the limit at rest cannot zoom at all, rather than zoom out.
+ * magnification at rest (screen box px ÷ source px, crop included), or `ALWAYS_AVAILABLE_ZOOM`
+ * where that is more.
  */
 export function maxZoomScaleFor(restMagnification: number): number {
 	if (!(restMagnification > 0)) return MAX_ZOOM_SCALE;
 	const scale = Math.floor((MAX_SOURCE_MAGNIFICATION / restMagnification) * 100) / 100;
-	return Math.max(MIN_ZOOM_SCALE, Math.min(MAX_ZOOM_SCALE, scale));
+	return Math.max(ALWAYS_AVAILABLE_ZOOM, Math.min(MAX_ZOOM_SCALE, scale));
 }
 
 /**

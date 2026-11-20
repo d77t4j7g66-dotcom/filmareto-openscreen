@@ -13,6 +13,7 @@ import { getZoomScale, type ZoomFocus } from "@/components/video-editor/types";
 import type { AxcutZoomRegion } from "@/lib/ai-edition/schema";
 import { getFocusBoundsForScale } from "@/lib/zoomMath/focusUtils";
 import { clamp01 } from "@/utils/math";
+import { useHasRecordedCursor } from "./recordedCursorTypes";
 import styles from "./ZoomFocusOverlay.module.css";
 
 interface ZoomFocusOverlayProps {
@@ -36,6 +37,9 @@ export function ZoomFocusOverlay({
 	onFocusChange,
 	onFocusCommit,
 }: ZoomFocusOverlayProps) {
+	// With no recorded pointer there is nothing to follow, whatever the region was set to.
+	const hasCursor = useHasRecordedCursor() === true;
+	const followsCursor = region.focusMode === "auto" && hasCursor;
 	const overlayRef = useRef<HTMLDivElement | null>(null);
 	const draggingRef = useRef(false);
 	const lastPointRef = useRef<{ x: number; y: number } | null>(null);
@@ -79,13 +83,13 @@ export function ZoomFocusOverlay({
 
 	const handlePointerDown = useCallback(
 		(event: ReactPointerEvent<HTMLDivElement>) => {
-			if (isPlaying || region.focusMode === "auto") return;
+			if (isPlaying || followsCursor) return;
 			event.preventDefault();
 			draggingRef.current = true;
 			event.currentTarget.setPointerCapture(event.pointerId);
 			updateFromClientPoint(event.clientX, event.clientY);
 		},
-		[isPlaying, region.focusMode, updateFromClientPoint],
+		[isPlaying, followsCursor, updateFromClientPoint],
 	);
 
 	const handlePointerMove = useCallback(
@@ -113,7 +117,7 @@ export function ZoomFocusOverlay({
 	);
 
 	// Auto-follow (cursor-driven) regions have no user-placed focus point.
-	if (region.focusMode === "auto") return null;
+	if (followsCursor) return null;
 
 	const zoomScale = getZoomScale(region);
 	const widthPercent = Math.min(100, (1 / zoomScale) * 100);

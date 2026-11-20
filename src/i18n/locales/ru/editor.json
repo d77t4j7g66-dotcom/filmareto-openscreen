@@ -51,7 +51,7 @@
 		"microphoneUnavailable": "Эта версия macOS не может записывать микрофон. Запись идёт без него.",
 		"restartFailed": "Не удалось начать новую запись. Предыдущая удалена.",
 		"permissionDenied": "Разрешение на запись запрещено. Пожалуйста, разрешите запись экрана.",
-		"accessibilityAllowAndRetry": "Разрешите OpenScreen доступ к Универсальному доступу, затем снова нажмите запись, чтобы начать обратный отсчет.",
+		"accessibilityAllowAndRetry": "Разрешите Filmareto доступ к Универсальному доступу, затем снова нажмите запись, чтобы начать обратный отсчет.",
 		"cursorAccessibilityUnavailable": "Универсальный доступ выключен. Запись продолжится, но эффекты курсора могут быть ограничены. Включите его в Системных настройках, чтобы использовать все эффекты курсора.",
 		"selectSource": "Пожалуйста, выберите источник для записи"
 	},
@@ -104,6 +104,7 @@
 		"editorMode": "Режим редактора",
 		"modes": {
 			"media": "Медиа",
+			"script": "Script",
 			"edit": "Редактирование",
 			"rec": "Запись"
 		}
@@ -182,7 +183,7 @@
 		"detectedLanguage": "Обнаруженный язык: {{language}}",
 		"noAudioTrack": "Нет аудиодорожки",
 		"noAudioTrackHint": "В этом медиафайле нет аудиодорожки — расшифровывать нечего.",
-		"mediaUnreadableHint": "Не удалось прочитать звук этого медиафайла. Убедитесь, что у OpenScreen есть доступ к папке, в которой он находится, и создайте расшифровку заново.",
+		"mediaUnreadableHint": "Не удалось прочитать звук этого медиафайла. Убедитесь, что у Filmareto есть доступ к папке, в которой он находится, и создайте расшифровку заново.",
 		"noSpeechDetected": "Речь не обнаружена"
 	},
 	"exportDialog": {
@@ -212,9 +213,6 @@
 		"exportedGif": "GIF экспортирован",
 		"exportedVideo": "Видео экспортировано",
 		"showInFolder": "Показать в папке",
-		"starPrompt": "OpenScreen бесплатен и распространяется по лицензии MIT. Звезда на GitHub помогает другим его найти.",
-		"starPromptNoThanks": "Нет, спасибо",
-		"rateOnStore": "Оценить в Microsoft Store",
 		"exportFailed": "Ошибка экспорта",
 		"failedToWriteFile": "Не удалось записать файл",
 		"qualityUpscaleWarning": "Апскейл",
@@ -301,10 +299,12 @@
 			"feature2": "Добавляет субтитры, зум на камеру, генерирует заголовок",
 			"feature3": "Переписывает раздел, перефразирует или переставляет клипы по запросу",
 			"cta": "Настроить провайдера",
-			"disclaimer": "Транскрипция вашего видео будет отправлена выбранному провайдеру. Пока вы не подключите провайдера, ничего не отправляется."
+			"disclaimer": "Транскрипция вашего видео будет отправлена выбранному провайдеру. Пока вы не подключите провайдера, ничего не отправляется.",
+			"subtitleInstall": "The chat runs on your own Claude plan through Claude Code, which isn't on this Mac yet. Install it, sign in, and come back.",
+			"ctaInstall": "Get Claude Code"
 		},
 		"authorUser": "Вы",
-		"authorAssistant": "OpenScreen",
+		"authorAssistant": "Filmareto",
 		"rewindToMessage": "Откатить к этому сообщению",
 		"rewindTip": "Откатить к этому сообщению. Более поздние изменения отменяются.",
 		"copyMessage": "Скопировать сообщение",
@@ -326,7 +326,11 @@
 			"subtitle": "Переключить или создать сессию",
 			"empty": "Пока нет бесед.",
 			"msgsCount": "{{count}} сообщ. · {{date}}"
-		}
+		},
+		"signInFirst": "Sign in to Claude to start chatting.",
+		"onPlan": "Claude · {{plan}}",
+		"claude": "Claude",
+		"working": "Working: {{tool}}…"
 	},
 	"newProjectDialog": {
 		"title": "Новый проект",
@@ -426,7 +430,7 @@
 	},
 	"mcpServer": {
 		"title": "MCP-сервер",
-		"description": "Разрешите MCP-клиентам, которые вы запускаете сами, например Claude Code или Codex, использовать инструменты ИИ-редактирования для любого вашего проекта, а не только для открытого в редакторе. Они входят со своими учётными записями; OpenScreen их никогда не видит.",
+		"description": "Разрешите MCP-клиентам, которые вы запускаете сами, например Claude Code или Codex, использовать инструменты ИИ-редактирования для любого вашего проекта, а не только для открытого в редакторе. Они входят со своими учётными записями; Filmareto их никогда не видит.",
 		"enableLabel": "Сервер",
 		"enable": "Включить MCP-сервер",
 		"editsLabel": "Правки через MCP",
@@ -453,5 +457,62 @@
 	"cpuCompositor": {
 		"notice": "Совместимый GPU не найден — отрисовка на CPU, поэтому воспроизведение медленнее.",
 		"exportWarning": "Совместимый GPU не найден: этот экспорт выполняется на CPU и займёт намного больше времени."
+	},
+	"studio": {
+		"wholeProject": "whole project",
+		"changesOnly": "Changes only",
+		"takeAdded": "The take was added to the end of the project",
+		"makingGraphic": "Rendering the graphic…",
+		"rendering": "Rendering…",
+		"motion": "Motion",
+		"motionSmooth": "Smooth",
+		"motionHold": "Hold",
+		"motionIn": "Slow in",
+		"motionOut": "Slow out",
+		"motionEmphasis": "Punch",
+		"scene": "Scene",
+		"takes": "Takes",
+		"take": "Take",
+		"presetSaved": "“{{name}}” was added to your presets",
+		"applyToAll": "Apply to all segments",
+		"myPresets": "My presets",
+		"everyProject": "in every project",
+		"deleteNamed": "Delete {{name}}",
+		"myLook": "My look {{number}}",
+		"save": "Save",
+		"name": "Name",
+		"graphics": "Graphics",
+		"graphicsFolder": "Folder for your own HyperFrames",
+		"formatAndLayout": "Format and layout",
+		"cameraOnly": "Camera only",
+		"screen": "Screen",
+		"screenTip": "Off: records only the camera and the microphone",
+		"cameraQuality": "Camera quality",
+		"noScript": "No script: one recording, no scenes.",
+		"writeScript": "Write a script",
+		"newTake": "New take in this project",
+		"toScript": "Back to Script",
+		"continueToEdit": "Continue to Edit",
+		"fileNotAdded": "The file could not be added to the project",
+		"scenes": "Scenes",
+		"recordAll": "Record all in order",
+		"noText": "No text: speak freely.",
+		"archive": "Archive ({{count}})",
+		"fromFile": "or from a file",
+		"sceneNumber": "Scene {{number}}",
+		"scriptPlaceholder": "Write what you will say, or paste the whole script: each line with a single / starts a new scene.",
+		"newVideo": "New video",
+		"scriptTitle": "Script",
+		"sceneName": "Scene name",
+		"newScene": "New scene",
+		"continueToRecord": "Continue to Record",
+		"adaptingGraphics": "Adapting the graphics…",
+		"layoutCamera": "Camera",
+		"layoutCorner": "Corner",
+		"layoutStack": "Stacked",
+		"layoutSide": "Side by side",
+		"layoutCutout": "Cutout",
+		"layoutFree": "Free",
+		"layoutScreen": "Screen"
 	}
 }

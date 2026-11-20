@@ -84,10 +84,21 @@ function clipSourceRanges(document: AxcutDocument | null): Array<[string, number
 	});
 }
 
+/** Whether this recording has cursor data, once it has been read. */
+export async function recordingHasCursor(videoPath: string): Promise<boolean> {
+	await stateChangesOf(videoPath);
+	return hasCursorByPath.get(videoPath) === true;
+}
+
 /** Whether one of `paths` has cursor data: `null` while some are still unread and none has any. */
 function cursorDataIn(paths: readonly string[]): boolean | null {
 	if (paths.some((path) => hasCursorByPath.get(path))) return true;
 	return paths.every((path) => hasCursorByPath.has(path)) ? false : null;
+}
+
+/** `useHasRecordedCursor`, for a document in hand. */
+export function documentHasRecordedCursor(document: AxcutDocument | null): boolean | null {
+	return cursorDataIn([...new Set(clipSourceRanges(document).map(([path]) => path))]);
 }
 
 /**

@@ -14,7 +14,7 @@
 		"microphone": "الميكروفون: يسجّل صوتك",
 		"camera": "الكاميرا: تسجّل صورتك كطبقة منفصلة يمكنك تحريكها في المحرر",
 		"openStudio": "فتح الاستوديو: محرر تسجيلاتك",
-		"openNotes": "فتح الملاحظات: نص تقرؤه أثناء التسجيل",
+		"openNotes": "Teleprompter",
 		"openNotesPlaceholder": "اكتب ملاحظاتك هنا...",
 		"notesToolbar": {
 			"bold": "غامق",
@@ -65,8 +65,8 @@
 		"screens": "الشاشات ({{count}})",
 		"windows": "النوافذ ({{count}})",
 		"emptyTitle": "لم يتم العثور على شاشات أو نوافذ",
-		"emptyDescription": "إذا كنت قد منحت للتو إذن تسجيل الشاشة، أعد تحميل هذه النافذة. قد تحتاج على macOS إلى إعادة فتح OpenScreen.",
-		"loadFailedDescription": "تعذّر على OpenScreen تحميل مصادر الالتقاط. أعد تحميل هذه النافذة وحاول مرة أخرى.",
+		"emptyDescription": "إذا كنت قد منحت للتو إذن تسجيل الشاشة، أعد تحميل هذه النافذة. قد تحتاج على macOS إلى إعادة فتح Filmareto.",
+		"loadFailedDescription": "تعذّر على Filmareto تحميل مصادر الالتقاط. أعد تحميل هذه النافذة وحاول مرة أخرى.",
 		"defaultSourceName": "الشاشة"
 	},
 	"recording": {
@@ -74,13 +74,14 @@
 		"systemPicker": "سيسألك النظام عمّا تريد مشاركته",
 		"start": "بدء التسجيل",
 		"stop": "إيقاف التسجيل وحفظه",
-		"saving": "جاري الحفظ..."
+		"saving": "جاري الحفظ...",
+		"noMicrophone": "The microphone is off: this take will have no sound."
 	},
 	"language": "اللغة",
 	"languageWithName": "اللغة: {{language}}",
 	"systemLanguagePrompt": {
 		"title": "هل تريد استخدام لغة نظامك؟",
-		"description": "اكتشفنا أن {{language}} هي لغة نظامك. هل تريد تبديل OpenScreen إلى {{language}}؟",
+		"description": "اكتشفنا أن {{language}} هي لغة نظامك. هل تريد تبديل Filmareto إلى {{language}}؟",
 		"switch": "التبديل إلى {{language}}",
 		"keepDefault": "الاحتفاظ باللغة الحالية"
 	},
@@ -91,7 +92,7 @@
 	},
 	"softwareEncoderFallback": {
 		"title": "تم التبديل إلى الترميز البرمجي",
-		"description": "تعذّر تشغيل مرمّز GPU الافتراضي، لذا تحوّل OpenScreen إلى ترميز H.264 البرمجي. سيستمر التسجيل كالمعتاد، لكن استخدام المعالج قد يكون أعلى.",
+		"description": "تعذّر تشغيل مرمّز GPU الافتراضي، لذا تحوّل Filmareto إلى ترميز H.264 البرمجي. سيستمر التسجيل كالمعتاد، لكن استخدام المعالج قد يكون أعلى.",
 		"dismiss": "حسنًا",
 		"dontShowAgain": "عدم الإظهار مرة أخرى"
 	},
@@ -108,7 +109,7 @@
 		"checkingForUpdates": "جارٍ التحقق…"
 	},
 	"permissions": {
-		"title": "يحتاج OpenScreen إلى بعض الأذونات",
+		"title": "يحتاج Filmareto إلى بعض الأذونات",
 		"subtitle": "يطلب منك macOS منح كل إذن مرة واحدة فقط. يمكنك تغييرها في أي وقت من إعدادات النظام.",
 		"level": {
 			"required": "مطلوب",
@@ -145,21 +146,71 @@
 			"continue": "متابعة",
 			"allow": "سماح",
 			"openSettings": "فتح الإعدادات",
-			"restart": "إعادة تشغيل OpenScreen",
+			"restart": "إعادة تشغيل Filmareto",
 			"start": "ابدأ"
 		},
 		"help": {
-			"screenPrompt": "سيطلب منك macOS بعد ذلك تفعيل OpenScreen في إعدادات النظام.",
-			"screenSettings": "في إعدادات النظام، فعِّل OpenScreen. إذا عرض macOS إنهاء التطبيق وإعادة فتحه، فوافق: ستعود هذه النافذة.",
-			"screenNotListed": "لا يظهر OpenScreen في القائمة؟ انقر على +، ثم اختر OpenScreen من التطبيقات.",
-			"screenRestart": "مسموح. يجب إعادة تشغيل OpenScreen ليتمكن من استخدامه.",
-			"screenRecurring": "عند أول تسجيل، سيسألك macOS ما إذا كان يمكن لـ OpenScreen الوصول إلى شاشتك مباشرة دون منتقي النظام. انقر على «السماح». يكرر macOS هذا السؤال من حين لآخر، وهذا أمر طبيعي.",
-			"systemAudioPrompt": "سيطلب منك macOS السماح لـ OpenScreen بتسجيل الصوت الصادر من جهاز Mac.",
-			"systemAudioRequested": "إذا رفضت، ففعِّل OpenScreen ضمن «تسجيل صوت النظام فقط» في إعدادات النظام."
+			"screenPrompt": "سيطلب منك macOS بعد ذلك تفعيل Filmareto في إعدادات النظام.",
+			"screenSettings": "في إعدادات النظام، فعِّل Filmareto. إذا عرض macOS إنهاء التطبيق وإعادة فتحه، فوافق: ستعود هذه النافذة.",
+			"screenNotListed": "لا يظهر Filmareto في القائمة؟ انقر على +، ثم اختر Filmareto من التطبيقات.",
+			"screenRestart": "مسموح. يجب إعادة تشغيل Filmareto ليتمكن من استخدامه.",
+			"screenRecurring": "عند أول تسجيل، سيسألك macOS ما إذا كان يمكن لـ Filmareto الوصول إلى شاشتك مباشرة دون منتقي النظام. انقر على «السماح». يكرر macOS هذا السؤال من حين لآخر، وهذا أمر طبيعي.",
+			"systemAudioPrompt": "سيطلب منك macOS السماح لـ Filmareto بتسجيل الصوت الصادر من جهاز Mac.",
+			"systemAudioRequested": "إذا رفضت، ففعِّل Filmareto ضمن «تسجيل صوت النظام فقط» في إعدادات النظام."
 		},
 		"footer": {
 			"screenRequired": "تسجيل الشاشة مطلوب للتسجيل.",
 			"ready": "كل شيء جاهز."
 		}
+	},
+	"scene": {
+		"startCameraOnly": "Start recording, camera only",
+		"cameraOnly": "Camera only",
+		"cameraOnlyOn": "Records only the camera and the microphone",
+		"cameraOnlyOff": "Record only the camera, no screen",
+		"nextOf": "Next {{number}}/{{count}}: {{name}}",
+		"allDone": "All scenes recorded",
+		"again": "Again",
+		"againNamed": "Again: {{name}}",
+		"end": "End",
+		"toEdit": "To Edit",
+		"retrySegment": "This segment again from the start",
+		"lastSegment": "Last segment",
+		"nextSegment": "Next segment",
+		"modeVoice": "Voice",
+		"modeManual": "Constant speed",
+		"modeBullets": "Bullets",
+		"posTop": "Top",
+		"posWindow": "Window",
+		"posScreen": "Over the screen",
+		"posFull": "Full screen",
+		"scrolling": "Scrolling",
+		"speed": "Speed",
+		"listensTo": "Listens to: {{mic}}. Change it in System Settings → Sound → Input.",
+		"macInput": "the Mac's input",
+		"bulletsHint": "Each line of the text is a bullet. Move on with ↓ Line or ⌃⌥↓.",
+		"position": "Position",
+		"display": "Display",
+		"automatic": "Automatic",
+		"activeLine": "Active line",
+		"guideLine": "Guide line",
+		"width": "Width",
+		"lines": "Lines",
+		"look": "Look",
+		"letters": "Text size",
+		"lineSpacing": "Line spacing",
+		"paddingSides": "Side padding",
+		"paddingTop": "Top and bottom padding",
+		"background": "Background",
+		"hide": "Hide",
+		"pause": "Pause",
+		"start": "Start",
+		"fromSegmentStart": "From the start of the segment",
+		"prevLine": "↑ Line",
+		"nextLine": "↓ Line",
+		"text": "Text",
+		"textPlaceholder": "Write or paste the text. A line with only a / starts a new segment.",
+		"newSegment": "New segment ( / )",
+		"recHides": "Rec hides this window and starts the teleprompter."
 	}
 }

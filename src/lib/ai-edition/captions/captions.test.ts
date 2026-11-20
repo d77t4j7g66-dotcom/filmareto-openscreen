@@ -2,8 +2,8 @@ import { describe, expect, it } from "vitest";
 import { insertGeneratedClip } from "../document/insertion";
 import type { AxcutDocument, AxcutTranscript } from "../schema";
 import { contrastRatio, MIN_TEXT_CONTRAST } from "../textContrast";
-import { captionCuesToTextRegions, deriveCaptionCues } from "./cues";
-import type { CaptionSettings } from "./settings";
+import { captionCuesToTextRegions, deriveCaptionCues, layOutCaptionWords } from "./cues";
+import type { CaptionSettings, CaptionStyleId } from "./settings";
 import {
 	CAPTION_PLATE_OPACITY_MAX,
 	CAPTION_PLATE_OPACITY_MIN,
@@ -13,13 +13,16 @@ import {
 	captionPlateOf,
 	captionPlatePatch,
 	captionSafeColumn,
+	captionShown,
 	captionStyleOf,
+	captionStylePatch,
 	DEFAULT_CAPTION_SETTINGS,
 	defaultCaptionInsetX,
 	defaultCaptionInsetY,
 	getCaptionSettings,
 	patchCaptionSettings,
 } from "./settings";
+import { CAPTION_STYLE_GROUPS } from "./styleCatalog";
 import {
 	captionTranslationUnits,
 	getCaptionTranslations,
@@ -753,5 +756,239 @@ describe("captions over an inserted word", () => {
 		expect(deriveCaptionCues(inserted(), ON, {})[0].startMs).toBe(
 			deriveCaptionCues(doc(), ON, {})[0].startMs,
 		);
+	});
+});
+
+describe("captions that follow the words", () => {
+	const three = {
+		id: "c",
+		startMs: 1000,
+		endMs: 4000,
+		text: "πώς να κάνεις",
+		words: [
+			{ text: "πώς", startMs: 1000, endMs: 2000 },
+			{ text: "να", startMs: 2000, endMs: 3000 },
+			{ text: "κάνεις", startMs: 3000, endMs: 4000 },
+		],
+	};
+	const withStyle = (id: CaptionStyleId) => ({ ...ON, ...captionStylePatch(id, 9 / 16) });
+
+	it("writes capitals without Greek accents", () => {
+		const shown = (text: string, textCase: "upper" | "as-spoken", dropPunctuation = false) =>
+			captionShown(text, { textCase, dropPunctuation });
+		expect(shown("πώς κάνεις τό ϊ", "upper")).toBe("ΠΩΣ ΚΑΝΕΙΣ ΤΟ Ι");
+		expect(shown("πώς", "as-spoken")).toBe("πώς");
+		expect(shown("άθλιο. Ναι, 3.5 πώς;", "as-spoken", true)).toBe("άθλιο Ναι 3.5 πώς;");
+	});
+
+	it("lights each word in turn on one shared texture, popping only the first", () => {
+		const regions = captionCuesToTextRegions([three], withStyle("punch"), 9 / 16);
+		expect(regions.map((r) => [r.startMs, r.endMs])).toEqual([
+			[1000, 2000],
+			[2000, 3000],
+			[3000, 4000],
+		]);
+		expect(new Set(regions.map((r) => r.id)).size).toBe(1);
+		expect(regions.map((r) => spaced(r.content))).toEqual(Array(3).fill("ΠΩΣ ΝΑ ΚΑΝΕΙΣ"));
+		expect(regions.map((r) => r.runs?.[0].start)).toEqual([0, 4, 7]);
+		expect(regions.map((r) => r.style.textAnimation)).toEqual(["word-pop", "none", "none"]);
+	});
+
+	it("breaks a long caption where its two lines come out even, not after a little word", () => {
+		const said = (...texts: string[]) => ({
+			...three,
+			words: texts.map((text, i) => ({ text, startMs: 1000 + i, endMs: 1001 + i })),
+		});
+		const look = { ...withStyle("spotlight"), fontSize: 60 };
+		const [even] = captionCuesToTextRegions(
+			[said("είναι", "καλύτερο", "από", "κάθε", "άλλο")],
+			look,
+			9 / 16,
+		);
+		expect(spaced(even.content)).toBe("είναι καλύτερο\nαπό κάθε άλλο");
+		const [short] = captionCuesToTextRegions([said("τρία", "κλικ")], look, 9 / 16);
+		expect(short.content).toBe("τρία\u2002κλικ");
+	});
+
+	it("brings a word too long for the frame down in size instead of breaking it", () => {
+		const look = { ...withStyle("oneWord"), fontSize: 80 };
+		const size = (text: string) =>
+			captionCuesToTextRegions([{ id: "c", startMs: 0, endMs: 1, text }], look, 9 / 16)[0].style
+				.fontSize;
+		expect(size("κλικ")).toBe(80);
+		expect(size("σταθεροποίηση")).toBeLessThan(80);
+	});
+
+	it("puts the big word on its own line, with the rest above and below it", () => {
+		const [region] = captionCuesToTextRegions([three], withStyle("fitted"), 9 / 16);
+		expect(spaced(region.content)).toBe("πώς να\nκάνεις");
+		expect(region.runs).toEqual([
+			{ start: 7, len: 6, color: "#d07f42", fontFamily: "Georgia", italic: true, sizeMul: 2 },
+		]);
+		const middle = captionCuesToTextRegions(
+			[
+				{
+					...three,
+					words: [
+						{ text: "το", startMs: 1000, endMs: 2000 },
+						{ text: "Stabilization", startMs: 2000, endMs: 3000 },
+						{ text: "του", startMs: 3000, endMs: 3500 },
+						{ text: "Premiere", startMs: 3500, endMs: 4000 },
+					],
+				},
+			],
+			withStyle("fitted"),
+			9 / 16,
+		);
+		expect(middle[0].content).toBe("το\nStabilization\nτου\u2002Premiere");
+		const little = captionCuesToTextRegions(
+			[
+				{
+					...three,
+					words: [
+						{ text: "με", startMs: 1000, endMs: 2000 },
+						{ text: "3", startMs: 2000, endMs: 3000 },
+					],
+				},
+			],
+			withStyle("fitted"),
+			9 / 16,
+		);
+		expect(little[0].content).toBe("με\u20023");
+		expect(little[0].runs).toBeUndefined();
+		const long = captionCuesToTextRegions(
+			[{ ...three, words: [{ text: "αντιμετωπίστηκαναπολύ", startMs: 1000, endMs: 4000 }] }],
+			withStyle("fitted"),
+			9 / 16,
+		);
+		expect(long[0].runs?.[0].sizeMul).toBeLessThan(2);
+	});
+
+	it("makes the longest word glow, and shows one region", () => {
+		const regions = captionCuesToTextRegions([three], withStyle("glow"), 9 / 16);
+		expect(regions).toHaveLength(1);
+		expect(regions[0].runs?.[0]).toMatchObject({ start: 7, len: 6, glow: "#ff8a2a" });
+	});
+
+	it("leaves a plate style exactly as it was", () => {
+		const [region] = captionCuesToTextRegions(
+			[{ id: "c", startMs: 0, endMs: 1, text: "πώς" }],
+			withStyle("classic"),
+			9 / 16,
+		);
+		expect(region.content).toBe("πώς");
+		expect(region).not.toHaveProperty("runs");
+		expect(region).not.toHaveProperty("shadow");
+		expect(region.style.textAnimation).toBe("none");
+	});
+
+	it("names a style after it is picked and sets how many words it holds", () => {
+		for (const id of Object.keys(CAPTION_STYLES) as CaptionStyleId[]) {
+			expect(captionStyleOf(withStyle(id))).toBe(id);
+		}
+		expect(withStyle("oneWord")).toMatchObject({ minWordsPerLine: 1, maxWordsPerLine: 1 });
+		const stored = getCaptionSettings(
+			doc({ legacyEditor: { captions: withStyle("outline") } } as Partial<AxcutDocument>),
+		);
+		expect(captionStyleOf(stored)).toBe("outline");
+	});
+});
+
+/** An outlined look spaces its words wider: the words are what these tests are about. */
+function spaced(content: string): string {
+	return content.replace(/\u2002/g, " ");
+}
+
+describe("what a word does while it is said", () => {
+	const look = (over: Partial<CaptionSettings>): CaptionSettings => ({
+		...DEFAULT_CAPTION_SETTINGS,
+		enabled: true,
+		...over,
+	});
+	const cue = {
+		id: "c",
+		startMs: 0,
+		endMs: 3000,
+		text: "ένα δύο τρία",
+		words: [
+			{ text: "ένα", startMs: 0, endMs: 1000 },
+			{ text: "δύο", startMs: 1000, endMs: 2000 },
+			{ text: "τρία", startMs: 2000, endMs: 3000 },
+		],
+	};
+
+	it("hides the words not yet said, each keeping its place", () => {
+		const regions = captionCuesToTextRegions([cue], look({ build: true }), 9 / 16);
+		expect(regions).toHaveLength(3);
+		expect(regions[0].runs?.filter((run) => run.hide)).toHaveLength(2);
+		expect(regions[2].runs?.filter((run) => run.hide)).toHaveLength(0);
+		expect(new Set(regions.map((r) => r.content)).size).toBe(1);
+	});
+
+	it("lets the pill glide from the word before, and not on the first word", () => {
+		const regions = captionCuesToTextRegions(
+			[cue],
+			look({ activeWordPill: "#ee6c0e", pillSlides: true }),
+			9 / 16,
+		);
+		expect(regions[0].runs?.[0].pillFrom).toBeUndefined();
+		expect(regions[1].runs?.[0].pillFrom).toEqual([0, 3]);
+	});
+
+	it("pops the word being said and colours those before and after it", () => {
+		const regions = captionCuesToTextRegions(
+			[cue],
+			look({
+				activeWordPop: 1.2,
+				activeWordHold: 1.05,
+				pastWordColor: "#ffff00",
+				futureWordColor: "#888888",
+			}),
+			9 / 16,
+		);
+		const runs = regions[1].runs ?? [];
+		expect(runs[0].color).toBe("#ffff00");
+		expect(runs[1]).toMatchObject({ popPeak: 1.2, popHold: 1.05 });
+		expect(runs[2].color).toBe("#888888");
+	});
+
+	it("carries a style's light through to the compositor, and an emoji in a box of its own", () => {
+		const fx = { glow: { colors: ["#ff0000"], em: 0.5, strength: 1 } };
+		const regions = captionCuesToTextRegions(
+			[{ ...cue, emoji: "🔥" }],
+			look({ fx, twoLines: true }),
+			9 / 16,
+		);
+		const [text, emoji] = regions;
+		expect(text.fx).toEqual(fx);
+		expect(text.content).toContain("\n");
+		expect(emoji.content).toBe("🔥");
+		expect(emoji.fx).toBeUndefined();
+	});
+
+	it("reads Claude's word instead of the longest", () => {
+		const { emphasized } = layOutCaptionWords(
+			["ένα", "δύο", "οτιδήποτε"],
+			look({ emphasis: "big-word" }),
+			Number.POSITIVE_INFINITY,
+			1,
+		);
+		expect(emphasized).toBe(1);
+	});
+
+	it("names every style in a group, once", () => {
+		const grouped = CAPTION_STYLE_GROUPS.flatMap((group) => group.styles);
+		expect(new Set(grouped).size).toBe(grouped.length);
+		expect([...grouped].sort()).toEqual(Object.keys(CAPTION_STYLES).sort());
+	});
+
+	it("lets a face push a phrase down below the chin", () => {
+		const usual = look({ insetY: 24, fontSize: 60 });
+		const [region] = captionCuesToTextRegions([cue], usual, 9 / 16, () => ({
+			insetY: 12,
+			scale: 1,
+		}));
+		const [plain] = captionCuesToTextRegions([cue], usual, 9 / 16);
+		expect(region.position.y).toBeGreaterThan(plain.position.y);
 	});
 });

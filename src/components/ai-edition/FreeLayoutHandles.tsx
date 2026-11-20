@@ -42,8 +42,11 @@ export function FreeLayoutHandles(props: {
 	frameRef: React.RefObject<HTMLDivElement | null>;
 	onChange: Setter;
 	onCommit: () => void;
+	/** Handles only, and only while the pointer is over the picture: on a layout that is not free
+	 *  yet, where a dashed box around everything would say the wrong thing. */
+	quiet?: boolean;
 }) {
-	const { frameSize, screenRect, cameraRect, frameRef, onChange, onCommit } = props;
+	const { frameSize, screenRect, cameraRect, frameRef, onChange, onCommit, quiet } = props;
 	const [guides, setGuides] = useState({ v: false, h: false });
 	const drag = useRef<{ stop: () => void } | null>(null);
 
@@ -120,7 +123,7 @@ export function FreeLayoutHandles(props: {
 		width: `${(rect.width / frameSize.width) * 100}%`,
 		height: `${(rect.height / frameSize.height) * 100}%`,
 	});
-	const outline = "1.5px dashed rgba(255,255,255,0.75)";
+	const outline = quiet ? "none" : "1.5px dashed rgba(255,255,255,0.75)";
 	const handle = (rect: Box, key: Key, label: string) => (
 		<>
 			<div
@@ -139,7 +142,7 @@ export function FreeLayoutHandles(props: {
 					width: 14,
 					height: 14,
 					borderRadius: 4,
-					background: "#10b981",
+					background: "#ee6c0e",
 					border: "2px solid #08090d",
 					cursor: "nwse-resize",
 					touchAction: "none",
@@ -163,7 +166,7 @@ export function FreeLayoutHandles(props: {
 						top: 0,
 						bottom: 0,
 						width: 0,
-						borderLeft: "1px dashed #10b981",
+						borderLeft: "1px dashed #ee6c0e",
 					}}
 				/>
 			) : null}
@@ -175,7 +178,7 @@ export function FreeLayoutHandles(props: {
 						left: 0,
 						right: 0,
 						height: 0,
-						borderTop: "1px dashed #10b981",
+						borderTop: "1px dashed #ee6c0e",
 					}}
 				/>
 			) : null}

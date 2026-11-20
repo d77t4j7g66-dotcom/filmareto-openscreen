@@ -7,6 +7,13 @@ export {
 	deriveCaptionCues,
 	sourceSpanToTimelineSpans,
 } from "./cues";
+export { type CaptionPlace, captionFaceGuard } from "./faceSafe";
+export {
+	type AssetCaptionInsights,
+	getCaptionInsights,
+	insightKey,
+	withCaptionInsights,
+} from "./insights";
 export type {
 	CaptionAnchorH,
 	CaptionAnchorV,
@@ -23,18 +30,25 @@ export {
 	CAPTION_INSET_Y_MAX,
 	CAPTION_PLATE_OPACITY_MAX,
 	CAPTION_PLATE_OPACITY_MIN,
+	CAPTION_STYLE_GROUPS,
 	CAPTION_STYLES,
 	captionBackgroundCss,
 	captionBoxRect,
 	captionPlateOf,
 	captionPlatePatch,
 	captionSafeColumn,
+	captionShown,
 	captionStyleOf,
+	captionStylePatch,
+	captionUsesWordTimes,
 	DEFAULT_CAPTION_SETTINGS,
 	defaultCaptionInsetX,
 	defaultCaptionInsetY,
 	getCaptionSettings,
 	patchCaptionSettings,
+	resolveCaptionLane,
+	TITLE_STYLE_IDS,
+	titleStylePatch,
 } from "./settings";
 export type {
 	CaptionTranslation,

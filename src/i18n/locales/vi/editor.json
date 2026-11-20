@@ -51,7 +51,7 @@
 		"microphoneUnavailable": "Phiên bản macOS này không thể ghi micrô. Đang ghi mà không có micrô.",
 		"restartFailed": "Không thể bắt đầu bản ghi hình mới. Bản trước đã bị xóa.",
 		"permissionDenied": "Quyền ghi hình bị từ chối. Vui lòng cho phép ghi màn hình.",
-		"accessibilityAllowAndRetry": "Cho phép OpenScreen truy cập Trợ năng, sau đó nhấn ghi lại để bắt đầu đếm ngược.",
+		"accessibilityAllowAndRetry": "Cho phép Filmareto truy cập Trợ năng, sau đó nhấn ghi lại để bắt đầu đếm ngược.",
 		"cursorAccessibilityUnavailable": "Quyền Trợ năng đang tắt. Quá trình ghi vẫn tiếp tục nhưng hiệu ứng con trỏ có thể bị hạn chế. Hãy bật quyền này trong Cài đặt hệ thống để dùng đầy đủ hiệu ứng con trỏ.",
 		"selectSource": "Vui lòng chọn một nguồn để ghi"
 	},
@@ -104,6 +104,7 @@
 		"editorMode": "Chế độ trình chỉnh sửa",
 		"modes": {
 			"media": "Media",
+			"script": "Script",
 			"edit": "Chỉnh sửa",
 			"rec": "Ghi hình"
 		}
@@ -182,7 +183,7 @@
 		"detectedLanguage": "Ngôn ngữ phát hiện: {{language}}",
 		"noAudioTrack": "Không có bản âm thanh",
 		"noAudioTrackHint": "Media này không có bản âm thanh — không có gì để phiên âm.",
-		"mediaUnreadableHint": "Không thể đọc âm thanh của media này. Hãy đảm bảo OpenScreen có quyền truy cập thư mục chứa nó, rồi tạo lại.",
+		"mediaUnreadableHint": "Không thể đọc âm thanh của media này. Hãy đảm bảo Filmareto có quyền truy cập thư mục chứa nó, rồi tạo lại.",
 		"noSpeechDetected": "Không phát hiện giọng nói"
 	},
 	"exportDialog": {
@@ -212,9 +213,6 @@
 		"exportedGif": "Đã xuất GIF",
 		"exportedVideo": "Đã xuất video",
 		"showInFolder": "Hiện trong thư mục",
-		"starPrompt": "OpenScreen miễn phí và được cấp phép MIT. Một ngôi sao trên GitHub giúp người khác tìm thấy nó.",
-		"starPromptNoThanks": "Không, cảm ơn",
-		"rateOnStore": "Đánh giá trên Microsoft Store",
 		"exportFailed": "Xuất thất bại",
 		"failedToWriteFile": "Không thể ghi tệp",
 		"qualityUpscaleWarning": "Upscale",
@@ -301,10 +299,12 @@
 			"feature2": "Thêm phụ đề, zoom vào camera, tạo tiêu đề",
 			"feature3": "Viết lại một đoạn, diễn đạt khác hoặc sắp xếp lại clip theo yêu cầu",
 			"cta": "Thiết lập nhà cung cấp",
-			"disclaimer": "Bản chép lời video sẽ được gửi đến nhà cung cấp bạn chọn. Không có gì được chia sẻ cho đến khi bạn kết nối một nhà cung cấp."
+			"disclaimer": "Bản chép lời video sẽ được gửi đến nhà cung cấp bạn chọn. Không có gì được chia sẻ cho đến khi bạn kết nối một nhà cung cấp.",
+			"subtitleInstall": "The chat runs on your own Claude plan through Claude Code, which isn't on this Mac yet. Install it, sign in, and come back.",
+			"ctaInstall": "Get Claude Code"
 		},
 		"authorUser": "Bạn",
-		"authorAssistant": "OpenScreen",
+		"authorAssistant": "Filmareto",
 		"rewindToMessage": "Tua lại đến tin nhắn này",
 		"rewindTip": "Tua lại đến tin nhắn này. Các thay đổi sau đó sẽ được hoàn tác.",
 		"copyMessage": "Sao chép tin nhắn",
@@ -326,7 +326,11 @@
 			"subtitle": "Chuyển đổi hoặc tạo phiên",
 			"empty": "Chưa có cuộc trò chuyện nào.",
 			"msgsCount": "{{count}} tin nhắn · {{date}}"
-		}
+		},
+		"signInFirst": "Sign in to Claude to start chatting.",
+		"onPlan": "Claude · {{plan}}",
+		"claude": "Claude",
+		"working": "Working: {{tool}}…"
 	},
 	"newProjectDialog": {
 		"title": "Dự án mới",
@@ -426,7 +430,7 @@
 	},
 	"mcpServer": {
 		"title": "Máy chủ MCP",
-		"description": "Cho phép các ứng dụng khách MCP do bạn tự chạy, như Claude Code hoặc Codex, dùng công cụ chỉnh sửa bằng AI trên bất kỳ dự án nào của bạn, không chỉ dự án đang mở trong trình chỉnh sửa. Chúng đăng nhập bằng tài khoản riêng; OpenScreen không bao giờ thấy các tài khoản đó.",
+		"description": "Cho phép các ứng dụng khách MCP do bạn tự chạy, như Claude Code hoặc Codex, dùng công cụ chỉnh sửa bằng AI trên bất kỳ dự án nào của bạn, không chỉ dự án đang mở trong trình chỉnh sửa. Chúng đăng nhập bằng tài khoản riêng; Filmareto không bao giờ thấy các tài khoản đó.",
 		"enableLabel": "Máy chủ",
 		"enable": "Bật máy chủ MCP",
 		"editsLabel": "Chỉnh sửa qua MCP",
@@ -453,5 +457,62 @@
 	"cpuCompositor": {
 		"notice": "Không có GPU tương thích — kết xuất trên CPU nên phát lại chậm hơn.",
 		"exportWarning": "Không có GPU tương thích: lần xuất này chạy trên CPU và sẽ lâu hơn bình thường rất nhiều."
+	},
+	"studio": {
+		"wholeProject": "whole project",
+		"changesOnly": "Changes only",
+		"takeAdded": "The take was added to the end of the project",
+		"makingGraphic": "Rendering the graphic…",
+		"rendering": "Rendering…",
+		"motion": "Motion",
+		"motionSmooth": "Smooth",
+		"motionHold": "Hold",
+		"motionIn": "Slow in",
+		"motionOut": "Slow out",
+		"motionEmphasis": "Punch",
+		"scene": "Scene",
+		"takes": "Takes",
+		"take": "Take",
+		"presetSaved": "“{{name}}” was added to your presets",
+		"applyToAll": "Apply to all segments",
+		"myPresets": "My presets",
+		"everyProject": "in every project",
+		"deleteNamed": "Delete {{name}}",
+		"myLook": "My look {{number}}",
+		"save": "Save",
+		"name": "Name",
+		"graphics": "Graphics",
+		"graphicsFolder": "Folder for your own HyperFrames",
+		"formatAndLayout": "Format and layout",
+		"cameraOnly": "Camera only",
+		"screen": "Screen",
+		"screenTip": "Off: records only the camera and the microphone",
+		"cameraQuality": "Camera quality",
+		"noScript": "No script: one recording, no scenes.",
+		"writeScript": "Write a script",
+		"newTake": "New take in this project",
+		"toScript": "Back to Script",
+		"continueToEdit": "Continue to Edit",
+		"fileNotAdded": "The file could not be added to the project",
+		"scenes": "Scenes",
+		"recordAll": "Record all in order",
+		"noText": "No text: speak freely.",
+		"archive": "Archive ({{count}})",
+		"fromFile": "or from a file",
+		"sceneNumber": "Scene {{number}}",
+		"scriptPlaceholder": "Write what you will say, or paste the whole script: each line with a single / starts a new scene.",
+		"newVideo": "New video",
+		"scriptTitle": "Script",
+		"sceneName": "Scene name",
+		"newScene": "New scene",
+		"continueToRecord": "Continue to Record",
+		"adaptingGraphics": "Adapting the graphics…",
+		"layoutCamera": "Camera",
+		"layoutCorner": "Corner",
+		"layoutStack": "Stacked",
+		"layoutSide": "Side by side",
+		"layoutCutout": "Cutout",
+		"layoutFree": "Free",
+		"layoutScreen": "Screen"
 	}
 }

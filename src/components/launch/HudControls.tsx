@@ -1,3 +1,4 @@
+import { useScopedT } from "@/contexts/I18nContext";
 import { Check, Languages, NotepadText, Settings } from "lucide-react";
 import {
 	createContext,
@@ -98,10 +99,10 @@ function HudTooltip({ content, children }: { content: string; children: ReactEle
 
 // The browser's default focus outline all but disappears on the dark bar.
 const hudFocusClasses =
-	"focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#10b981]/70";
+	"focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#ee6c0e]/70";
 
 // Exact values from the design's renderVals() (comfortable density, rounded
-// shape, #10b981 accent) — btnSize 34 / btnRadius 10 / containerRadius 17
+// shape, #ee6c0e accent) — btnSize 34 / btnRadius 10 / containerRadius 17
 // (btnRadius + padY) / dividerLen 22. Every control is its own standalone
 // transparent icon button (no shared "group" pill background) — grouping
 // reads purely from proximity + the divider spans between logical sections.
@@ -262,7 +263,7 @@ export const HudSystemAudioButton = memo(function HudSystemAudioButton({
 				aria-disabled={locked || undefined}
 				onClick={locked ? undefined : onClick}
 			>
-				<VolumeIcon muted={!enabled} className={enabled ? "text-[#10b981]" : ""} />
+				<VolumeIcon muted={!enabled} className={enabled ? "text-[#ee6c0e]" : ""} />
 			</button>
 		</HudTooltip>
 	);
@@ -292,7 +293,7 @@ export const HudMicButton = memo(function HudMicButton({
 				aria-disabled={locked || undefined}
 				onClick={locked ? undefined : onClick}
 			>
-				<MicIcon muted={!enabled} className={enabled ? "text-[#10b981]" : ""} />
+				<MicIcon muted={!enabled} className={enabled ? "text-[#ee6c0e]" : ""} />
 			</button>
 		</HudTooltip>
 	);
@@ -322,7 +323,7 @@ export const HudCameraButton = memo(function HudCameraButton({
 				aria-disabled={locked || undefined}
 				onClick={locked ? undefined : onClick}
 			>
-				<CameraIcon off={!enabled} className={enabled ? "text-[#10b981]" : ""} />
+				<CameraIcon off={!enabled} className={enabled ? "text-[#ee6c0e]" : ""} />
 			</button>
 		</HudTooltip>
 	);
@@ -386,12 +387,173 @@ export const HudCursorButton = memo(function HudCursorButton({
 				aria-disabled={locked || undefined}
 				className={`flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-[10px] border-0 cursor-pointer transition-all duration-150 active:scale-95 aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:active:scale-100 ${hudFocusClasses} ${styles.electronNoDrag} ${
 					editableOverlay
-						? "bg-[#10b981] text-[#08090d] hover:bg-[#0e9e6e] aria-disabled:hover:bg-[#10b981]"
+						? "bg-[#ee6c0e] text-[#08090d] hover:bg-[#0e9e6e] aria-disabled:hover:bg-[#ee6c0e]"
 						: "bg-transparent text-[#828c99] hover:bg-white/[0.08] hover:text-[#f5f7fa] aria-disabled:hover:bg-transparent"
 				}`}
 				onClick={locked ? undefined : onClick}
 			>
 				<CursorIcon off={!editableOverlay} />
+			</button>
+		</HudTooltip>
+	);
+});
+
+/** Between the takes of a run of scenes: what comes next, the last one again, or done. */
+export const HudSceneRunControls = memo(function HudSceneRunControls({
+	vertical,
+	next,
+	nextNumber,
+	count,
+	done,
+	onAgain,
+	onDone,
+}: {
+	vertical: boolean;
+	next: string | null;
+	nextNumber: number | null;
+	count: number;
+	done: string | null;
+	onAgain: () => void;
+	onDone: () => void;
+}) {
+	const t = useScopedT("launch");
+	const textButton =
+		"h-7 whitespace-nowrap rounded-full bg-white/10 px-2.5 text-[11px] font-medium text-white hover:bg-white/20";
+	return (
+		<div
+			className={`flex items-center gap-1.5 ${vertical ? "flex-col" : ""} ${styles.electronNoDrag}`}
+		>
+			<span className="max-w-[150px] truncate px-1 text-[11px] font-medium text-white/80">
+				{next ? t("scene.nextOf", { number: nextNumber ?? 0, count, name: next }) : t("scene.allDone")}
+			</span>
+			{done ? (
+				<HudTooltip content={t("scene.againNamed", { name: done })}>
+					<button type="button" className={textButton} onClick={onAgain}>
+						{t("scene.again")}
+					</button>
+				</HudTooltip>
+			) : null}
+			<button type="button" className={textButton} onClick={onDone}>
+				{next ? t("scene.end") : t("scene.toEdit")}
+			</button>
+		</div>
+	);
+});
+
+/** While a take runs with a script: this segment again, or on to the next. Always a press. */
+export const HudSegmentControls = memo(function HudSegmentControls({
+	vertical,
+	stageIndex,
+	stageCount,
+	onRetry,
+	onNext,
+}: {
+	vertical: boolean;
+	stageIndex: number;
+	stageCount: number;
+	onRetry: () => void;
+	onNext: () => void;
+}) {
+	const t = useScopedT("launch");
+	const isLast = stageIndex >= stageCount - 1;
+	return (
+		<div
+			className={`flex items-center gap-1 ${vertical ? "flex-col" : ""} ${styles.electronNoDrag}`}
+		>
+			<span className="px-1 text-[11px] font-medium text-white/70 tabular-nums">
+				{stageIndex + 1}/{stageCount}
+			</span>
+			<HudTooltip content={t("scene.retrySegment")}>
+				<button
+					type="button"
+					className={hudAuxIconBtnClasses}
+					aria-label="Retry segment"
+					onClick={onRetry}
+				>
+					<svg
+						viewBox="0 0 24 24"
+						width={16}
+						height={16}
+						fill="none"
+						stroke="currentColor"
+						strokeWidth="2"
+						strokeLinecap="round"
+						strokeLinejoin="round"
+						aria-hidden="true"
+					>
+						<path d="M9 7 4 12l5 5" />
+						<path d="M4 12h10a6 6 0 0 1 0 12h-2" transform="translate(0 -6)" />
+					</svg>
+				</button>
+			</HudTooltip>
+			<HudTooltip content={isLast ? t("scene.lastSegment") : t("scene.nextSegment")}>
+				<button
+					type="button"
+					className={hudAuxIconBtnClasses}
+					aria-label="Next segment"
+					aria-disabled={isLast || undefined}
+					style={isLast ? { opacity: 0.35 } : undefined}
+					onClick={isLast ? undefined : onNext}
+				>
+					<svg
+						viewBox="0 0 24 24"
+						width={16}
+						height={16}
+						fill="none"
+						stroke="currentColor"
+						strokeWidth="2"
+						strokeLinecap="round"
+						strokeLinejoin="round"
+						aria-hidden="true"
+					>
+						<path d="M5 12h14" />
+						<path d="m13 6 6 6-6 6" />
+					</svg>
+				</button>
+			</HudTooltip>
+		</div>
+	);
+});
+
+/** A take of the camera and the microphone alone, with no screen to choose. */
+export const HudCameraOnlyButton = memo(function HudCameraOnlyButton({
+	on,
+	locked,
+	name,
+	tooltip,
+	onClick,
+}: {
+	on: boolean;
+	locked: boolean;
+	name: string;
+	tooltip: string;
+	onClick: () => void;
+}) {
+	return (
+		<HudTooltip content={tooltip}>
+			<button
+				type="button"
+				className={`${hudIconBtnClasses} ${hudLockedClasses}`}
+				aria-label={name}
+				aria-pressed={on}
+				aria-disabled={locked || undefined}
+				onClick={locked ? undefined : onClick}
+			>
+				<svg
+					viewBox="0 0 24 24"
+					width={18}
+					height={18}
+					fill="none"
+					stroke="currentColor"
+					strokeWidth="1.8"
+					strokeLinecap="round"
+					strokeLinejoin="round"
+					className={on ? "text-[#ee6c0e]" : ""}
+					aria-hidden="true"
+				>
+					<circle cx="12" cy="8" r="4" />
+					<path d="M4.5 21c1.2-4 4-6 7.5-6s6.3 2 7.5 6" />
+				</svg>
 			</button>
 		</HudTooltip>
 	);
@@ -425,7 +587,7 @@ export const HudKeysButton = memo(function HudKeysButton({
 			>
 				<KeysIcon
 					state={state}
-					className={state === "on" ? "text-[#10b981]" : state === "paused" ? "text-amber-400" : ""}
+					className={state === "on" ? "text-[#ee6c0e]" : state === "paused" ? "text-amber-400" : ""}
 				/>
 			</button>
 		</HudTooltip>
@@ -783,7 +945,7 @@ export const HudNotice = memo(function HudNotice({
 					type="button"
 					size="sm"
 					onClick={onConfirm}
-					className={`h-8 rounded-[9px] bg-[#10b981] text-[13px] font-semibold text-[#08090d] hover:bg-[#10b981]/85 ${hudFocusClasses}`}
+					className={`h-8 rounded-[9px] bg-[#ee6c0e] text-[13px] font-semibold text-[#08090d] hover:bg-[#ee6c0e]/85 ${hudFocusClasses}`}
 				>
 					{confirmLabel}
 				</Button>

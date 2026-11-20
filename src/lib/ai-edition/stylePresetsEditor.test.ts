@@ -41,7 +41,7 @@ function styledSettings(): EditorSettingsSnapshot {
 		motionBlurAmount: 0.6,
 		borderRadius: 12,
 		padding: 20,
-		webcamLayoutPreset: "dual-frame",
+		webcamLayoutPreset: "vertical-stack",
 		webcamMaskShape: "square",
 		webcamRoundness: 0.45,
 		webcamMirrored: true,

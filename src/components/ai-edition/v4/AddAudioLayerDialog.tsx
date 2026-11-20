@@ -49,6 +49,7 @@ export function AddAudioLayerDialog({
 	onComplete,
 	onRecordingStart,
 	onRecordingStop,
+	countdownSec = 3,
 }: {
 	open: boolean;
 	maxDurationSec: number;
@@ -56,12 +57,17 @@ export function AddAudioLayerDialog({
 	onComplete: (assetId: string, durationSec: number) => void;
 	onRecordingStart: () => void;
 	onRecordingStop: () => void;
+	/** Time to get ready between pressing Record and the take. */
+	countdownSec?: number;
 }) {
 	const t = useScopedT("timeline");
 	const tc = useScopedT("common");
 	const [busy, setBusy] = useState(false);
 	const [recording, setRecording] = useState(false);
 	const [elapsedSec, setElapsedSec] = useState(0);
+	const [countdown, setCountdown] = useState<number | null>(null);
+	// Set when the dialog goes away or the user cancels while it counts.
+	const countdownCancelledRef = useRef(false);
 	const recorderRef = useRef<MediaRecorder | null>(null);
 	const streamRef = useRef<MediaStream | null>(null);
 	const chunksRef = useRef<Blob[]>([]);
@@ -84,6 +90,7 @@ export function AddAudioLayerDialog({
 			setElapsedSec(0);
 		}
 		return () => {
+			countdownCancelledRef.current = true;
 			if (timerRef.current) clearInterval(timerRef.current);
 			timerRef.current = null;
 			// Stop the RECORDER, not just the stream. Tearing the dialog down
@@ -169,6 +176,19 @@ export function AddAudioLayerDialog({
 				audio: { echoCancellation: true, noiseSuppression: true },
 			});
 			streamRef.current = stream;
+			// The microphone is open first, so a permission prompt never eats into the count.
+			countdownCancelledRef.current = false;
+			for (let value = countdownSec; value > 0; value -= 1) {
+				setCountdown(value);
+				await new Promise((resolve) => setTimeout(resolve, 1000));
+				if (countdownCancelledRef.current) {
+					setCountdown(null);
+					for (const track of stream.getTracks()) track.stop();
+					streamRef.current = null;
+					return;
+				}
+			}
+			setCountdown(null);
 			const mimeType = pickRecorderMimeType();
 			const recorder = mimeType
 				? new MediaRecorder(stream, { mimeType })
@@ -225,7 +245,7 @@ export function AddAudioLayerDialog({
 		} catch {
 			toast.error(t("audio.micDenied"));
 		}
-	}, [finishWithPath, onRecordingStart, onRecordingStop, t]);
+	}, [countdownSec, finishWithPath, onRecordingStart, onRecordingStop, t]);
 
 	// Stop by itself at the end of the timeline so a layer can never outlive
 	// the video it was recorded over.
@@ -266,6 +286,7 @@ export function AddAudioLayerDialog({
 		const onKey = (e: KeyboardEvent) => {
 			if (e.key !== "Escape") return;
 			e.preventDefault();
+			countdownCancelledRef.current = true;
 			if (recordingRef.current) cancelRecording();
 			onClose();
 		};
@@ -284,7 +305,23 @@ export function AddAudioLayerDialog({
 				<strong>{t("audio.addVoiceover")}</strong>
 				<span>{recording ? t("audio.recordingHint") : t("audio.subtitle")}</span>
 			</span>
-			{recording ? (
+			{countdown !== null ? (
+				<>
+					<div className={styles.voiceoverCountdown} aria-live="polite">
+						{countdown}
+					</div>
+					<button
+						type="button"
+						onClick={() => {
+							countdownCancelledRef.current = true;
+							onClose();
+						}}
+						className={styles.voiceoverBarBtn}
+					>
+						{tc("actions.cancel")}
+					</button>
+				</>
+			) : recording ? (
 				<>
 					<span className={styles.voiceoverBarLive} aria-live="polite">
 						<span className={`${styles.voiceoverBarDot} animate-pulse`} />

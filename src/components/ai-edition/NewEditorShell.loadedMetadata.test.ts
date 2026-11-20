@@ -27,11 +27,15 @@ vi.mock("@/contexts/I18nContext", () => ({
 	useScopedT: () => (key: string) => key,
 }));
 
+import { documentAfterProbedDuration } from "@/lib/ai-edition/document/timeline";
 import { type AxcutDocument, createEmptyDocument } from "@/lib/ai-edition/schema";
 import { useProjectStore } from "@/lib/ai-edition/store/projectStore";
+import { nativeBridgeClient } from "@/native/client";
 import { runLoadedMetadataWrite } from "./NewEditorShell";
 
 const PROJECT = "proj_a";
+// The tests below swap this out; the one about a save in flight needs the real counter.
+const realSaveDocument = useProjectStore.getState().saveDocument;
 
 /** A fresh import: one video asset on the document, nothing on the timeline yet. */
 function freshImport(): AxcutDocument {
@@ -98,6 +102,36 @@ describe("runLoadedMetadataWrite", () => {
 		// — the stuck write never installed one.
 		expect(autoZoom).toHaveBeenCalledTimes(1);
 		expect(useProjectStore.getState().document?.timeline.clips).toHaveLength(0);
+	});
+
+	// The import places a take's segment clips off this queue, and the store only holds them once
+	// the bridge answers. A video that loads in that gap still sees an empty timeline: seeding it
+	// then wrote one full-length clip over the segments, which a real take lost at random.
+	it("waits for a save in flight instead of seeding over the clips it carries", async () => {
+		const placed = documentAfterProbedDuration(freshImport(), "asset_1", 12.5, PROJECT);
+		if (!placed) throw new Error("no document to place");
+		const bridgeSave = vi.spyOn(nativeBridgeClient.aiEdition, "save");
+		let answer: (result: { success: true; document: AxcutDocument }) => void = () => undefined;
+		bridgeSave.mockImplementationOnce(
+			() =>
+				new Promise((resolve) => {
+					answer = resolve as typeof answer;
+				}),
+		);
+		bridgeSave.mockImplementation(async (document) => ({ success: true, document }));
+		useProjectStore.setState({ saveDocument: realSaveDocument });
+		const autoZoom = vi.fn(async () => undefined);
+
+		const placing = realSaveDocument(placed, { history: false });
+		const metadata = runLoadedMetadataWrite(12.5, "asset_1", PROJECT, { autoZoom });
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		answer({ success: true, document: placed });
+		await Promise.all([placing, metadata]);
+
+		// Only the import's own write: the video had nothing left to fold in.
+		expect(bridgeSave).toHaveBeenCalledTimes(1);
+		expect(useProjectStore.getState().document?.timeline.clips).toEqual(placed.timeline.clips);
+		bridgeSave.mockRestore();
 	});
 
 	// The switch that happens DURING the save, which the guard at the top cannot

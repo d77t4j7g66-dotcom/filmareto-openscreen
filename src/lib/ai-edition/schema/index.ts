@@ -190,6 +190,9 @@ export const assetSchema = z.object({
 	// no schema-version bump (an older build simply drops the key on save).
 	transcriptionFailure: assetTranscriptionFailureSchema.nullish(),
 	cameraTrack: cameraTrackSchema,
+	// The eye line in a take with no pointer to follow, 0-1 from the top left. Null: looked, none
+	// there. Absent: not looked yet. Additive, as above.
+	face: z.object({ x: z.number(), y: z.number(), h: z.number().optional() }).nullish(),
 });
 
 // A crop is a sub-rectangle of the source video, expressed as fractions
@@ -224,6 +227,26 @@ export const clipSchema = z
 		// that as the identity region {x:0,y:0,width:1,height:1} rather than
 		// storing the identity explicitly, so untouched clips stay lean.
 		cropRegion: clipCropRegionSchema.optional(),
+		// One teleprompter segment of a take. Clips meeting in the same media fold into one unless
+		// something tells them apart: this is what keeps a take's segments separate clips.
+		segmentId: z.string().min(1).optional(),
+		// The clip's own sound is off: a voice-over took its place.
+		audioMuted: z.boolean().optional(),
+		// Other attempts at this clip in the same recording: a segment said again.
+		alternates: z
+			.array(
+				z.object({
+					// Another recording, for a scene said again in a take of its own.
+					assetId: z.string().min(1).optional(),
+					sourceStartSec: z.number(),
+					sourceEndSec: z.number(),
+				}),
+			)
+			.optional(),
+		// The scene of the script this clip is the take of.
+		sceneId: z.string().min(1).optional(),
+		// Where this clip's look differs from the project's: `SEGMENT_LOOK_KEYS` in editorSettings.
+		look: z.record(z.string(), z.unknown()).optional(),
 	})
 	.refine((data) => data.timelineEndSec >= data.timelineStartSec, {
 		message: "timelineEndSec must be greater than or equal to timelineStartSec",
@@ -456,6 +479,12 @@ const annotationStyleSchema = z.object({
 	textAnimation: z
 		.enum(["none", "fade", "rise", "pop", "slide-left", "typewriter", "pulse", "press"])
 		.optional(),
+	// A title's light and colour, as the caption styles have: `captions/settings.ts` CaptionFx.
+	// Loose on purpose: the compositor ignores what it does not know, as it does for captions.
+	fx: z.record(z.string(), z.unknown()).optional(),
+	strokeEm: z.number().min(0).max(0.3).optional(),
+	strokeColor: z.string().optional(),
+	shadow: z.boolean().optional(),
 });
 
 // v5 clip anchor — the source of truth for a modifier's position. A region the user drew
@@ -469,6 +498,18 @@ const clipAnchorShape = {
 	sourceStartSec: z.number().nonnegative().optional(),
 	sourceEndSec: z.number().nonnegative().optional(),
 };
+
+export const graphicDataSchema = z
+	.object({
+		graphicId: z.string().min(1),
+		templateId: z.string().min(1),
+		name: z.string(),
+		fields: z.array(z.object({ id: z.string(), label: z.string(), value: z.string() })),
+		frames: z.array(z.object({ path: z.string(), atMs: z.number().nonnegative() })),
+		durationMs: z.number().positive(),
+		holdMs: z.number().nonnegative(),
+	})
+	.optional();
 
 export const annotationRegionSchema = endGteStart(
 	z.object({
@@ -503,6 +544,7 @@ export const annotationRegionSchema = endGteStart(
 		figureData: figureDataSchema,
 		blurData: blurDataSchema,
 		pipData: pipDataSchema,
+		graphicData: graphicDataSchema,
 	}),
 	"endMs",
 	"startMs",
@@ -546,6 +588,8 @@ export const zoomRegionSchema = endGteStart(
 		customScale: z.number().positive().optional(),
 		source: z.enum(["auto", "manual"]).optional(),
 		hideCursor: z.boolean().optional(),
+		/** Plays dry on its own span (`ZoomMotion`). Absent: the usual zoom, easing around it. */
+		motion: z.enum(["hold", "in", "out", "emphasis"]).optional(),
 	}),
 	"endMs",
 	"startMs",
@@ -758,6 +802,12 @@ const documentSchemaShape = z.object({
 	}),
 	annotations: z.array(annotationRegionSchema).default([]),
 	zoomRanges: z.array(zoomRegionSchema).default([]),
+	// What is going to be said, scene by scene, before anything is recorded.
+	script: z
+		.object({
+			scenes: z.array(z.object({ id: z.string().min(1), name: z.string(), text: z.string() })),
+		})
+		.optional(),
 	// Agent-written shader effects (docs/shader-effects.md). Optional rather than defaulted, like
 	// `vocabulary`: a document without effects carries no trace of them, and every reader treats
 	// an absent list as empty. An older build drops both keys when it saves.

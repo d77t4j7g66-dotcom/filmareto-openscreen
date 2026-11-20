@@ -1,3 +1,4 @@
+import { claudeSignIn, claudeStatus } from "../ai-edition/claude-subscription";
 import { type ChildProcessWithoutNullStreams, spawn } from "node:child_process";
 import { EventEmitter } from "node:events";
 import { constants as fsConstants } from "node:fs";
@@ -97,6 +98,12 @@ import {
 import { findMediaLinksByFingerprint, registerMediaLinks } from "../media/mediaLinksRegistry";
 import { relinkProjectMedia } from "../media/projectMediaRelinker";
 import { detectFrozenSpans, type ScreenActivityResult } from "../media/screenActivity";
+import {
+	analyseTalkingHead,
+	findFace,
+	hearSpans,
+	type TalkingHeadAnalysis,
+} from "../media/talkingHead";
 import { analyseVoiceRegions, type VoiceRegionsResult } from "../media/voiceRegions";
 import { showOpenDialogOver, showSaveDialogOver } from "../messageBox";
 import {
@@ -163,6 +170,13 @@ import {
 	shouldPersistSelectedSource,
 } from "../recording-source-settings";
 import { getSttManager } from "../stt";
+import {
+	nativeHelperPath,
+	teleprompterRecordingChanged,
+	teleprompterRecordingPaused,
+	teleprompterRunTakesOver,
+	teleprompterWindowIds,
+} from "../teleprompter";
 import { createRunnerWindow } from "../windows";
 import { getSourcesByType, shouldEnumerateSourceTypesSeparately } from "./desktopSourceTypes";
 import { registerNativeBridgeHandlers } from "./nativeBridge";
@@ -2009,6 +2023,7 @@ export function registerIpcHandlers(
 	const setAppRecording = (recording: boolean, sourceName: string) => {
 		appRecording = recording;
 		mcpAppRecorder.recordingChanged(recording);
+		teleprompterRecordingChanged(recording);
 		onRecordingStateChange?.(recording, sourceName);
 	};
 	const appSettings = new AppSettingsStore(app.getPath("userData"));
@@ -2178,7 +2193,7 @@ export function registerIpcHandlers(
 		const appWindowSourceIds = [getMainWindow(), getNotesWindow()]
 			.filter((window): window is BrowserWindow => !!window && !window.isDestroyed())
 			.map((window) => window.getMediaSourceId());
-		return collectMacCaptureExcludedWindowIds(appWindowSourceIds);
+		return [...collectMacCaptureExcludedWindowIds(appWindowSourceIds), ...teleprompterWindowIds()];
 	}
 
 	async function presentMacSystemPicker(session: MacPickerSession) {
@@ -2521,6 +2536,12 @@ export function registerIpcHandlers(
 	});
 
 	ipcMain.handle("switch-to-editor", () => {
+		// A take of a run of scenes: the bar stays up with the next scene ready.
+		if (currentRecordingSession && teleprompterRunTakesOver(currentRecordingSession)) {
+			currentRecordingSession = null;
+			currentVideoPath = null;
+			return;
+		}
 		// createEditorWindow already closes the current mainWindow (the HUD) before
 		// opening the editor. Closing it here too double-closes, leaving ghost
 		// transparent windows and compounding the HUD shadow each cycle.
@@ -3243,7 +3264,10 @@ export function registerIpcHandlers(
 				...request,
 				schemaVersion: 1,
 				recordingId,
-				excludedWindowIds: collectMacCaptureExcludedWindowIds(captureExcludedWindowSourceIds),
+				excludedWindowIds: [
+					...collectMacCaptureExcludedWindowIds(captureExcludedWindowSourceIds),
+					...(request.source.type === "display" ? teleprompterWindowIds() : []),
+				],
 				hideDesktopIcons:
 					request.source.type === "display" && appSettings.getSnapshot().recording.hideDesktopIcons,
 				source: {
@@ -3414,6 +3438,7 @@ export function registerIpcHandlers(
 			proc.stdin.write("pause\n");
 			nativeMacIsPaused = true;
 			nativeMacPauseStartedAtMs = Date.now();
+			teleprompterRecordingPaused(true);
 			return { success: true };
 		} catch (error) {
 			return { success: false, error: error instanceof Error ? error.message : String(error) };
@@ -3440,6 +3465,7 @@ export function registerIpcHandlers(
 			proc.stdin.write("resume\n");
 			completeNativeMacCursorPauseRange();
 			nativeMacIsPaused = false;
+			teleprompterRecordingPaused(false);
 			return { success: true };
 		} catch (error) {
 			return { success: false, error: error instanceof Error ? error.message : String(error) };
@@ -4540,6 +4566,40 @@ export function registerIpcHandlers(
 		},
 	);
 
+	// A talking head's loudness and eye line, for its edit (see lib/ai-edition/timeline/yapping).
+	ipcMain.handle(
+		"analyse-talking-head",
+		async (_, filePath: string, durationSec: number): Promise<TalkingHeadAnalysis> => {
+			const normalizedPath = readableApprovedPath(filePath);
+			if (!normalizedPath) return { success: false, message: "File path is not approved" };
+			return analyseTalkingHead(normalizedPath, durationSec, nativeHelperPath());
+		},
+	);
+
+	ipcMain.handle("claude-status", () => claudeStatus());
+	ipcMain.handle("claude-sign-in", () => claudeSignIn());
+
+	ipcMain.handle("find-face", async (_, filePath: string, durationSec: number) => {
+		const normalizedPath = readableApprovedPath(filePath);
+		const helper = nativeHelperPath();
+		return normalizedPath && helper ? findFace(normalizedPath, durationSec, helper) : null;
+	});
+
+	ipcMain.handle(
+		"hear-talking-head",
+		async (
+			_,
+			filePath: string,
+			spans: { start: number; end: number }[],
+			options: { language?: string; prompt?: string },
+		) => {
+			const normalizedPath = readableApprovedPath(filePath);
+			if (!normalizedPath) throw new Error("File path is not approved");
+			const stt = getSttManager();
+			return hearSpans(normalizedPath, spans, options, (request) => stt.transcribe(request));
+		},
+	);
+
 	// Where the voice speaks in a take with separate tracks, for the system audio to dip under
 	// (see media/voiceRegions). `regions: null`: nothing to read, the take is left as it is.
 	ipcMain.handle(
@@ -5300,6 +5360,10 @@ export function registerIpcHandlers(
 				cursor: agentCursorTelemetryReader,
 				cameraSegmentation: () => loudnessService.probeSegmentation(),
 				checkShaderEffect: (code, params) => loudnessService.checkShaderEffect(code, params),
+				claude: {
+					folder: path.join(app.getPath("userData"), "claude-chat"),
+					appBinary: process.execPath,
+				},
 			}),
 		undoAiEditionToolBatch: (_projectId, _sessionId) => ({
 			success: false,

@@ -793,6 +793,11 @@ export function registerNativeBridgeHandlers(context: NativeBridgeContext) {
 									request.payload.sessionId,
 								),
 							);
+						case "captions.read":
+							return createSuccessResponse(
+								requestId,
+								await aiEditionService.captionsRead(request.payload.words),
+							);
 						case "captions.translate":
 							return createSuccessResponse(
 								requestId,

@@ -46,6 +46,38 @@ describe("groupPhraseCaptionSegmentsIntoLines", () => {
 });
 
 describe("groupTimedCaptionWordsIntoLines", () => {
+	const spoken = (...texts: string[]) =>
+		texts.map((text, i) => ({ startSec: i * 0.2, endSec: i * 0.2 + 0.19, text }));
+	const lines = (words: string[], min: number, max: number) =>
+		groupTimedCaptionWordsIntoLines(spoken(...words), min, max).map((line) => line.text);
+
+	it("ends a line where a sentence ends", () => {
+		expect(lines(["είναι", "άθλιο.", "Θα", "σου", "δείξω"], 2, 4)).toEqual([
+			"είναι άθλιο.",
+			"Θα σου δείξω",
+		]);
+		expect(lines(["πώς;", "Έτσι"], 2, 4)).toEqual(["πώς;", "Έτσι"]);
+	});
+
+	it("does not end a line on a little word", () => {
+		expect(lines(["κάνεις", "καλύτερο", "με", "τρία", "κλικ", "μόνο"], 2, 3)).toEqual([
+			"κάνεις καλύτερο",
+			"με τρία κλικ μόνο",
+		]);
+		expect(lines(["καλύτερο", "με", "3", "μόνο", "κλικ"], 2, 3)).toEqual([
+			"καλύτερο",
+			"με 3 μόνο κλικ",
+		]);
+	});
+
+	it("keeps a little word with the next one when a look shows one word at a time", () => {
+		expect(lines(["το", "stabilization", "είναι", "άθλιο"], 1, 1)).toEqual([
+			"το stabilization",
+			"είναι",
+			"άθλιο",
+		]);
+	});
+
 	it("preserves empty timeline space when word timestamps contain a real pause", () => {
 		const lines = groupTimedCaptionWordsIntoLines(
 			[

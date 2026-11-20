@@ -27,7 +27,6 @@ vi.mock("@/contexts/I18nContext", () => ({
 }));
 
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { EditorDialogsProvider } from "@/contexts/EditorDialogsContext";
 import { AUDIO_ROW_EXPANSION_PX } from "@/lib/ai-edition/document/audioTracks";
 import { createAudioTrack, createEmptyDocument } from "@/lib/ai-edition/schema";
 import { useProjectStore } from "@/lib/ai-edition/store/projectStore";
@@ -41,9 +40,7 @@ import {
 function renderShell() {
 	return render(
 		<TooltipProvider>
-			<EditorDialogsProvider>
 				<NewEditorShell />
-			</EditorDialogsProvider>
 		</TooltipProvider>,
 	);
 }

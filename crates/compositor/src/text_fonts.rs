@@ -54,8 +54,8 @@ pub(crate) fn repo_fonts_dir() -> PathBuf {
 /// Les familles embarquées, telles que l'app les stocke. Miroir de `TEXT_FONT_FAMILIES`
 /// (`src/lib/textFonts.ts`), dont le test vérifie que chaque fichier porte bien ce nom.
 #[cfg(test)]
-pub(crate) const SHIPPED_FAMILIES: [&str; 5] =
-    ["Inter", "Lora", "Oswald", "Caveat", "IBM Plex Mono"];
+pub(crate) const SHIPPED_FAMILIES: [&str; 7] =
+    ["Inter", "Geologica", "Open Sans Condensed", "Lora", "Oswald", "Caveat", "IBM Plex Mono"];
 
 /// Chaque famille se voit : deux familles se confondent quand elles dessinent le même bloc,
 /// même largeur ET même hauteur à 2 % près, et un repli commun les confondrait toutes. La
@@ -81,16 +81,17 @@ mod tests {
     fn only_the_font_files_of_the_directory_are_registered() {
         let dir = repo_fonts_dir();
         let files = font_files_in(&dir);
-        // Régulier et gras de chaque famille : les deux graisses qu'un contrôle peut produire.
-        assert_eq!(files.len(), SHIPPED_FAMILIES.len() * 2, "{files:?}");
-        assert!(files.iter().all(|f| f.extension().is_some_and(|e| e == "ttf")));
+        // Régulier et gras de chaque famille, plus les polices de titre : un seul fichier chacune.
+        const SINGLE_FACES: usize = 12;
+        assert_eq!(files.len(), SHIPPED_FAMILIES.len() * 2 + SINGLE_FACES, "{files:?}");
+        assert!(files.iter().all(|f| f.extension().is_some_and(|e| e == "ttf" || e == "otf")));
         // Les licences sont bien là, et bien écartées.
         let licences = std::fs::read_dir(&dir)
             .unwrap()
             .flatten()
             .filter(|e| e.path().extension().is_some_and(|x| x == "txt"))
             .count();
-        assert_eq!(licences, SHIPPED_FAMILIES.len());
+        assert_eq!(licences, SHIPPED_FAMILIES.len() + SINGLE_FACES);
     }
 
     #[test]

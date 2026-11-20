@@ -34,12 +34,12 @@
 }
 
 .selected {
-	border-color: #10b981;
-	box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.16);
+	border-color: #ee6c0e;
+	box-shadow: 0 0 0 3px rgba(238, 108, 14, 0.16);
 }
 
 .selected:hover {
-	border-color: #10b981;
+	border-color: #ee6c0e;
 	transform: translateY(-2px);
 }
 

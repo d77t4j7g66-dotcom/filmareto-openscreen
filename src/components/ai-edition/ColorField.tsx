@@ -25,7 +25,7 @@ export const COLOR_PRESETS: readonly string[] = [
 	"#6b7280",
 	"#16171d",
 	"#0f172a",
-	"#10b981",
+	"#ee6c0e",
 	"#22c55e",
 	"#3b82f6",
 	"#0ea5e9",

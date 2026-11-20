@@ -1,5 +1,7 @@
 # LLM providers
 
+> The editor no longer offers this: its chat runs on the user's own Claude plan through Claude Code (`electron/ai-edition/claude-subscription.ts`), and the settings dialog is gone. The API-key engine described here stays in the tree, with no UI, for a build that goes to other people.
+
 The provider layer defines model metadata, protects credentials, discovers models, and builds the chat model every AI feature runs on. It lives in:
 
 | File | Role |
@@ -10,8 +12,8 @@ The provider layer defines model metadata, protects credentials, discovers model
 | [`electron/ai-edition/deep-agent/chat-model.ts`](../../electron/ai-edition/deep-agent/chat-model.ts) | `createOpenScreenChatModel` — the single transport. Picks a `@langchain/*` chat model class per provider. |
 | [`electron/ai-edition/deep-agent/chat-model.ts`](../../electron/ai-edition/deep-agent/chat-model.ts) | Per-provider reasoning-effort capability and its LangChain wire options. |
 | [`electron/native-bridge/services/aiEditionService.ts`](../../electron/native-bridge/services/aiEditionService.ts) | IPC surface: connect / disconnect, snapshot, `llmListProviderModels`. |
-| [`src/components/ai-edition/ProviderSettings.tsx`](../../src/components/ai-edition/ProviderSettings.tsx) | Renders cards and forms directly from `PROVIDER_DEFINITIONS`. `ProviderSettingsDialog`, in the same file, is its one mount — `App.tsx`, beside `ShortcutsConfigDialog`. |
-| [`src/contexts/EditorDialogsContext.tsx`](../../src/contexts/EditorDialogsContext.tsx) | Which editor dialog is open (`section`), so every entry point opens the same one. |
+| ``src/components/ai-edition/ProviderSettings.tsx`` | Renders cards and forms directly from `PROVIDER_DEFINITIONS`. `ProviderSettingsDialog`, in the same file, is its one mount — `App.tsx`, beside `ShortcutsConfigDialog`. |
+| ``src/contexts/EditorDialogsContext.tsx`` | Which editor dialog is open (`section`), so every entry point opens the same one. |
 
 > **Two doors, one dialog.** The settings dialog is opened from the AI panel — its gear, the
 > welcome card's CTA, the model pill with nothing configured, the quick-pick popover's "full

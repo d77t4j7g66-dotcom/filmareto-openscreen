@@ -48,7 +48,6 @@ function renderTopBar(
 	const onShowAbout = vi.fn();
 	const onCheckForUpdates = vi.fn();
 	const onOpenSettings = vi.fn();
-	const onOpenProviderSettings = vi.fn();
 	const onNewProject = vi.fn();
 	const onOpenProject = vi.fn();
 	const onSave = vi.fn();
@@ -73,7 +72,6 @@ function renderTopBar(
 					openSettings: onOpenSettings,
 					renameProject: onRename,
 					toggleChat: noop,
-					openProviderSettings: onOpenProviderSettings,
 					showAbout: onShowAbout,
 					checkForUpdates: onCheckForUpdates,
 					undo: onUndo,
@@ -87,7 +85,6 @@ function renderTopBar(
 		onShowAbout,
 		onCheckForUpdates,
 		onOpenSettings,
-		onOpenProviderSettings,
 		onNewProject,
 		onOpenProject,
 		onSave,
@@ -191,7 +188,7 @@ describe("ProjectNameField (issue #180)", () => {
 describe("AppMenu", () => {
 	it("hangs the menu on the brand rather than adding a control to the bar", () => {
 		renderTopBar("Demo Project");
-		const trigger = screen.getByRole("button", { name: /OpenScreen/ });
+		const trigger = screen.getByRole("button", { name: /Filmareto/ });
 		expect(trigger).toHaveAttribute("aria-haspopup", "menu");
 		expect(trigger).toHaveAttribute("aria-expanded", "false");
 		// The whole point of the wordmark-as-trigger: no menu until asked for.
@@ -204,77 +201,42 @@ describe("AppMenu", () => {
 		// on the window-drag region and the OS eats the click — the #180 failure, one control
 		// over. Same reason `all: unset` is banned here.
 		renderTopBar("Demo Project");
-		const trigger = screen.getByRole("button", { name: /OpenScreen/ });
+		const trigger = screen.getByRole("button", { name: /Filmareto/ });
 		expect(trigger.tagName).toBe("BUTTON");
 		expect(trigger.getAttribute("style") ?? "").not.toMatch(/all\s*:\s*unset/);
 	});
 
-	it("opens on click and offers shortcuts, AI settings and about", () => {
+	it("opens on click and offers shortcuts and about, with no AI settings or star", () => {
 		renderTopBar("Demo Project");
-		fireEvent.click(screen.getByRole("button", { name: /OpenScreen/ }));
+		fireEvent.click(screen.getByRole("button", { name: /Filmareto/ }));
 		expect(screen.getByRole("menu")).toBeInTheDocument();
 		// Exact names: the translator echoes keys, and both settings rows are labelled with a
 		// `…title` key, so a /title/ match would hit two items and pin neither.
 		expect(screen.getByRole("menuitem", { name: "title" })).toBeInTheDocument();
-		expect(screen.getByRole("menuitem", { name: "providerSettings.title" })).toBeInTheDocument();
+		expect(screen.queryByRole("menuitem", { name: "providerSettings.title" })).toBeNull();
+		expect(screen.queryByRole("menuitem", { name: /starOnGithub/ })).toBeNull();
 		expect(screen.getByRole("menuitem", { name: /actions\.about/ })).toBeInTheDocument();
-	});
-
-	// Issue #420: the AI dialog used to be openable only from the chat panel, which mounts in
-	// Edit mode with the panel expanded. The row is unconditional here — its dialog is mounted
-	// in App.tsx, above every mode — so the menu does not lie in Media and Rec.
-	it("opens the AI settings dialog and closes behind itself", () => {
-		const { onOpenProviderSettings, onOpenSettings } = renderTopBar("Demo Project");
-		fireEvent.click(screen.getByRole("button", { name: /OpenScreen/ }));
-		fireEvent.click(screen.getByRole("menuitem", { name: "providerSettings.title" }));
-		expect(onOpenProviderSettings).toHaveBeenCalledTimes(1);
-		// Distinct from the shortcuts row above it, which is the dialog it would be confused with.
-		expect(onOpenSettings).not.toHaveBeenCalled();
-		expect(screen.queryByRole("menu")).not.toBeInTheDocument();
 	});
 
 	it("routes About to the main process and closes behind itself", () => {
 		const { onShowAbout } = renderTopBar("Demo Project");
-		fireEvent.click(screen.getByRole("button", { name: /OpenScreen/ }));
+		fireEvent.click(screen.getByRole("button", { name: /Filmareto/ }));
 		fireEvent.click(screen.getByRole("menuitem", { name: /actions\.about/ }));
 		expect(onShowAbout).toHaveBeenCalledTimes(1);
 		expect(screen.queryByRole("menu")).not.toBeInTheDocument();
-	});
-
-	it("offers the repo permanently and routes it through main, on every channel", async () => {
-		// The counterpart to the one-time ask after an export: this row is always there. It is
-		// deliberately NOT behind the update veto — a link to the repo root is the one thing a
-		// Store/Flathub/Snap copy may show, since it can walk nobody into a parallel install.
-		const openRepoPage = vi.fn(() => Promise.resolve());
-		(window as unknown as { electronAPI?: unknown }).electronAPI = { openRepoPage };
-		try {
-			renderTopBar("Demo Project");
-			fireEvent.click(screen.getByRole("button", { name: /OpenScreen/ }));
-			// Present next to About even though Check for Updates is absent here (no channel
-			// answer in jsdom), which is the pairing that would break if the two ever shared a veto.
-			expect(
-				screen.queryByRole("menuitem", { name: /actions\.checkForUpdates/ }),
-			).not.toBeInTheDocument();
-			fireEvent.click(screen.getByRole("menuitem", { name: /actions\.starOnGithub/ }));
-			// No URL argument: the renderer holds no link, main owns the one it opens.
-			expect(openRepoPage).toHaveBeenCalledWith();
-			expect(screen.queryByRole("menu")).not.toBeInTheDocument();
-		} finally {
-			(window as unknown as { electronAPI?: unknown }).electronAPI = undefined;
-		}
 	});
 
 	it("carries the file actions the bar used to show as three icons", () => {
 		const { onNewProject, onOpenProject, onSave } = renderTopBar("Demo Project");
 		// Not in the bar any more: only the menu reaches them (and Ctrl+N / Ctrl+O / Ctrl+S).
 		expect(screen.queryByRole("button", { name: "topbar.openProject" })).not.toBeInTheDocument();
-		fireEvent.click(screen.getByRole("button", { name: /OpenScreen/ }));
+		fireEvent.click(screen.getByRole("button", { name: /Filmareto/ }));
 		fireEvent.click(screen.getByRole("menuitem", { name: "topbar.newProject" }));
 		expect(onNewProject).toHaveBeenCalledTimes(1);
-		fireEvent.click(screen.getByRole("button", { name: /OpenScreen/ }));
+		fireEvent.click(screen.getByRole("button", { name: /Filmareto/ }));
 		fireEvent.click(screen.getByRole("menuitem", { name: "topbar.openProject" }));
 		expect(onOpenProject).toHaveBeenCalledTimes(1);
-		fireEvent.click(screen.getByRole("button", { name: /OpenScreen/ }));
+		fireEvent.click(screen.getByRole("button", { name: /Filmareto/ }));
 		fireEvent.click(screen.getByRole("menuitem", { name: "topbar.saveProject" }));
 		expect(onSave).toHaveBeenCalledTimes(1);
 		expect(screen.queryByRole("menu")).not.toBeInTheDocument();
@@ -283,7 +245,7 @@ describe("AppMenu", () => {
 	it("switches the theme from the menu", () => {
 		toggleTheme.mockClear();
 		renderTopBar("Demo Project");
-		fireEvent.click(screen.getByRole("button", { name: /OpenScreen/ }));
+		fireEvent.click(screen.getByRole("button", { name: /Filmareto/ }));
 		// Dark now, so the row offers the way out of it.
 		fireEvent.click(screen.getByRole("menuitem", { name: "topbar.switchToLightTheme" }));
 		expect(toggleTheme).toHaveBeenCalledTimes(1);
@@ -291,7 +253,7 @@ describe("AppMenu", () => {
 
 	it("unfolds the languages inside the menu and marks the current one", () => {
 		renderTopBar("Demo Project");
-		fireEvent.click(screen.getByRole("button", { name: /OpenScreen/ }));
+		fireEvent.click(screen.getByRole("button", { name: /Filmareto/ }));
 		const row = screen.getByRole("menuitem", { name: /topbar\.changeLanguage/ });
 		expect(row).toHaveAttribute("aria-expanded", "false");
 		fireEvent.click(row);
@@ -304,7 +266,7 @@ describe("AppMenu", () => {
 
 	it("closes on Escape and hands focus back to the trigger", () => {
 		renderTopBar("Demo Project");
-		const trigger = screen.getByRole("button", { name: /OpenScreen/ });
+		const trigger = screen.getByRole("button", { name: /Filmareto/ });
 		fireEvent.click(trigger);
 		// Pressed on the first row, where the menu put focus.
 		expect(document.activeElement).toHaveAttribute("role", "menuitem");
@@ -317,7 +279,7 @@ describe("AppMenu", () => {
 	// a listener on the menu itself never heard the key (#1015).
 	it("closes on Escape when focus is no longer in the menu", () => {
 		renderTopBar("Demo Project");
-		const trigger = screen.getByRole("button", { name: /OpenScreen/ });
+		const trigger = screen.getByRole("button", { name: /Filmareto/ });
 		fireEvent.click(trigger);
 		act(() => (document.activeElement as HTMLElement).blur());
 		fireEvent.keyDown(document.body, { key: "Escape" });
@@ -330,7 +292,7 @@ describe("AppMenu", () => {
 		window.addEventListener("keydown", onWindowKeyDown);
 		try {
 			renderTopBar("Demo Project");
-			fireEvent.click(screen.getByRole("button", { name: /OpenScreen/ }));
+			fireEvent.click(screen.getByRole("button", { name: /Filmareto/ }));
 			fireEvent.keyDown(document.activeElement as HTMLElement, { key: "Escape" });
 			expect(onWindowKeyDown).not.toHaveBeenCalled();
 		} finally {
@@ -343,7 +305,7 @@ describe("AppMenu", () => {
 		// build answering false, and as a check refused mid-take: no item, rather than a button
 		// that silently does nothing.
 		renderTopBar("Demo Project");
-		fireEvent.click(screen.getByRole("button", { name: /OpenScreen/ }));
+		fireEvent.click(screen.getByRole("button", { name: /Filmareto/ }));
 		expect(
 			screen.queryByRole("menuitem", { name: /actions\.checkForUpdates/ }),
 		).not.toBeInTheDocument();
@@ -353,7 +315,7 @@ describe("AppMenu", () => {
 		const restore = stubElectronAPI({ version: "9.9.9", canCheckForUpdates: true });
 		try {
 			const { onCheckForUpdates } = renderTopBar("Demo Project");
-			fireEvent.click(screen.getByRole("button", { name: /OpenScreen/ }));
+			fireEvent.click(screen.getByRole("button", { name: /Filmareto/ }));
 			const item = await screen.findByRole("menuitem", { name: /actions\.checkForUpdates/ });
 			fireEvent.click(item);
 			expect(onCheckForUpdates).toHaveBeenCalledTimes(1);
@@ -366,7 +328,7 @@ describe("AppMenu", () => {
 		const restore = stubElectronAPI({ version: "9.9.9", canCheckForUpdates: false });
 		try {
 			renderTopBar("Demo Project");
-			fireEvent.click(screen.getByRole("button", { name: /OpenScreen/ }));
+			fireEvent.click(screen.getByRole("button", { name: /Filmareto/ }));
 			expect(await screen.findByText("9.9.9")).toBeInTheDocument();
 		} finally {
 			restore();
@@ -387,7 +349,7 @@ describe("EditorTopBar responsive affordances and tooltips", () => {
 	it("gives the mode tabs no tooltip: their text is the label", () => {
 		renderTopBar("Demo Project");
 		const tabs = screen.getAllByRole("tab");
-		expect(tabs).toHaveLength(3);
+		expect(tabs).toHaveLength(4);
 		for (const tab of tabs) expect(tab).not.toHaveAttribute("title");
 	});
 
@@ -416,9 +378,9 @@ describe("EditorTopBar responsive affordances and tooltips", () => {
 
 	it("keeps the brand trigger named by its label, with no title repeating it", () => {
 		renderTopBar("Demo Project");
-		const brandBtn = screen.getByRole("button", { name: "OpenScreen" });
+		const brandBtn = screen.getByRole("button", { name: "Filmareto" });
 		expect(brandBtn).not.toHaveAttribute("title");
-		expect(brandBtn).toHaveAttribute("aria-label", "OpenScreen");
+		expect(brandBtn).toHaveAttribute("aria-label", "Filmareto");
 	});
 
 	it("leaves a native title only on text that can be cut short", () => {
@@ -525,7 +487,7 @@ describe("top bar drag region while a menu is open (issue #1009)", () => {
 		renderTopBar("Demo Project");
 		const bar = document.querySelector(`header.${styles.topbar}`) as HTMLElement;
 		expect(bar.matches(condition)).toBe(false);
-		fireEvent.click(screen.getByRole("button", { name: /OpenScreen/ }));
+		fireEvent.click(screen.getByRole("button", { name: /Filmareto/ }));
 		expect(bar.matches(condition)).toBe(true);
 		fireEvent.mouseDown(bar);
 		expect(screen.queryByRole("menu")).not.toBeInTheDocument();

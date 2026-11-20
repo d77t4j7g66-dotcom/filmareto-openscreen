@@ -1,10 +1,8 @@
-import { ArrowLeft, Check, Loader2, X } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { toast } from "sonner";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Tooltip } from "@/components/ui/tooltip";
-import { useEditorDialogActions, useEditorDialogSection } from "@/contexts/EditorDialogsContext";
 import { useScopedT } from "@/contexts/I18nContext";
 import {
 	applyAgentDocumentIfCurrent,
@@ -13,23 +11,13 @@ import {
 import { useProjectStore } from "@/lib/ai-edition/store/projectStore";
 import { useChatPromptBus } from "@/lib/ai-edition/store/useChatPromptBus";
 import { nativeBridgeClient } from "@/native/client";
-import type {
-	AiEditionChatEvent,
-	AiEditionLlmConfig,
-	AiEditionToolCallSummary,
-} from "@/native/contracts";
-import {
-	getReasoningEffortLabel,
-	getReasoningEffortOptions,
-	PROVIDER_DEFINITIONS,
-	type ReasoningEffort,
-} from "../../../electron/ai-edition/provider-registry";
+import type { AiEditionChatEvent, AiEditionToolCallSummary } from "@/native/contracts";
 import { ChatWelcome } from "./ChatWelcome";
-import { canSendChat } from "./chatAvailability";
 import { adoptStoredUserMessage } from "./chatTranscript";
 import { ChatHistoryModal } from "./Modals";
 import styles from "./NewEditorShell.module.css";
-import { useChatBudget } from "./useChatBudget";
+
+type ClaudeStatus = Awaited<ReturnType<typeof window.electronAPI.claudeStatus>>;
 
 interface ChatDisplayMessage {
 	id?: string;
@@ -48,291 +36,17 @@ interface ChatDisplayMessage {
 	thinking?: string;
 }
 
+/** "addZoom" as "add zoom". */
+function humanToolName(name: string): string {
+	return name.replace(/[A-Z]/g, (letter) => ` ${letter.toLowerCase()}`);
+}
+
 /** A message's clock time; a stored value that is no date is shown as stored. */
 function formatMessageTime(time: string): string {
 	const date = new Date(time);
 	return Number.isNaN(date.getTime()) ? time : date.toLocaleTimeString();
 }
 
-// Quick-access model picker anchored to the composer's model pill — mirrors
-// axcut's LlmPopover in "models"/"providers" mode (a lightweight popover, not
-// the full AI-settings modal). "Provider settings…" in the providers screen
-// is the escape hatch into that full modal (same one the header gear opens),
-// matching axcut's `openProviderSettings` from its popover's providers screen.
-function ModelQuickPopover({
-	anchorRect,
-	llmConfig,
-	connectedProviders,
-	onClose,
-	onConfigChange,
-	onOpenFullSettings,
-}: {
-	anchorRect: { left: number; bottom: number; maxHeight: number };
-	llmConfig: AiEditionLlmConfig;
-	connectedProviders: string[];
-	onClose: () => void;
-	onConfigChange: () => void;
-	onOpenFullSettings: () => void;
-}) {
-	const t = useScopedT("editor");
-	const tc = useScopedT("common");
-	const [screen, setScreen] = useState<"models" | "providers">("models");
-	const [browseProviderId, setBrowseProviderId] = useState(llmConfig.provider);
-	const [models, setModels] = useState<string[]>([]);
-	const [modelsLoading, setModelsLoading] = useState(false);
-	const [modelsError, setModelsError] = useState<string | null>(null);
-	const [search, setSearch] = useState("");
-	const [busy, setBusy] = useState(false);
-
-	const browseDef = PROVIDER_DEFINITIONS.find((d) => d.id === browseProviderId);
-
-	useEffect(() => {
-		if (screen !== "models" || !browseProviderId) return;
-		let cancelled = false;
-		setModelsLoading(true);
-		setModelsError(null);
-		void nativeBridgeClient.aiEdition
-			.llmListProviderModels(browseProviderId)
-			.then((result) => {
-				if (cancelled) return;
-				setModels(result.models);
-				setModelsError(result.error ?? null);
-			})
-			.catch((err) => {
-				if (cancelled) return;
-				setModels([]);
-				setModelsError(err instanceof Error ? err.message : String(err));
-			})
-			.finally(() => {
-				if (!cancelled) setModelsLoading(false);
-			});
-		return () => {
-			cancelled = true;
-		};
-	}, [screen, browseProviderId]);
-
-	const selectModel = async (nextModel: string) => {
-		setBusy(true);
-		try {
-			const result = await nativeBridgeClient.aiEdition.llmSetConfig({
-				...llmConfig,
-				provider: browseProviderId,
-				model: nextModel,
-			});
-			if (result.success) {
-				onConfigChange();
-				onClose();
-			} else {
-				setModelsError(result.error ?? t("chat.selectModelFailed"));
-			}
-		} finally {
-			setBusy(false);
-		}
-	};
-
-	const filteredModels = search.trim()
-		? models.filter((candidate) => candidate.toLowerCase().includes(search.trim().toLowerCase()))
-		: models;
-
-	return createPortal(
-		<div
-			role="dialog"
-			aria-modal="true"
-			style={{ position: "fixed", inset: 0, zIndex: 999 }}
-			onMouseDown={(event) => {
-				if (event.target === event.currentTarget) onClose();
-			}}
-		>
-			<section
-				style={{
-					position: "fixed",
-					left: anchorRect.left,
-					bottom: anchorRect.bottom,
-					width: 320,
-					maxHeight: anchorRect.maxHeight,
-					display: "flex",
-					flexDirection: "column",
-					background: "var(--surface)",
-					border: "1px solid var(--border)",
-					borderRadius: 12,
-					boxShadow: "var(--elev-pop)",
-					zIndex: 1000,
-					overflow: "hidden",
-				}}
-			>
-				<div
-					style={{
-						display: "flex",
-						alignItems: "center",
-						justifyContent: "space-between",
-						padding: "10px 12px",
-						borderBottom: "1px solid var(--border-soft)",
-					}}
-				>
-					<button
-						type="button"
-						onClick={() => setScreen(screen === "models" ? "providers" : "models")}
-						style={{
-							display: "flex",
-							alignItems: "center",
-							gap: 6,
-							background: "transparent",
-							border: "none",
-							color: "var(--fg-2)",
-							cursor: "pointer",
-							fontSize: 13,
-							padding: 0,
-						}}
-					>
-						<ArrowLeft size={16} />
-						{screen === "models" ? t("chat.changeProvider") : t("chat.back")}
-					</button>
-					<button
-						type="button"
-						onClick={onClose}
-						aria-label={tc("actions.close")}
-						className={styles.iconBtn}
-					>
-						<X size={16} />
-					</button>
-				</div>
-				<div style={{ overflowY: "auto", padding: 10, minHeight: 0, flex: 1 }}>
-					{screen === "models" ? (
-						<>
-							<div style={{ marginBottom: 8 }}>
-								<div style={{ fontWeight: 600, fontSize: 13 }}>
-									{browseDef?.label ?? browseProviderId}
-								</div>
-								<div style={{ fontSize: 12, color: "var(--muted)" }}>
-									{t("chat.currentModel")}{" "}
-									{browseProviderId === llmConfig.provider
-										? llmConfig.model
-										: (browseDef?.defaultModel ?? t("chat.notSelected"))}
-								</div>
-							</div>
-							<input
-								value={search}
-								onChange={(e) => setSearch(e.target.value)}
-								placeholder={modelsLoading ? t("chat.loadingModels") : t("chat.searchModels")}
-								disabled={modelsLoading || !models.length}
-								className={styles.control}
-								style={{ width: "100%", marginBottom: 8 }}
-							/>
-							{!models.length ? (
-								<div style={{ fontSize: 12, color: "var(--muted)", padding: "8px 0" }}>
-									{modelsLoading
-										? t("chat.loadingModels")
-										: modelsError
-											? t("chat.fetchModelsFailed", { error: modelsError })
-											: t("chat.noModelsAvailable")}
-								</div>
-							) : (
-								<div>
-									{filteredModels.map((candidate) => (
-										<button
-											key={candidate}
-											type="button"
-											disabled={busy}
-											onClick={() => void selectModel(candidate)}
-											style={{
-												display: "flex",
-												alignItems: "center",
-												justifyContent: "space-between",
-												width: "100%",
-												padding: "7px 8px",
-												border: "none",
-												borderRadius: "var(--r-sm)",
-												background:
-													candidate === llmConfig.model && browseProviderId === llmConfig.provider
-														? "var(--accent-soft)"
-														: "transparent",
-												color: "var(--fg)",
-												cursor: "pointer",
-												fontSize: 13,
-												marginBottom: 2,
-											}}
-										>
-											{candidate}
-											{candidate === llmConfig.model && browseProviderId === llmConfig.provider ? (
-												<Check size={12} />
-											) : null}
-										</button>
-									))}
-									{filteredModels.length === 0 ? (
-										<div style={{ fontSize: 12, color: "var(--muted)" }}>
-											{t("chat.noModelsMatch")}
-										</div>
-									) : null}
-								</div>
-							)}
-						</>
-					) : (
-						<>
-							{connectedProviders.map((providerId) => {
-								const def = PROVIDER_DEFINITIONS.find((d) => d.id === providerId);
-								if (!def) return null;
-								return (
-									<button
-										key={providerId}
-										type="button"
-										onClick={() => {
-											setBrowseProviderId(providerId);
-											setScreen("models");
-										}}
-										style={{
-											display: "flex",
-											flexDirection: "column",
-											alignItems: "flex-start",
-											width: "100%",
-											padding: "8px 10px",
-											border: "none",
-											borderRadius: "var(--r-sm)",
-											background:
-												providerId === browseProviderId ? "var(--accent-soft)" : "transparent",
-											color: "var(--fg)",
-											cursor: "pointer",
-											marginBottom: 4,
-										}}
-									>
-										<strong style={{ fontSize: 13 }}>{def.label}</strong>
-										<span style={{ fontSize: 12, color: "var(--muted)" }}>
-											{providerId === llmConfig.provider ? llmConfig.model : def.defaultModel}
-										</span>
-									</button>
-								);
-							})}
-							{connectedProviders.length === 0 ? (
-								<div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 8 }}>
-									{t("chat.noProvidersConnected")}
-								</div>
-							) : null}
-							<button
-								type="button"
-								onClick={() => {
-									onClose();
-									onOpenFullSettings();
-								}}
-								className={`${styles.btn} ${styles.btnSecondary}`}
-								style={{ width: "100%", marginTop: 6 }}
-							>
-								{t("chat.providerSettings")}
-							</button>
-						</>
-					)}
-				</div>
-			</section>
-		</div>,
-		document.body,
-	);
-}
-
-// ponytail: collapsible block that renders a model's reasoning trace (the
-// streaming text from Anthropic/MiniMax `thinking` blocks). Default state is
-// the last ~240 chars of the trace, clamped to two lines — the latest
-// reasoning the model produced. Clicking the header toggles into "solid" mode
-// (full text, scrollable). Used both while the reasoning is still streaming
-// (so the user sees the model is alive) and on the completed message (so the
-// trace is still there to revisit, collapsed by default).
 const THINKING_PREVIEW_TAIL_CHARS = 240;
 function ThinkingBlock({
 	text,
@@ -438,13 +152,18 @@ export function ChatStripPanel() {
 	const [messages, setMessages] = useState<ChatDisplayMessage[]>([]);
 	const [input, setInput] = useState("");
 	const [busy, setBusy] = useState(false);
-	const [llmConfig, setLlmConfig] = useState<AiEditionLlmConfig | null>(null);
-	// The dialog itself is mounted in App.tsx so the app menu can reach it from every mode
-	// (issue #420); this panel only asks for it to be opened, and watches it close.
-	const dialogSection = useEditorDialogSection();
-	const { openDialog } = useEditorDialogActions();
-	const providerSettingsOpen = dialogSection === "providers";
-	const openProviderSettings = useCallback(() => openDialog("providers"), [openDialog]);
+	// Null until the first answer: unknown, not "no". Asked again when the window comes back, so
+	// signing in in the browser is picked up with no restart.
+	const [claude, setClaude] = useState<ClaudeStatus | null>(null);
+	const canChat = claude === null || claude.signedIn;
+	const refreshClaude = useCallback(async () => {
+		setClaude((await window.electronAPI.claudeStatus?.()) ?? null);
+	}, []);
+	useEffect(() => {
+		void refreshClaude();
+		window.addEventListener("focus", refreshClaude);
+		return () => window.removeEventListener("focus", refreshClaude);
+	}, [refreshClaude]);
 	const [chatsOpen, setChatsOpen] = useState(false);
 	const [sessions, setSessions] = useState<
 		Array<{ id: string; title: string; messageCount: number; createdAt: string }>
@@ -463,6 +182,8 @@ export function ChatStripPanel() {
 	// start; deltas append through the chat-event subscription; once the run
 	// resolves we copy it onto the assistant message and clear it.
 	const [thinkingText, setThinkingText] = useState("");
+	// The tool Claude is on right now, so a long turn is not a silent spinner.
+	const [activity, setActivity] = useState<string | null>(null);
 	const [thinkingExpanded, setThinkingExpanded] = useState(false);
 	// sessionId of the in-flight run — late events for prior runs (or for
 	// other windows) are ignored so a stale stream can't pollute the new turn.
@@ -470,31 +191,7 @@ export function ChatStripPanel() {
 	// Per-message expand state for completed turns. Using a Set keeps the
 	// default-collapsed preview lightweight and the click-to-expand obvious.
 	const [thinkingExpandedIds, setThinkingExpandedIds] = useState<Set<string>>(() => new Set());
-	const [reasoningOpen, setReasoningOpen] = useState(false);
-	const [reasoningBusy, setReasoningBusy] = useState(false);
-	// null until the first llmGetSnapshot() lands: "unknown", not "none".
-	const [connectedProviders, setConnectedProviders] = useState<string[] | null>(null);
-	// unknown ≠ none; see chatAvailability.ts.
-	const canChat = canSendChat(llmConfig, connectedProviders);
 	const sendDisabled = busy || !input.trim() || !canChat;
-	const [modelPopoverOpen, setModelPopoverOpen] = useState(false);
-	const modelButtonRef = useRef<HTMLButtonElement | null>(null);
-	const [modelPopoverRect, setModelPopoverRect] = useState<{
-		left: number;
-		bottom: number;
-		maxHeight: number;
-	} | null>(null);
-
-	const refreshLlm = useCallback(async () => {
-		try {
-			const snap = await nativeBridgeClient.aiEdition.llmGetSnapshot();
-			setLlmConfig(snap.config);
-			setConnectedProviders(snap.connectedProviders);
-		} catch {
-			// ponytail: silent
-		}
-	}, []);
-
 	const refreshSessions = useCallback(async (pid: string, preferFirst = false) => {
 		try {
 			const list = await nativeBridgeClient.aiEdition.chatListSessions(pid);
@@ -512,14 +209,6 @@ export function ChatStripPanel() {
 		}
 	}, []);
 
-	// On mount, and again every time the provider dialog closes. Connecting a provider there is
-	// what makes the composer usable here and what fills the model pill, and the dialog no
-	// longer hangs off this component, so there is no onClose to do it from. "Not open" covers
-	// both events at once, which is why there is no ref here watching for the falling edge.
-	useEffect(() => {
-		if (!providerSettingsOpen) void refreshLlm();
-	}, [providerSettingsOpen, refreshLlm]);
-
 	// ponytail: subscribe to streamed chat events so the reasoning trace (and
 	// any future streaming text deltas) lands live instead of arriving all at
 	// once when chatRun resolves. We only act on `thinking` here — text deltas
@@ -528,9 +217,9 @@ export function ChatStripPanel() {
 	// would race the final message. Add `text` handling when that flow lands.
 	useEffect(() => {
 		const unsubChatEvent = window.electronAPI.onAiEditionChatEvent((event: AiEditionChatEvent) => {
-			if (event.kind !== "thinking") return;
 			if (event.sessionId !== thinkingRunSessionRef.current) return;
-			setThinkingText((prev) => prev + event.delta);
+			if (event.kind === "thinking") setThinkingText((prev) => prev + event.delta);
+			if (event.kind === "toolStart") setActivity(event.name);
 		});
 		return unsubChatEvent;
 	}, []);
@@ -583,12 +272,10 @@ export function ChatStripPanel() {
 	const send = async (overrideText?: string) => {
 		const text = (overrideText ?? input).trim();
 		if (!projectId || !text || busy) return;
-		// ponytail: nothing to talk to. Bounce to the settings modal instead of
-		// firing a doomed request. The composer is disabled in this state too,
-		// but Auto-enhance calls send() directly and Enter can slip through.
+		// The composer is disabled in this state too, but Auto-enhance calls send() directly and
+		// Enter can slip through.
 		if (!canChat) {
-			toast.error(t("chat.composerDisabledNoProvider"));
-			openProviderSettings();
+			toast.error(t("chat.signInFirst"));
 			return;
 		}
 		setInput("");
@@ -718,6 +405,7 @@ export function ChatStripPanel() {
 			thinkingRunSessionRef.current = null;
 			setThinkingText("");
 			setThinkingExpanded(false);
+			setActivity(null);
 		}
 	};
 
@@ -806,127 +494,6 @@ export function ChatStripPanel() {
 			globalThis.document.removeEventListener("keydown", handleKeyDown);
 		};
 	}, [rewindFor]);
-
-	const modelLabel = llmConfig ? llmConfig.model : t("chat.configureModel");
-	const providerSupportsReasoning = Boolean(
-		llmConfig &&
-			PROVIDER_DEFINITIONS.find((d) => d.id === llmConfig.provider)?.supportsReasoningEffort,
-	);
-	const currentReasoningEffort: ReasoningEffort =
-		(llmConfig?.reasoningEffort as ReasoningEffort | undefined) ?? "medium";
-	const reasoningLabel =
-		providerSupportsReasoning && llmConfig
-			? getReasoningEffortLabel(llmConfig.provider, currentReasoningEffort)
-			: null;
-
-	const selectReasoningEffort = useCallback(
-		async (effort: ReasoningEffort) => {
-			if (!llmConfig) return;
-			setReasoningBusy(true);
-			try {
-				const result = await nativeBridgeClient.aiEdition.llmSetConfig({
-					...llmConfig,
-					reasoningEffort: effort,
-				});
-				if (result.success) {
-					setLlmConfig({ ...llmConfig, reasoningEffort: effort });
-					setReasoningOpen(false);
-				} else {
-					toast.error(result.error ?? t("chat.reasoningEffortUpdateFailed"));
-				}
-			} catch (err) {
-				toast.error(t("chat.reasoningEffortUpdateFailed"), {
-					description: err instanceof Error ? err.message : String(err),
-				});
-			} finally {
-				setReasoningBusy(false);
-			}
-		},
-		[llmConfig, t],
-	);
-
-	const toggleModelPopoverOpen = useCallback(() => {
-		// Mirrors axcut's providerButtonRef handler: with no provider configured
-		// yet there's nothing to quick-pick a model from, so go straight to the
-		// full settings modal (the "providers" screen) instead of toggling a
-		// popover that would render empty.
-		if (!llmConfig) {
-			openProviderSettings();
-			return;
-		}
-		setModelPopoverOpen((wasOpen) => {
-			if (!wasOpen) {
-				const rect = modelButtonRef.current?.getBoundingClientRect();
-				if (rect) {
-					// The popover opens upward from the pill and can hold a long,
-					// scrollable model list — cap its height to the space actually
-					// available above the button so it never overflows off the top
-					// of the window (only "bottom" is set; nothing clamps "top").
-					setModelPopoverRect({
-						left: rect.left,
-						bottom: window.innerHeight - rect.top + 4,
-						maxHeight: Math.max(160, rect.top - 12),
-					});
-				}
-			}
-			return !wasOpen;
-		});
-	}, [llmConfig, openProviderSettings]);
-
-	// Escape closes the model quick-pick and hands focus back to its pill (#1039). On the document,
-	// as the dialogs do (Modals.tsx), so it is heard from the search field too, and it goes no
-	// further, so nothing else bound to it acts on the same press.
-	useEffect(() => {
-		if (!modelPopoverOpen) return;
-		const onKeyDown = (event: KeyboardEvent) => {
-			if (event.key !== "Escape") return;
-			event.preventDefault();
-			event.stopPropagation();
-			// The rewind confirmation, open above it, takes this press: one Escape, one layer.
-			if (rewindFor) return;
-			setModelPopoverOpen(false);
-			modelButtonRef.current?.focus();
-		};
-		document.addEventListener("keydown", onKeyDown);
-		return () => document.removeEventListener("keydown", onKeyDown);
-	}, [modelPopoverOpen, rewindFor]);
-
-	// Prefer the main process's estimate of the windowed history it actually sends, so
-	// manual compaction can shrink this meter while the complete transcript remains
-	// visible. The renderer estimate is only shown until the first answer arrives --
-	// including in web builds, where the shim answers with its own transcript estimate
-	// rather than leaving the fallback in place.
-	const budget = useChatBudget({ projectId, sessionId: activeSessionId, messages });
-
-	const [compactNowPending, setCompactNowPending] = useState(false);
-	const compactNow = useCallback(async () => {
-		if (!projectId || !activeSessionId || compactNowPending) return;
-		setCompactNowPending(true);
-		try {
-			const result = await nativeBridgeClient.aiEdition.chatCompact(projectId, activeSessionId);
-			if (!result) {
-				toast.info(t("chat.notEnoughHistory"));
-				return;
-			}
-			setMessages(
-				result.session.messages.map((m) => ({
-					id: m.id,
-					role: m.role,
-					content: m.content,
-					time: m.createdAt,
-					toolCalls: m.toolCalls,
-					checkpointId: m.checkpointId ?? null,
-				})),
-			);
-			toast.success(t("chat.compactedSuccess"));
-		} catch (err) {
-			toast.error(t("chat.compactFailed"), {
-				description: err instanceof Error ? err.message : String(err),
-			});
-		} finally {
-			setCompactNowPending(false);
-		}
-	}, [projectId, activeSessionId, compactNowPending, t]);
 
 	const newChat = useCallback(async () => {
 		if (!projectId) return;
@@ -1020,66 +587,13 @@ export function ChatStripPanel() {
 			<div className={styles.panelHeader}>
 				<div className={styles.chatStrip}>
 					<div className={styles.chatStripRow}>
-						<span
-							className={styles.ctxPill}
-							title={t("chat.contextTooltip", {
-								usedTokens: budget.usedTokens,
-								budgetTokens: budget.budgetTokens,
-							})}
-						>
+						<span className={styles.ctxPill}>
 							<span className={styles.d} aria-hidden />
-							{t("chat.contextPercent", { percent: Math.min(100, Math.round(budget.ratio * 100)) })}
+							{claude?.signedIn && claude.plan
+								? t("chat.onPlan", { plan: claude.plan[0].toUpperCase() + claude.plan.slice(1) })
+								: t("chat.claude")}
 						</span>
 						<span className={styles.stripActions}>
-							{/* `aria-disabled`, not `disabled`, so the tooltip still opens on a greyed button. */}
-							<Tooltip content={t("chat.compactContext")}>
-								<button
-									type="button"
-									aria-label={t("chat.compactContext")}
-									className={styles.iconBtn}
-									onClick={
-										!activeSessionId || compactNowPending ? undefined : () => void compactNow()
-									}
-									aria-disabled={!activeSessionId || compactNowPending || undefined}
-								>
-									<svg
-										width={14}
-										height={14}
-										viewBox="0 0 24 24"
-										fill="none"
-										stroke="currentColor"
-										strokeWidth="2"
-										strokeLinecap="round"
-										strokeLinejoin="round"
-										aria-hidden="true"
-									>
-										<path d="M8 4l4 4 4-4" />
-										<path d="M8 20l4-4 4 4" />
-										<path d="M6 12h12" />
-									</svg>
-								</button>
-							</Tooltip>
-							<Tooltip content={t("chat.aiSettings")}>
-								<button
-									type="button"
-									aria-label={t("chat.aiSettings")}
-									onClick={openProviderSettings}
-								>
-									<svg
-										width={14}
-										height={14}
-										viewBox="0 0 24 24"
-										fill="none"
-										stroke="currentColor"
-										strokeWidth="2"
-										strokeLinecap="round"
-										strokeLinejoin="round"
-									>
-										<circle cx="12" cy="12" r="3" />
-										<path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
-									</svg>
-								</button>
-							</Tooltip>
 							<Tooltip content={t("chat.history")}>
 								<button
 									type="button"
@@ -1254,7 +768,7 @@ export function ChatStripPanel() {
 
 			<div className={styles.panelBody} ref={scrollRef}>
 				{!canChat && messages.length === 0 ? (
-					<ChatWelcome onOpenProviderSettings={openProviderSettings} />
+					<ChatWelcome installed={claude?.installed !== false} />
 				) : messages.length === 0 ? (
 					<p
 						style={{
@@ -1456,7 +970,7 @@ export function ChatStripPanel() {
 											className="animate-spin"
 											style={{ marginRight: 6, verticalAlign: "middle" }}
 										/>
-										{t("chat.thinking")}
+										{activity ? t("chat.working", { tool: humanToolName(activity) }) : t("chat.thinking")}
 									</div>
 								)}
 							</div>
@@ -1468,7 +982,7 @@ export function ChatStripPanel() {
 			<div className={styles.chatInput}>
 				<textarea
 					placeholder={
-						canChat ? t("chat.composerPlaceholder") : t("chat.composerDisabledNoProvider")
+						canChat ? t("chat.composerPlaceholder") : t("chat.signInFirst")
 					}
 					value={input}
 					disabled={!canChat}
@@ -1481,115 +995,11 @@ export function ChatStripPanel() {
 					}}
 				/>
 				<div className={styles.actions}>
-					<button
-						ref={modelButtonRef}
-						type="button"
-						className={styles.modelPicker}
-						aria-label={t("chat.modelLabel")}
-						aria-haspopup="menu"
-						aria-expanded={modelPopoverOpen}
-						onClick={toggleModelPopoverOpen}
-					>
-						<svg
-							width={12}
-							height={12}
-							viewBox="0 0 24 24"
-							fill="none"
-							stroke="currentColor"
-							strokeWidth="2"
-							strokeLinecap="round"
-							strokeLinejoin="round"
-						>
-							<line x1="3" y1="6" x2="21" y2="6" />
-							<line x1="3" y1="12" x2="21" y2="12" />
-							<line x1="3" y1="18" x2="21" y2="18" />
-						</svg>
-						{/* Mono is for the model ID; the "set one up" prompt is words. */}
-						<span style={llmConfig ? undefined : { fontFamily: "var(--font-body)" }}>
-							{modelLabel}
-						</span>
-					</button>
-					{reasoningLabel ? (
-						// The shared popover, for its Escape and outside click (#1039); Escape goes no
-						// further, so nothing else bound to it acts on the same press.
-						<Popover open={reasoningOpen} onOpenChange={setReasoningOpen}>
-							<PopoverTrigger asChild>
-								<button
-									type="button"
-									className={styles.reasoningBtn}
-									aria-label={t("chat.reasoningEffortLabel")}
-									aria-haspopup="menu"
-									aria-expanded={reasoningOpen}
-								>
-									<span className={styles.chip}>
-										<span className={styles.d} />
-										{reasoningLabel}
-									</span>
-								</button>
-							</PopoverTrigger>
-							<PopoverContent
-								side="top"
-								align="start"
-								animated={false}
-								className="w-auto border-0 bg-transparent p-0 shadow-none"
-								onEscapeKeyDown={(event) => event.stopPropagation()}
-							>
-								<div
-									role="menu"
-									style={{
-										minWidth: 160,
-										background: "var(--surface)",
-										border: "1px solid var(--border)",
-										borderRadius: "var(--r-md)",
-										boxShadow: "var(--elev-pop)",
-										padding: 4,
-									}}
-								>
-									{getReasoningEffortOptions(llmConfig?.provider ?? "").map((option) => (
-										<button
-											type="button"
-											key={option}
-											role="menuitem"
-											disabled={reasoningBusy}
-											onClick={() => void selectReasoningEffort(option)}
-											style={{
-												display: "flex",
-												alignItems: "center",
-												justifyContent: "space-between",
-												gap: 8,
-												width: "100%",
-												padding: "6px 10px",
-												border: "none",
-												background:
-													option === currentReasoningEffort ? "var(--accent-soft)" : "transparent",
-												color: "var(--fg)",
-												borderRadius: "var(--r-sm)",
-												cursor: "pointer",
-												fontSize: 13,
-											}}
-										>
-											{getReasoningEffortLabel(llmConfig?.provider ?? "", option)}
-											{option === currentReasoningEffort ? <Check size={12} /> : null}
-										</button>
-									))}
-								</div>
-							</PopoverContent>
-						</Popover>
-					) : null}
-					{modelPopoverOpen && modelPopoverRect && llmConfig ? (
-						<ModelQuickPopover
-							anchorRect={modelPopoverRect}
-							llmConfig={llmConfig}
-							connectedProviders={connectedProviders ?? []}
-							onClose={() => setModelPopoverOpen(false)}
-							onConfigChange={() => void refreshLlm()}
-							onOpenFullSettings={openProviderSettings}
-						/>
-					) : null}
-					{/* `aria-disabled`, not `disabled`: this is where "Set up a provider" is said, and a
+					<span style={{ flex: 1 }} />
+					{/* `aria-disabled`, not `disabled`: this is where "Sign in" is said, and a
 					    natively disabled button takes no pointer events, so nothing could show it. */}
 					<Tooltip
-						content={canChat ? t("chat.send") : t("chat.composerDisabledNoProvider")}
+						content={canChat ? t("chat.send") : t("chat.signInFirst")}
 						shortcut={canChat ? "Enter" : undefined}
 					>
 						<button

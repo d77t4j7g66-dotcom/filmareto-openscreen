@@ -101,6 +101,7 @@
     "!dist/cursors/**",
     "!dist/mediapipe/**",
     "!dist/fonts/**",
+    "!dist/caption-styles/**",
     // Exclude dead-weight node_modules: all frontend and electron code is pre-bundled by Vite (saves ~238 MB)
     "!node_modules/**",
     "!*.png",
@@ -165,6 +166,11 @@
     {
       "from": "public/fonts",
       "to": "fonts"
+    },
+    // Each caption style drawn by the compositor, for the pane's tiles.
+    {
+      "from": "public/caption-styles",
+      "to": "caption-styles"
     }
   ],
 
@@ -205,11 +211,19 @@
         "from": "electron/native/bin",
         "to": "electron/native/bin",
         "filter": ["darwin-*/*"]
+      },
+      {
+        // Real files, not the asar: a composition's page reads its fonts and images by file URL.
+        "from": "electron/graphics",
+        "to": "electron/graphics",
+        "filter": ["templates/**/*", "hyperframe.runtime.iife.js"]
       }
     ],
     "extendInfo": {
       "NSAudioCaptureUsageDescription": "Filmareto OpenScreen needs audio capture permission to record system audio.",
       "NSMicrophoneUsageDescription": "Filmareto OpenScreen needs microphone access to record voice audio.",
+      // The teleprompter helper sits inside this bundle, so macOS reads this plist for it.
+      "NSSpeechRecognitionUsageDescription": "Speech recognition runs on this Mac so the teleprompter can follow your voice.",
       "NSCameraUsageDescription": "Filmareto OpenScreen needs camera access to record webcam video.",
       "NSScreenCaptureUsageDescription": "Filmareto OpenScreen needs screen recording permission to detect and capture windows.",
       "NSCameraUseContinuityCameraDeviceType": true

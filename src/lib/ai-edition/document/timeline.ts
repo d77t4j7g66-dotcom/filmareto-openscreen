@@ -1081,7 +1081,10 @@ export function duplicateClip(
 export function insertAssetClip(
 	document: AxcutDocument,
 	index: number,
-	clip: Pick<AxcutClip, "id" | "assetId" | "sourceStartSec" | "origin" | "reason"> & {
+	clip: Pick<
+		AxcutClip,
+		"id" | "assetId" | "sourceStartSec" | "origin" | "reason" | "segmentId" | "sceneId" | "alternates"
+	> & {
 		sourceEndSec: number;
 	},
 ): AxcutDocument {
@@ -1094,6 +1097,72 @@ export function insertAssetClip(
 		wordRefs: [],
 	});
 	return withClipsChanged(document, clips);
+}
+
+/**
+ * A take of a scene on the timeline: in the scene's place in the script, whatever order they were
+ * recorded in. A scene that already has a clip keeps the clip, with its look, and shows the new
+ * take; what it showed becomes another take. `sceneOrder` is the script's scene ids, in order.
+ */
+export function placeSceneTake(
+	document: AxcutDocument,
+	take: {
+		clipId: string;
+		sceneId: string;
+		assetId: string;
+		startSec: number;
+		endSec: number;
+		earlier?: { startSec: number; endSec: number }[];
+	},
+	sceneOrder: string[],
+): AxcutDocument {
+	const said = (take.earlier ?? []).map((span) => ({
+		assetId: take.assetId,
+		sourceStartSec: span.startSec,
+		sourceEndSec: span.endSec,
+	}));
+	const clips = [...document.timeline.clips];
+	const at = clips.findIndex((clip) => clip.sceneId === take.sceneId);
+	if (at >= 0) {
+		const old = clips[at];
+		clips[at] = {
+			...old,
+			assetId: take.assetId,
+			sourceStartSec: take.startSec,
+			sourceEndSec: take.endSec,
+			timelineStartSec: 0,
+			timelineEndSec: take.endSec - take.startSec,
+			wordRefs: [],
+			alternates: [
+				...(old.alternates ?? []).map((other) => ({
+					...other,
+					assetId: other.assetId ?? old.assetId,
+				})),
+				{
+					assetId: old.assetId,
+					sourceStartSec: old.sourceStartSec,
+					sourceEndSec: old.sourceEndSec ?? old.sourceStartSec,
+				},
+				...said,
+			],
+		};
+		return withClipsChanged(document, clips);
+	}
+	const position = sceneOrder.indexOf(take.sceneId);
+	const after = clips.findIndex(
+		(clip) => clip.sceneId !== undefined && sceneOrder.indexOf(clip.sceneId) > position,
+	);
+	return insertAssetClip(document, after >= 0 ? after : clips.length, {
+		id: take.clipId,
+		assetId: take.assetId,
+		sourceStartSec: take.startSec,
+		sourceEndSec: take.endSec,
+		origin: "user",
+		reason: "",
+		segmentId: take.sceneId,
+		sceneId: take.sceneId,
+		...(said.length > 0 ? { alternates: said } : {}),
+	});
 }
 
 /**
@@ -1344,14 +1413,17 @@ function joinContiguous(clips: AxcutClip[]): {
 	return { clips: out, absorbed };
 }
 
-/** Same media, media timecodes that meet, same framing. Crop is the only property a clip
- *  carries that two otherwise-identical neighbours could legitimately disagree on, so it is
- *  the whole of the guard. */
+/** Same media, media timecodes that meet, same framing, same segment of a take: the two
+ *  properties on which otherwise-identical neighbours can legitimately disagree. */
 function joinable(left: AxcutClip, right: AxcutClip): boolean {
 	return (
 		left.assetId === right.assetId &&
 		left.sourceEndSec !== undefined &&
 		Math.abs(left.sourceEndSec - right.sourceStartSec) < 1e-6 &&
+		left.segmentId === right.segmentId &&
+		left.sceneId === right.sceneId &&
+		left.audioMuted === right.audioMuted &&
+		JSON.stringify(left.look ?? null) === JSON.stringify(right.look ?? null) &&
 		JSON.stringify(left.cropRegion ?? null) === JSON.stringify(right.cropRegion ?? null)
 	);
 }

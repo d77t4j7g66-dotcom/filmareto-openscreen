@@ -1,22 +1,29 @@
-// Updating the app from a file somebody sent, instead of from the internet.
-//
-// Filmareto OpenScreen has no release feed, so a new version arrives as a zip of the app
-// (`packaging/make-update.sh`). This module checks that zip is really a newer version of THIS app,
-// signed by the same identity, and then swaps it in for the running app once that has quit.
+// Updating the app from a zip of it, downloaded from the public GitHub repo or sent by somebody
+// (`packaging/make-pkg.sh` makes the zip). This module checks that zip is really a newer version of
+// THIS app, signed by the same identity, and then swaps it in for the running app once that has quit.
 //
 // The signature check is the whole point: anyone can hand over a zip, and the one thing that says
 // it comes from the same maker is the certificate it was signed with, which `codesign -dr -`
 // reports as the designated requirement. The two apps must report the same line.
 
 import { execFile, spawn } from "node:child_process";
-import { promises as fs } from "node:fs";
+import { createWriteStream, promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { Readable } from "node:stream";
+import { pipeline } from "node:stream/promises";
+import type { ReadableStream as WebReadableStream } from "node:stream/web";
 import { promisify } from "node:util";
 
 const run = promisify(execFile);
 
 export const APP_BUNDLE_ID = "com.filmareto.openscreen";
+
+/** Public releases carry the stable identity, so a Beta could never install one. */
+export const UPDATES_FROM_GITHUB = !APP_BUNDLE_ID.endsWith(".beta");
+const UPDATE_REPO = "d77t4j7g66-dotcom/filmareto-openscreen";
+export const LATEST_RELEASE_URL = `https://api.github.com/repos/${UPDATE_REPO}/releases/latest`;
+const RELEASE_DOWNLOADS = `https://github.com/${UPDATE_REPO}/releases/download/`;
 
 /** Positive when `a` is newer than `b`. Compares the dotted numbers; a suffix such as
  *  `-beta` is ignored, and a missing part counts as 0 (so 1.0 equals 1.0.0). */
@@ -38,6 +45,46 @@ export function compareVersions(a: string, b: string): number {
 export function designatedLine(output: string): string | null {
 	const match = output.match(/^#?\s*(designated => .+)$/m);
 	return match ? match[1].trim() : null;
+}
+
+export type ReleaseUpdate = { version: string; url: string };
+
+/** The update zip of the latest GitHub release, when that release is newer than this copy. */
+export function newerReleaseUpdate(release: unknown, currentVersion: string): ReleaseUpdate | null {
+	const { tag_name: tag, assets } = (release ?? {}) as {
+		tag_name?: unknown;
+		assets?: { name?: unknown; browser_download_url?: unknown }[];
+	};
+	if (typeof tag !== "string" || !Array.isArray(assets)) return null;
+	const version = tag.replace(/^v/, "");
+	if (compareVersions(version, currentVersion) <= 0) return null;
+	const asset = assets.find(
+		({ name }) => typeof name === "string" && /^Filmareto-OpenScreen-Update-.+\.zip$/.test(name),
+	);
+	const url = asset?.browser_download_url;
+	if (typeof url !== "string" || !url.startsWith(RELEASE_DOWNLOADS)) return null;
+	return { version, url };
+}
+
+/** Saves the zip to a temporary folder. The caller removes that folder. */
+export async function downloadUpdate(
+	url: string,
+	fetchFile: (url: string, init: RequestInit) => Promise<Response>,
+): Promise<{ zipPath: string; workDir: string }> {
+	const workDir = await fs.mkdtemp(path.join(os.tmpdir(), "filmareto-download-"));
+	try {
+		const response = await fetchFile(url, { signal: AbortSignal.timeout(15 * 60_000) });
+		if (!response.ok || !response.body) throw new Error(`Download failed: ${response.status}`);
+		const zipPath = path.join(workDir, "update.zip");
+		await pipeline(
+			Readable.fromWeb(response.body as WebReadableStream),
+			createWriteStream(zipPath),
+		);
+		return { zipPath, workDir };
+	} catch (error) {
+		await fs.rm(workDir, { recursive: true, force: true });
+		throw error;
+	}
 }
 
 export type PreparedUpdate =

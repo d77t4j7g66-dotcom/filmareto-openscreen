@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleIdentifier</key>
+    <string>com.filmareto.openscreen.teleprompter</string>
+    <key>CFBundleName</key>
+    <string>Filmareto Teleprompter</string>
+    <key>CFBundleShortVersionString</key>
+    <string>0.1.0</string>
+    <key>LSUIElement</key>
+    <true/>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>Το Filmareto Teleprompter ακούει το μικρόφωνο για να ακολουθεί το teleprompter τη φωνή σου.</string>
+    <key>NSSpeechRecognitionUsageDescription</key>
+    <string>Η αναγνώριση ομιλίας γίνεται τοπικά στο Mac για να κυλά το teleprompter μαζί με τη φωνή σου.</string>
+</dict>
+</plist>

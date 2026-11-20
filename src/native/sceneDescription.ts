@@ -18,9 +18,11 @@
 import type {
 	CameraFullscreenRegion,
 	Rotation3DPreset,
+	SceneChoice,
 	SpeedRegion,
 	WallpaperMotion,
 	WebcamBackgroundMode,
+	ZoomMotion,
 } from "@/components/video-editor/types";
 import {
 	DEFAULT_CROP_REGION,
@@ -28,13 +30,16 @@ import {
 	getZoomScale,
 } from "@/components/video-editor/types";
 import { annotationFontSizeFraction } from "@/lib/ai-edition/annotationScale";
+import { expandGraphicRegions } from "@/lib/ai-edition/annotations/graphics";
 import { lockPipSource } from "@/lib/ai-edition/annotations/pip";
 import {
 	captionCuesToTextRegions,
+	captionFaceGuard,
 	deriveCaptionCues,
 	getCaptionSettings,
 	getCaptionTranslations,
 } from "@/lib/ai-edition/captions";
+import type { CaptionTextRegion } from "@/lib/ai-edition/captions/cues";
 import { clickSoundForDocument } from "@/lib/ai-edition/clickSound";
 import { collapseTracksToPills, trackGroupId } from "@/lib/ai-edition/document/audioTracks";
 import { createId } from "@/lib/ai-edition/document/ids";
@@ -51,10 +56,15 @@ import {
 } from "@/lib/ai-edition/document/timeline";
 import type { AxcutAudioTrack, AxcutClip, AxcutDocument } from "@/lib/ai-edition/schema";
 import { nativeShaderEffectValue } from "@/lib/ai-edition/shaderEffects";
-import { getEditorSettings } from "@/lib/ai-edition/store/editorSettings";
+import {
+	type EditorSettingsSnapshot,
+	getClipEditorSettings,
+	getEditorSettings,
+} from "@/lib/ai-edition/store/editorSettings";
 import { assetCameraSource } from "@/lib/ai-edition/timeline/camera";
 import { resolveClipSourceEndSec } from "@/lib/ai-edition/timeline/clipDuration";
 import { removedRawSpans } from "@/lib/ai-edition/timeline/programme-time";
+import { sceneForFormat } from "@/lib/ai-edition/timeline/scenes";
 import { takeProgramme } from "@/lib/ai-edition/timeline/take-programme";
 import {
 	coalesceRegionsForRuler,
@@ -73,6 +83,7 @@ import {
 	resolveWebcamLayoutPreset,
 	resolveWebcamReactiveZoom,
 	shapedScreenAspect,
+	type WebcamLayoutPreset,
 	webcamShapeAspect,
 	webcamSizeToFraction,
 } from "@/lib/compositeLayout";
@@ -109,6 +120,8 @@ export interface SceneZoomRegion {
 	endSec: number;
 	/** Target scale (>1 zooms in). Derived from `depth` (or `customScale` when present). */
 	scale: number;
+	/** Plays dry on its span (`ZoomMotion`). Absent: eases in before it and out after it. */
+	motion?: ZoomMotion;
 	/** Focus point, 0..1 of the frame. */
 	focusX: number;
 	focusY: number;
@@ -159,6 +172,13 @@ export interface SceneShaderEffect {
 export interface SceneCameraFullscreenRegion {
 	startSec: number;
 	endSec: number;
+	/** The layout this scene takes in place of the clip's own, resolved for this piece's clip. */
+	layout?: ResolvedClipLayout | null;
+	/** The camera fills the frame during this scene. */
+	fullCamera?: boolean;
+	/** The scene just before touches this one: ease from it, not through the clip's own layout. */
+	fromLayout?: ResolvedClipLayout | null;
+	fromFullCamera?: boolean;
 	/** See `SceneZoomRegion.clipIndex`. */
 	clipIndex?: number;
 	/** See `SceneZoomRegion.underTrim`. Full-Camera needs no extra gate — its envelope is
@@ -389,6 +409,8 @@ export interface SceneLayout {
 	 * instead of staying centred. Omitted when off, so other payloads are unchanged.
 	 */
 	screenFollow?: true;
+	/** Where the filled window rests with no pointer to follow: the first clip's `screenRest`. */
+	screenRest?: [number, number];
 	/**
 	 * One resolved layout per visible clip, index-aligned with `SceneDescription.clips`
 	 * and `cropByClip`. The scalar fields above are the FIRST clip's entry (fallback for
@@ -433,6 +455,20 @@ export interface SceneLayout {
  * pixels, per-clip or not.
  */
 export interface ResolvedClipLayout {
+	/** Where the filled window rests with no pointer to follow: this take's face. */
+	screenRest?: [number, number];
+	// A segment's own look, on a scene region. Absent: the scene's value stands.
+	screenShadow?: number;
+	roundnessFrac?: number;
+	frame?: string;
+	frameTheme?: string;
+	webcamShadow?: number;
+	webcamMirror?: boolean;
+	webcamReactiveZoom?: boolean;
+	webcamCrop?: { x: number; y: number; width: number; height: number };
+	webcamEffect?: string;
+	webcamBlur?: number;
+	webcamCutoutOverScreen?: boolean;
 	screenRect: SceneRect;
 	webcamRect: SceneRect | null;
 	webcamDodgeRect?: SceneRect | null;
@@ -685,7 +721,31 @@ function parseWallpaper(wallpaper: string) {
  * load. The motion control asks this, not its own guess, so it is shown exactly when the export
  * would move.
  */
+type AnnotationTextStyleWithFx = {
+	fx?: Record<string, unknown>;
+	strokeEm?: number;
+	strokeColor?: string;
+	shadow?: boolean;
+};
+
 /** What an image's `textAnimation` asks of the compositor; the rest leave an image as it was. */
+function captionTextExtras(region: unknown) {
+	const { runs, stroke, shadow, fx, style } = region as Partial<CaptionTextRegion>;
+	// A title carries the same effects in its own stored style.
+	const title = style as (AnnotationTextStyleWithFx & { fontSize: number }) | undefined;
+	const titleStroke = title?.strokeEm
+		? { color: title.strokeColor ?? "#000000", em: title.strokeEm }
+		: null;
+	return {
+		...(runs ? { runs } : {}),
+		...(stroke || titleStroke ? { stroke: stroke ?? titleStroke } : {}),
+		...(shadow || title?.shadow
+			? { shadow: shadow ?? { color: "rgba(0, 0, 0, 0.85)", blurEm: 0.2, yEm: 0.05 } }
+			: {}),
+		...(fx || title?.fx ? { fx: fx ?? title?.fx } : {}),
+	};
+}
+
 const IMAGE_ANIMATIONS: Partial<Record<string, string>> = {
 	press: "press",
 	pop: "pop",
@@ -768,7 +828,7 @@ export function buildNativeClipList(document: AxcutDocument): CompositorClipInpu
 				sourceStartSec: clip.sourceStartSec,
 				sourceEndSec,
 				webcamOffsetSec: camera.offsetSec,
-				hasAudio: true,
+				hasAudio: clip.audioMuted !== true,
 			},
 		];
 	});
@@ -1091,7 +1151,7 @@ export function buildSceneDescription(
 				sourceStartSec: clip.sourceStartSec,
 				sourceEndSec: resolveClipSourceEndSec(clip, asset),
 				webcamOffsetSec: camera.offsetSec,
-				hasAudio: true,
+				hasAudio: clip.audioMuted !== true,
 				// A held segment has an empty source window and exists only for the frames it
 				// holds; every other clip holds nothing.
 			},
@@ -1167,13 +1227,21 @@ export function buildSceneDescription(
 		deriveCaptionCues(document, captionSettings, getCaptionTranslations(document)),
 		captionSettings,
 		captionAspect,
+		// Only a picture that fills the frame moves the face under the caption by this much. A take
+		// of the frame's own shape fills it with no format fill turned on.
+		// A caption pinned to the top has no chin to come down under.
+		captionSettings.avoidFace &&
+			captionSettings.anchorV === "bottom" &&
+			(settings.padding === 0 || isFormatFillActive(document))
+			? captionFaceGuard(document, captionAspect)
+			: null,
 	);
 	const referenceDims = referenceClipDims(document);
 	const sourceAspect =
 		referenceDims.height > 0 ? referenceDims.width / referenceDims.height : 16 / 9;
 	const projectedAnnotations = projectRegionsToSource(
 		[
-			...(document.annotations ?? []),
+			...expandGraphicRegions(document.annotations ?? []),
 			...(captionRegions as unknown as NonNullable<AxcutDocument["annotations"]>),
 		],
 		visibleClips,
@@ -1280,11 +1348,6 @@ export function buildSceneDescription(
 	const screenShaped =
 		settings.formatFollowCursor === true &&
 		shapedScreenAspect(settings.screenAspect, settings.webcamLayoutPreset) !== null;
-	const maxContentSize = paddedContentSize(
-		outputDims,
-		settings.padding,
-		settings.aspectRatio === "auto",
-	);
 	/**
 	 * The screen source SHAPE of a clip = its recording's own dimensions × its crop.
 	 *
@@ -1323,24 +1386,26 @@ export function buildSceneDescription(
 	 * as `screenSourceSizeOf` above: per clip, because two clips need not have been
 	 * recorded with the same camera.
 	 */
+	const clipSettingsOf = (clip: AxcutClip) => getClipEditorSettings(document, clip);
 	const webcamSourceSizeOf = (clip: AxcutClip) =>
 		webcamBoxSourceSize(
 			assetById.get(clip.assetId)?.cameraTrack,
 			webcamSourceSize,
-			settings.webcamCropRegion,
+			clipSettingsOf(clip).webcamCropRegion,
 		);
 	const layoutForClip = (
 		screenSize: { width: number; height: number },
 		hasCamera: boolean,
 		camSize: { width: number; height: number },
+		scenePreset?: WebcamLayoutPreset,
+		s: EditorSettingsSnapshot = settings,
 	) => {
-		const preset = resolveWebcamLayoutPreset(settings.webcamLayoutPreset, hasCamera);
+		const preset = resolveWebcamLayoutPreset(scenePreset ?? s.webcamLayoutPreset, hasCamera);
 		const shaped =
-			settings.formatFollowCursor === true
-				? shapedScreenAspect(settings.screenAspect, preset)
-				: null;
+			s.formatFollowCursor === true ? shapedScreenAspect(s.screenAspect, preset) : null;
 		// Filled when the format follows the cursor, and also for a screen of its own shape that does.
-		const fill = formatFill || (shaped !== null && settings.formatFollowCursor === true);
+		const fill = formatFill || (shaped !== null && s.formatFollowCursor === true);
+		const maxContentSize = paddedContentSize(outputDims, s.padding, s.aspectRatio === "auto");
 		const layout = computeCompositeLayout({
 			canvasSize: outputDims,
 			maxContentSize,
@@ -1353,32 +1418,32 @@ export function buildSceneDescription(
 					: screenSize,
 			webcamSize: preset === "no-webcam" ? null : camSize,
 			layoutPreset: preset,
-			webcamSizePreset: settings.webcamSizePreset,
-			webcamAnchor: settings.webcamAnchor,
-			webcamAspect: webcamShapeAspect(settings.webcamAspect),
-			webcamMaskShape: settings.webcamMaskShape,
-			webcamRoundness: settings.webcamRoundness,
-			webcamOverlap: settings.webcamOverlap,
-			webcamStackSize: settings.webcamStackSize,
-			webcamMargin: settings.webcamMargin,
+			webcamSizePreset: s.webcamSizePreset,
+			webcamAnchor: s.webcamAnchor,
+			webcamAspect: webcamShapeAspect(s.webcamAspect),
+			webcamMaskShape: s.webcamMaskShape,
+			webcamRoundness: s.webcamRoundness,
+			webcamOverlap: s.webcamOverlap,
+			webcamStackSize: s.webcamStackSize,
+			webcamMargin: s.webcamMargin,
 			screenAspect: shaped,
 			freeLayout: {
 				screen: {
-					x: settings.freeScreenX,
-					y: settings.freeScreenY,
-					width: settings.freeScreenWidth,
+					x: s.freeScreenX,
+					y: s.freeScreenY,
+					width: s.freeScreenWidth,
 				},
-				camera: { x: settings.freeCamX, y: settings.freeCamY, width: settings.freeCamWidth },
+				camera: { x: s.freeCamX, y: s.freeCamY, width: s.freeCamWidth },
 			},
 			webcamPad: {
-				left: settings.webcamPadLeft,
-				right: settings.webcamPadRight,
-				bottom: settings.webcamPadBottom,
-				top: settings.webcamPadTop,
-				matchScreen: settings.webcamPadMatchScreen,
+				left: s.webcamPadLeft,
+				right: s.webcamPadRight,
+				bottom: s.webcamPadBottom,
+				top: s.webcamPadTop,
+				matchScreen: s.webcamPadMatchScreen,
 			},
 			screenFill: fill,
-			frame: settings.frame,
+			frame: s.frame,
 		});
 		return layout && fill && layout.screenCover === undefined
 			? { ...layout, screenCover: true }
@@ -1398,33 +1463,165 @@ export function buildSceneDescription(
 		const shortSide = box ? Math.min(box.width, box.height) : 0;
 		return box && shortSide > 0 && radius != null ? radius / shortSide : null;
 	};
-	const dodgeRectOf = (layout: ReturnType<typeof layoutForClip>) => {
-		if (!settings.webcamDodge || settings.webcamLayoutPreset !== "picture-in-picture") return null;
-		const alt = layout ? dodgeWebcamRect(layout, outputDims, settings.webcamAnchor) : null;
+	const dodgeRectOf = (
+		layout: ReturnType<typeof layoutForClip>,
+		s: EditorSettingsSnapshot = settings,
+	) => {
+		if (!s.webcamDodge || s.webcamLayoutPreset !== "picture-in-picture") return null;
+		const alt = layout ? dodgeWebcamRect(layout, outputDims, s.webcamAnchor) : null;
 		return alt ? toFrameFractions(alt) : null;
 	};
-	const resolvedLayoutOf = (layout: ReturnType<typeof layoutForClip>) =>
+	const resolvedLayoutOf = (
+		layout: ReturnType<typeof layoutForClip>,
+		s: EditorSettingsSnapshot = settings,
+	) =>
 		layout
 			? {
 					screenRect: toFrameFractions(layout.screenRect),
 					webcamRect: layout.webcamRect ? toFrameFractions(layout.webcamRect) : null,
-					webcamDodgeRect: dodgeRectOf(layout),
+					webcamDodgeRect: dodgeRectOf(layout, s),
 					webcamCutoutLine:
 						layout.cutoutLineY != null ? layout.cutoutLineY / outputDims.height : null,
 					screenRadiusFrac: radiusFractionOf(layout.screenRect, layout.screenBorderRadius),
 					webcamRadiusFrac: radiusFractionOf(layout.webcamRect, layout.webcamRect?.borderRadius),
-					webcamShape: layout.webcamRect?.maskShape ?? settings.webcamMaskShape,
+					webcamShape: layout.webcamRect?.maskShape ?? s.webcamMaskShape,
 					screenCover: formatFill || (layout.screenCover ?? false),
 				}
 			: null;
 	// One resolved layout per visible clip, index-aligned with `clips` / `cropByClip`.
 	// `for_clip_window` (Rust) selects the entry for the clip being composed, so the
 	// draw path keeps reading a single `layout` and needs no per-clip branch of its own.
-	const layoutByClip = visibleClips.map((clip, index) =>
-		resolvedLayoutOf(
-			layoutForClip(screenSourceSizeOf(clip, index), clipHasCamera(clip), webcamSourceSizeOf(clip)),
-		),
-	);
+	const layoutByClip = visibleClips.map((clip, index): ResolvedClipLayout | null => {
+		const own = clipSettingsOf(clip);
+		const face = formatFill ? assetById.get(clip.assetId)?.face : null;
+		const rest = face ? { screenRest: [face.x, face.y] as [number, number] } : null;
+		const resolved = resolvedLayoutOf(
+			layoutForClip(
+				screenSourceSizeOf(clip, index),
+				clipHasCamera(clip),
+				webcamSourceSizeOf(clip),
+				undefined,
+				own,
+			),
+			own,
+		);
+		return resolved && rest ? { ...resolved, ...rest } : resolved;
+	});
+	// Clips with looks of their own: each one is a scene, so the compositor eases from one to the next.
+	const looksInUse =
+		settings.segmentScene !== null ||
+		visibleClips.some((clip) => clip.look && Object.keys(clip.look).length > 0);
+	const effectOf = (s: EditorSettingsSnapshot) => {
+		if (s.segmentScene) return { mode: "none" as const, overScreen: false };
+		const overScreen = s.webcamLayoutPreset === "cutout-stack" && s.webcamBackgroundMode === "none";
+		return { mode: overScreen ? ("transparent" as const) : s.webcamBackgroundMode, overScreen };
+	};
+	const lookFieldsOf = (s: EditorSettingsSnapshot) => {
+		const effect = effectOf(s);
+		return {
+			screenShadow: s.shadowIntensity,
+			roundnessFrac:
+				s.padding > 0 || s.frame !== "none" ? s.borderRadius / ROUNDNESS_REFERENCE_PX : 0,
+			frame: s.frame,
+			frameTheme: s.frameTheme,
+			webcamShadow: s.webcamShadow / 100,
+			webcamMirror: s.webcamMirrored,
+			webcamReactiveZoom: resolveWebcamReactiveZoom(s.webcamLayoutPreset, s.webcamReactiveZoom),
+			webcamCrop: s.webcamCropRegion,
+			webcamEffect: effect.mode,
+			webcamBlur: s.webcamBlurIntensity,
+			webcamCutoutOverScreen: effect.overScreen,
+		};
+	};
+	// What a scene region asks of the compositor, for the clip this piece of it falls in. With no
+	// `scene`, the region is a clip's own look.
+	const sceneLayoutOf = (
+		scene: SceneChoice | undefined | null,
+		clipIndex: number | undefined,
+		s: EditorSettingsSnapshot = settings,
+	) => {
+		const clip = visibleClips[clipIndex ?? 0];
+		if (!clip) return null;
+		const own = scene === null;
+		const choice = own
+			? (s.segmentScene ?? s.webcamLayoutPreset)
+			: sceneForFormat(scene ?? "camera", outputDims.height > outputDims.width);
+		const hasCamera = clipHasCamera(clip);
+		const preset =
+			choice === "camera" ? undefined : choice === "screen" ? ("no-webcam" as const) : choice;
+		const resolved = resolvedLayoutOf(
+			layoutForClip(
+				screenSourceSizeOf(clip, clipIndex ?? 0),
+				hasCamera,
+				webcamSourceSizeOf(clip),
+				preset,
+				s,
+			),
+			s,
+		);
+		if (!resolved) return null;
+		return {
+			fullCamera: choice === "camera" && hasCamera,
+			layout: {
+				...resolved,
+				...(own ? lookFieldsOf(s) : {}),
+				// Dodging is a picture-in-picture behaviour, set for the project's own layout.
+				webcamDodgeRect:
+					preset && preset !== "picture-in-picture" ? null : resolved.webcamDodgeRect,
+				// Gone from the frame, but as a rect: the compositor needs one to shrink it into.
+				...(choice === "screen" && hasCamera
+					? { webcamRect: { x: 0.5, y: 0.5, width: 0, height: 0 }, webcamRadiusFrac: null }
+					: {}),
+			},
+		};
+	};
+	// Two scenes that touch change straight from one to the other: the first holds to its end and
+	// the second eases from it, rather than each one passing through the clip's own layout.
+	const clipScenes = visibleClips.map((clip, clipIndex) => ({
+		startMs: clip.sourceStartSec * 1000,
+		endMs:
+			(clip.sourceEndSec ?? clip.sourceStartSec + (clip.timelineEndSec - clip.timelineStartSec)) *
+			1000,
+		clipIndex,
+		// The first clip has nothing to come from, and no clip leaves but into the next.
+		animateIn: clipIndex > 0,
+		animateOut: false,
+	}));
+	const sceneRegions = [...(looksInUse ? clipScenes : projectedCameraFullscreenRegions)]
+		.sort((a, b) => (a.clipIndex ?? 0) - (b.clipIndex ?? 0) || a.startMs - b.startMs)
+		.map((region) => ({
+			region: region as (typeof projectedCameraFullscreenRegions)[number],
+			...(looksInUse
+				? sceneLayoutOf(null, region.clipIndex, clipSettingsOf(visibleClips[region.clipIndex ?? 0]))
+				: sceneLayoutOf((region as CameraFullscreenRegion).scene, region.clipIndex)),
+			touchesNext: false,
+			previous: null as null | { layout?: ResolvedClipLayout | null; fullCamera?: boolean },
+		}));
+	const CUT_TOLERANCE_MS = 50;
+	const sourceBoundsMs = (clipIndex: number | undefined) => {
+		const clip = visibleClips[clipIndex ?? 0];
+		return clip
+			? {
+					start: clip.sourceStartSec * 1000,
+					end: (clip.sourceEndSec ?? Number.POSITIVE_INFINITY) * 1000,
+				}
+			: null;
+	};
+	sceneRegions.forEach((entry, index) => {
+		const next = sceneRegions[index + 1];
+		if (!next || entry.region.underTrim || next.region.underTrim) return;
+		const [a, b] = [entry.region, next.region];
+		if (a.continuesAfter || b.continuesBefore) return;
+		const inSameClip = a.clipIndex === b.clipIndex;
+		const acrossClips =
+			(a.clipIndex ?? 0) + 1 === (b.clipIndex ?? 0) &&
+			Math.abs((sourceBoundsMs(a.clipIndex)?.end ?? Number.NaN) - a.endMs) <= CUT_TOLERANCE_MS &&
+			Math.abs((sourceBoundsMs(b.clipIndex)?.start ?? Number.NaN) - b.startMs) <= CUT_TOLERANCE_MS;
+		if (!acrossClips && !(inSameClip && Math.abs(b.startMs - a.endMs) <= CUT_TOLERANCE_MS)) return;
+		entry.touchesNext = true;
+		next.previous = { layout: entry.layout, fullCamera: entry.fullCamera };
+	});
+
 	// Scalar fields stay the FIRST clip's layout: they are the fallback for a payload
 	// without `layoutByClip`, and the value native starts from before any clip is active.
 	const computedLayout = visibleClips[0]
@@ -1449,6 +1646,15 @@ export function buildSceneDescription(
 
 	const cutoutOverScreen =
 		settings.webcamLayoutPreset === "cutout-stack" && settings.webcamBackgroundMode === "none";
+
+	// With looks, the effect only has to start the masks: each scene region says its own.
+	const sceneEffectMode = looksInUse
+		? (visibleClips
+				.map((clip) => effectOf(clipSettingsOf(clip)).mode)
+				.find((mode) => mode !== "none") ?? "none")
+		: cutoutOverScreen
+			? "transparent"
+			: settings.webcamBackgroundMode;
 
 	return {
 		clips,
@@ -1498,6 +1704,7 @@ export function buildSceneDescription(
 			...(formatFill || (screenShaped && settings.formatFollowCursor === true)
 				? { screenFollow: true as const }
 				: {}),
+			...(layoutByClip[0]?.screenRest ? { screenRest: layoutByClip[0].screenRest } : {}),
 			webcamRadiusFrac: radiusFractionOf(
 				computedLayout?.webcamRect,
 				computedLayout?.webcamRect?.borderRadius,
@@ -1586,6 +1793,7 @@ export function buildSceneDescription(
 				getZoomScale(region),
 				zoomLimitByClip[region.clipIndex ?? 0] ?? MAX_ZOOM_SCALE,
 			),
+			...(region.motion ? { motion: region.motion } : {}),
 			focusX: region.focus.cx,
 			focusY: region.focus.cy,
 			// The global Auto-Focus toggle OVERRIDES each region's own mode rather than merely
@@ -1651,6 +1859,8 @@ export function buildSceneDescription(
 							textAlign: style.textAlign,
 							...(verticalAlign ? { verticalAlign } : {}),
 							animation: style.textAnimation ?? null,
+							// Only captions carry these: an annotation's payload stays as it was.
+							...captionTextExtras(region),
 						},
 					};
 				}
@@ -1731,16 +1941,24 @@ export function buildSceneDescription(
 			})
 			// Ascending zIndex so the compositor paints in order without sorting per frame.
 			.sort((a, b) => a.zIndex - b.zIndex),
-		cameraFullscreenRegions: projectedCameraFullscreenRegions.map((region) => ({
-			startSec: region.startMs / 1000,
-			endSec: region.endMs / 1000,
-			clipIndex: region.clipIndex,
-			...(region.underTrim ? { underTrim: true } : {}),
-			// A side the user switched off is a cut, which the compositor already knows as a
-			// region that continues across it.
-			...(region.continuesBefore || region.animateIn === false ? { continuesBefore: true } : {}),
-			...(region.continuesAfter || region.animateOut === false ? { continuesAfter: true } : {}),
-		})),
+		cameraFullscreenRegions: sceneRegions.map(
+			({ region, layout, fullCamera, touchesNext, previous }) => ({
+				startSec: region.startMs / 1000,
+				endSec: region.endMs / 1000,
+				clipIndex: region.clipIndex,
+				...(region.underTrim ? { underTrim: true } : {}),
+				// A side the user switched off is a cut, which the compositor already knows as a
+				// region that continues across it.
+				...(region.continuesBefore || region.animateIn === false ? { continuesBefore: true } : {}),
+				...(region.continuesAfter || region.animateOut === false || touchesNext
+					? { continuesAfter: true }
+					: {}),
+				...(layout ? { layout, fullCamera: fullCamera === true } : {}),
+				...(previous?.layout
+					? { fromLayout: previous.layout, fromFullCamera: previous.fullCamera === true }
+					: {}),
+			}),
+		),
 		// Speed is the one modifier with nothing to show for itself on a parked playhead: a
 		// still frame has no rate. So the entries under a trim are dropped here rather than
 		// shipped inert — `speed_at` (regions.rs) matches on clipIndex + time with no window
@@ -1759,10 +1977,10 @@ export function buildSceneDescription(
 		output: { ...pickOutputDims(document, settings.aspectRatio), fps: null },
 		// Omitted rather than sent as `{mode:"none"}`: the Rust side defaults the field, and
 		// every project without a webcam effect would otherwise carry it for nothing.
-		...(settings.webcamBackgroundMode !== "none" || cutoutOverScreen
+		...(sceneEffectMode !== "none"
 			? {
 					webcamEffect: {
-						mode: cutoutOverScreen ? "transparent" : settings.webcamBackgroundMode,
+						mode: sceneEffectMode,
 						blurIntensity: settings.webcamBlurIntensity,
 						background: parseWallpaper(settings.webcamWallpaper),
 					},

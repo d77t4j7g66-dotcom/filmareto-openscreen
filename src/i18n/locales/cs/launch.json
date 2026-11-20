@@ -14,7 +14,7 @@
 		"microphone": "Mikrofon: nahrává váš hlas",
 		"camera": "Kamera: nahrává vás jako samostatnou vrstvu, kterou můžete v editoru přesouvat",
 		"openStudio": "Otevřít Studio: editor vašich nahrávek",
-		"openNotes": "Otevřít poznámky: text ke čtení během nahrávání",
+		"openNotes": "Teleprompter",
 		"openNotesPlaceholder": "Pište poznámky zde...",
 		"notesToolbar": {
 			"bold": "Tučně",
@@ -70,8 +70,8 @@
 		"screens": "Obrazovky ({{count}})",
 		"windows": "Okna ({{count}})",
 		"emptyTitle": "Žádné obrazovky ani okna nenalezena",
-		"emptyDescription": "Pokud jste právě udělili oprávnění pro záznam obrazovky, znovu načtěte tento výběr. Na macOS může být nutné znovu otevřít OpenScreen.",
-		"loadFailedDescription": "OpenScreen nemohl načíst zdroje záznamu. Znovu načtěte tento výběr a zkuste to znovu.",
+		"emptyDescription": "Pokud jste právě udělili oprávnění pro záznam obrazovky, znovu načtěte tento výběr. Na macOS může být nutné znovu otevřít Filmareto.",
+		"loadFailedDescription": "Filmareto nemohl načíst zdroje záznamu. Znovu načtěte tento výběr a zkuste to znovu.",
 		"defaultSourceName": "Obrazovka"
 	},
 	"recording": {
@@ -79,19 +79,20 @@
 		"systemPicker": "Systém se zeptá, co sdílet",
 		"start": "Spustit nahrávání",
 		"stop": "Zastavit a uložit nahrávku",
-		"saving": "Ukládání..."
+		"saving": "Ukládání...",
+		"noMicrophone": "The microphone is off: this take will have no sound."
 	},
 	"language": "Jazyk",
 	"languageWithName": "Jazyk: {{language}}",
 	"systemLanguagePrompt": {
 		"title": "Použít jazyk systému?",
-		"description": "Detekovali jsme {{language}} jako jazyk vašeho systému. Chcete přepnout OpenScreen na {{language}}?",
+		"description": "Detekovali jsme {{language}} jako jazyk vašeho systému. Chcete přepnout Filmareto na {{language}}?",
 		"switch": "Přepnout na {{language}}",
 		"keepDefault": "Ponechat aktuální jazyk"
 	},
 	"softwareEncoderFallback": {
 		"title": "Přepnuto na softwarové kódování",
-		"description": "Výchozí GPU enkodér se nepodařilo spustit, takže OpenScreen přepnul na softwarové kódování H.264. Nahrávání by mělo pokračovat normálně, ale využití CPU může být vyšší.",
+		"description": "Výchozí GPU enkodér se nepodařilo spustit, takže Filmareto přepnul na softwarové kódování H.264. Nahrávání by mělo pokračovat normálně, ale využití CPU může být vyšší.",
 		"dismiss": "Rozumím",
 		"dontShowAgain": "Již nezobrazovat"
 	},
@@ -108,7 +109,7 @@
 		"checkingForUpdates": "Kontrola…"
 	},
 	"permissions": {
-		"title": "OpenScreen potřebuje několik oprávnění",
+		"title": "Filmareto potřebuje několik oprávnění",
 		"subtitle": "macOS vás o každé požádá jen jednou. Kdykoli je můžete změnit v Nastavení systému.",
 		"level": {
 			"required": "Povinné",
@@ -145,21 +146,71 @@
 			"continue": "Pokračovat",
 			"allow": "Povolit",
 			"openSettings": "Otevřít Nastavení",
-			"restart": "Restartovat OpenScreen",
+			"restart": "Restartovat Filmareto",
 			"start": "Začít"
 		},
 		"help": {
-			"screenPrompt": "macOS vás pak požádá, abyste OpenScreen zapnuli v Nastavení systému.",
-			"screenSettings": "V Nastavení systému zapněte OpenScreen. Pokud macOS nabídne aplikaci ukončit a znovu otevřít, přijměte: toto okno se vrátí.",
-			"screenNotListed": "OpenScreen v seznamu chybí? Klikněte na + a vyberte OpenScreen ve složce Aplikace.",
-			"screenRestart": "Povoleno. OpenScreen se musí restartovat, aby oprávnění mohl použít.",
-			"screenRecurring": "Při prvním nahrávání se vás macOS zeptá, zda smí OpenScreen přistupovat k obrazovce přímo, bez systémového výběru. Klikněte na Povolit. macOS se čas od času zeptá znovu, to je v pořádku.",
-			"systemAudioPrompt": "macOS se vás zeptá, zda smí OpenScreen nahrávat zvuk z vašeho Macu.",
-			"systemAudioRequested": "Pokud jste odmítli, zapněte OpenScreen v části „Jen záznam systémového zvuku“ v Nastavení systému."
+			"screenPrompt": "macOS vás pak požádá, abyste Filmareto zapnuli v Nastavení systému.",
+			"screenSettings": "V Nastavení systému zapněte Filmareto. Pokud macOS nabídne aplikaci ukončit a znovu otevřít, přijměte: toto okno se vrátí.",
+			"screenNotListed": "Filmareto v seznamu chybí? Klikněte na + a vyberte Filmareto ve složce Aplikace.",
+			"screenRestart": "Povoleno. Filmareto se musí restartovat, aby oprávnění mohl použít.",
+			"screenRecurring": "Při prvním nahrávání se vás macOS zeptá, zda smí Filmareto přistupovat k obrazovce přímo, bez systémového výběru. Klikněte na Povolit. macOS se čas od času zeptá znovu, to je v pořádku.",
+			"systemAudioPrompt": "macOS se vás zeptá, zda smí Filmareto nahrávat zvuk z vašeho Macu.",
+			"systemAudioRequested": "Pokud jste odmítli, zapněte Filmareto v části „Jen záznam systémového zvuku“ v Nastavení systému."
 		},
 		"footer": {
 			"screenRequired": "K nahrávání je potřeba nahrávání obrazovky.",
 			"ready": "Vše je připraveno."
 		}
+	},
+	"scene": {
+		"startCameraOnly": "Start recording, camera only",
+		"cameraOnly": "Camera only",
+		"cameraOnlyOn": "Records only the camera and the microphone",
+		"cameraOnlyOff": "Record only the camera, no screen",
+		"nextOf": "Next {{number}}/{{count}}: {{name}}",
+		"allDone": "All scenes recorded",
+		"again": "Again",
+		"againNamed": "Again: {{name}}",
+		"end": "End",
+		"toEdit": "To Edit",
+		"retrySegment": "This segment again from the start",
+		"lastSegment": "Last segment",
+		"nextSegment": "Next segment",
+		"modeVoice": "Voice",
+		"modeManual": "Constant speed",
+		"modeBullets": "Bullets",
+		"posTop": "Top",
+		"posWindow": "Window",
+		"posScreen": "Over the screen",
+		"posFull": "Full screen",
+		"scrolling": "Scrolling",
+		"speed": "Speed",
+		"listensTo": "Listens to: {{mic}}. Change it in System Settings → Sound → Input.",
+		"macInput": "the Mac's input",
+		"bulletsHint": "Each line of the text is a bullet. Move on with ↓ Line or ⌃⌥↓.",
+		"position": "Position",
+		"display": "Display",
+		"automatic": "Automatic",
+		"activeLine": "Active line",
+		"guideLine": "Guide line",
+		"width": "Width",
+		"lines": "Lines",
+		"look": "Look",
+		"letters": "Text size",
+		"lineSpacing": "Line spacing",
+		"paddingSides": "Side padding",
+		"paddingTop": "Top and bottom padding",
+		"background": "Background",
+		"hide": "Hide",
+		"pause": "Pause",
+		"start": "Start",
+		"fromSegmentStart": "From the start of the segment",
+		"prevLine": "↑ Line",
+		"nextLine": "↓ Line",
+		"text": "Text",
+		"textPlaceholder": "Write or paste the text. A line with only a / starts a new segment.",
+		"newSegment": "New segment ( / )",
+		"recHides": "Rec hides this window and starts the teleprompter."
 	}
 }

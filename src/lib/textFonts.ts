@@ -10,7 +10,43 @@
 
 import { getAssetPath } from "./assetPath";
 
-export const TEXT_FONT_FAMILIES = ["Inter", "Lora", "Oswald", "Caveat", "IBM Plex Mono"] as const;
+export const TEXT_FONT_FAMILIES = [
+	"Inter",
+	"Geologica",
+	"Open Sans Condensed",
+	"Lora",
+	"Oswald",
+	"Caveat",
+	"IBM Plex Mono",
+	"Geologica Black",
+	"LT Superior Black",
+	"Open Sans Condensed ExtraBold",
+	"Source Sans Black",
+	"Lato Black",
+	"Manrope ExtraBold",
+	"Syne ExtraBold",
+	"Oi",
+	"LT Remark Black Italic",
+	"LT Remark Italic",
+	"Pixeloid Sans",
+	"Source Code Pro",
+] as const;
+
+/** One file each, drawn at whichever weight is asked for. They all have Greek. */
+export const SINGLE_FACE_FILES: Partial<Record<TextFontFamily, string>> = {
+	"Geologica Black": "GeologicaBlack-Regular.ttf",
+	"LT Superior Black": "LTSuperiorBlack-Regular.ttf",
+	"Open Sans Condensed ExtraBold": "OpenSansCondensedExtraBold-Regular.ttf",
+	"Source Sans Black": "SourceSansBlack-Regular.otf",
+	"Lato Black": "LatoBlack-Regular.ttf",
+	"Manrope ExtraBold": "ManropeExtraBold-Regular.ttf",
+	"Syne ExtraBold": "SyneExtraBold-Regular.ttf",
+	Oi: "Oi-Regular.ttf",
+	"LT Remark Black Italic": "LTRemarkBlackItalic-Regular.otf",
+	"LT Remark Italic": "LTRemarkItalic-Regular.otf",
+	"Pixeloid Sans": "PixeloidSans-Regular.ttf",
+	"Source Code Pro": "SourceCodePro-Regular.ttf",
+};
 
 export type TextFontFamily = (typeof TEXT_FONT_FAMILIES)[number];
 
@@ -29,6 +65,8 @@ export function resolveTextFontFamily(value: unknown): TextFontFamily {
 
 /** Where a family's weight ships, relative to the asset base (`public/` in dev). */
 export function textFontFile(family: TextFontFamily, weight: "normal" | "bold"): string {
+	const single = SINGLE_FACE_FILES[family];
+	if (single) return `fonts/${single}`;
 	return `fonts/${family.replace(/ /g, "")}-${weight === "bold" ? "Bold" : "Regular"}.ttf`;
 }
 

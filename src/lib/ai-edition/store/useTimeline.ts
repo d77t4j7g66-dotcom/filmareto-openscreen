@@ -3,19 +3,45 @@
 // speed regions. Each add creates a 2-second region at the current playhead
 // (a reasonable default for the user to then resize).
 
+import { toastText } from "@/i18n/toastText";
+import { ZOOM_DEPTH_SCALES } from "../timeline/zoom-scale";
+import {
+	documentHasRecordedCursor,
+	recordingHasCursor,
+} from "@/components/ai-edition/recordedCursorTypes";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { toFileUrl } from "@/components/video-editor/projectPersistence";
 import type {
 	AnnotationRegion,
 	AnnotationType,
+	CameraFullscreenRegion,
+	GraphicData,
 	Rotation3DPreset,
+	SceneChoice,
+	ZoomMotion,
 } from "@/components/video-editor/types";
+import { DEFAULT_ANNOTATION_STYLE } from "@/components/video-editor/types";
 import { useScopedT } from "@/contexts/I18nContext";
 import { patchKeycaps } from "@/lib/ai-edition/annotations/keycapLayout";
+import {
+	coverAxis,
+	faceUnderPlayhead,
+	focusForZoom,
+	YAPPING_REASON,
+	YAPPING_ZOOM_PREFIX,
+	type YappingPlan,
+} from "@/lib/ai-edition/timeline/yapping";
 import { DEFAULT_TEXT_PLATE } from "../annotations/background";
+import { type GraphicTemplate, graphicFrameSize } from "../annotations/graphics";
 import { fitTextBox } from "../annotations/placement";
 import { sourceSpanToTimelineSpans } from "../captions/cues";
+import {
+	captionStyleOf,
+	captionStylePatch,
+	getCaptionSettings,
+	patchCaptionSettings,
+} from "../captions/settings";
 import {
 	collapseTracksToPills,
 	patchAudioTrack,
@@ -39,11 +65,13 @@ import {
 	resequenceClips,
 	setClipSourceRange,
 } from "../document/timeline";
+import { applyTranscriptionResult } from "../document/transcript";
 import type {
 	AxcutAudioTrack,
 	AxcutClipCropRegion,
 	AxcutDocument,
 	AxcutShaderEffectRange,
+	AxcutTranscript,
 } from "../schema";
 import {
 	findShaderEffect,
@@ -66,7 +94,12 @@ import {
 import { dropTrimPillsByIds, resolveTimelineSpanToTrim } from "../timeline/trim-mapping";
 import { MAX_ZOOM_SCALE, MIN_ZOOM_SCALE } from "../timeline/zoom-scale";
 import type { AutoZoomSuggestion } from "../timeline/zoom-suggestions";
-import { getEditorSettings } from "./editorSettings";
+import {
+	applyLookToAllClips,
+	getEditorSettings,
+	patchClipLook,
+	patchEditorSettings,
+} from "./editorSettings";
 import { saveWithDeadline, useProjectStore, waitForDocumentSaves } from "./projectStore";
 import { currentWriteEpoch } from "./undoStack";
 import { useSequentialTimelineOps } from "./useSequentialTimelineOps";
@@ -167,6 +200,17 @@ function patchShaderEffectPill(
 	};
 }
 
+/** The axis a filled format cuts from the first take, or none when the format is not filled. */
+function coverOf(document: AxcutDocument): "x" | "y" | null {
+	const settings = getEditorSettings(document);
+	const video = document.assets.find((asset) => asset.kind === "video")?.video;
+	if (settings.formatFollowCursor !== true || !video?.width || !video.height) return null;
+	return coverAxis(
+		video.width / video.height,
+		resolveAspectRatioValue(document, settings.aspectRatio),
+	);
+}
+
 export function useTimeline() {
 	const ts = useScopedT("settings");
 	const document = useProjectStore((s) => s.document);
@@ -248,6 +292,42 @@ export function useTimeline() {
 	// agrees without each re-probing on its own (what the export dialog used to do). Attempt each
 	// asset at most once per session, even on failure, so a file that can't be probed doesn't
 	// spin the effect on every document change.
+	// Where the face is in a take with no pointer to follow: what the fill rests on and a new zoom
+	// goes to. Looked for once per take, in the background, and kept with it.
+	const facedAssetIdsRef = useRef<Set<string>>(new Set());
+	useEffect(() => {
+		if (!document) return;
+		const originatingProjectId = document.project.id;
+		for (const asset of document.assets) {
+			if (
+				asset.kind !== "video" ||
+				!asset.originalPath ||
+				!asset.durationSec ||
+				asset.cameraTrack ||
+				asset.face !== undefined ||
+				facedAssetIdsRef.current.has(asset.id)
+			) {
+				continue;
+			}
+			facedAssetIdsRef.current.add(asset.id);
+			const { id, originalPath, durationSec } = asset;
+			void (async () => {
+				if (await recordingHasCursor(originalPath)) return;
+				const face = await window.electronAPI?.findFace?.(originalPath, durationSec);
+				if (face === undefined || (await waitForDocumentSaves()) === "timeout") return;
+				const current = useProjectStore.getState().document;
+				if (current?.project.id !== originatingProjectId) return;
+				await useProjectStore.getState().saveDocument(
+					{
+						...current,
+						assets: current.assets.map((a) => (a.id === id ? { ...a, face } : a)),
+					},
+					{ history: false },
+				);
+			})().catch((error) => console.warn("[timeline] could not look for a face:", error));
+		}
+	}, [document]);
+
 	const probedAssetIdsRef = useRef<Set<string>>(new Set());
 	useEffect(() => {
 		if (!document) return;
@@ -402,9 +482,18 @@ export function useTimeline() {
 						endMs,
 						depth: 3,
 						// Auto: a zoom added with Z frames what the pointer is doing, like the ones
-						// placed at import. The centre is its fallback where no pointer was recorded.
-						focus: { cx: 0.5, cy: 0.5 },
-						focusMode: "auto" as const,
+						// placed at import. With no pointer recorded it goes to the face, where it
+						// can be dragged, or the centre.
+						...(documentHasRecordedCursor(document) === false
+							? {
+									focus: focusForZoom(
+										faceUnderPlayhead(document, playheadSec()),
+										ZOOM_DEPTH_SCALES[3],
+										coverOf(document),
+									),
+									focusMode: "manual" as const,
+								}
+							: { focus: { cx: 0.5, cy: 0.5 }, focusMode: "auto" as const }),
 					},
 				],
 				document.timeline.clips,
@@ -1110,6 +1199,126 @@ export function useTimeline() {
 		[saveZoomPatch],
 	);
 
+	/**
+	 * The edit of a talking head. A second run replaces the first one's cuts and zooms and leaves
+	 * yours alone: they are told apart by the reason and the id they were written with.
+	 */
+	const applyYapping = useCallback(
+		async (
+			plans: Array<{
+				assetId: string;
+				plan: YappingPlan;
+				face: { x: number; y: number } | null;
+				talkingHeadOnly: boolean;
+				/** What the edit heard. Your corrections to the words carry over onto it. */
+				transcript: AxcutTranscript | null;
+			}>,
+		) => {
+			const start = useProjectStore.getState().document;
+			if (!start || useProjectStore.getState().projectId !== projectId) return false;
+			const aspect = resolveAspectRatioValue(start, getEditorSettings(start).aspectRatio);
+			let doc = useProjectStore.getState().document ?? start;
+			for (const { transcript } of plans) {
+				if (transcript) doc = applyTranscriptionResult(doc, transcript).document;
+			}
+			const trims = plans.flatMap(({ assetId, plan }) =>
+				plan.cuts.map((cut) => ({
+					id: createId("trim"),
+					assetId,
+					startSec: cut.start,
+					endSec: cut.end,
+					reason: YAPPING_REASON,
+					origin: "system" as const,
+				})),
+			);
+			const clips = doc.timeline.clips;
+			// This edit fills the format, so its zooms are placed for a filled picture.
+			const coverAxisOfAsset = (assetId: string) => {
+				const video = start.assets.find((asset) => asset.id === assetId)?.video;
+				return video?.width && video.height ? coverAxis(video.width / video.height, aspect) : null;
+			};
+			const zooms = plans.flatMap(({ assetId, plan, face }) =>
+				plan.zooms.flatMap((zoom) =>
+					sourceSpanToTimelineSpans(assetId, zoom.start, zoom.end, clips).flatMap((span) =>
+						anchorRegionsWithDerivedMs(
+							[
+								{
+									id: createId(YAPPING_ZOOM_PREFIX),
+									startMs: Math.round(span.startSec * 1000),
+									endMs: Math.round(span.endSec * 1000),
+									depth: 1 as const,
+									customScale: zoom.scale,
+									motion: zoom.motion,
+									focus: focusForZoom(face, zoom.scale, coverAxisOfAsset(assetId)),
+									focusMode: "manual" as const,
+									source: "auto" as const,
+								},
+							],
+							clips,
+							() => createId(YAPPING_ZOOM_PREFIX),
+						),
+					),
+				),
+			);
+			// A take of the camera alone is the whole picture: no frame round it, and it fills the
+			// format, resting on the face. A project with a screen take too keeps the frame on that one.
+			const whole = plans.filter((plan) => plan.talkingHeadOnly && plan.face);
+			const noFrame = { padding: 0, borderRadius: 0, shadowIntensity: 0 };
+			const allOfIt = clips.every((clip) => whole.some((plan) => plan.assetId === clip.assetId));
+			if (whole.length > 0) doc = patchEditorSettings(doc, { formatFollowCursor: true });
+			if (whole.length > 0 && allOfIt) doc = patchEditorSettings(doc, noFrame);
+			for (const clip of clips) {
+				if (!whole.some((plan) => plan.assetId === clip.assetId)) continue;
+				if (!allOfIt) doc = patchClipLook(doc, clip.id, noFrame);
+			}
+			doc = {
+				...doc,
+				assets: doc.assets.map((asset) => {
+					const plan = whole.find((candidate) => candidate.assetId === asset.id);
+					return plan ? { ...asset, face: plan.face } : asset;
+				}),
+				timeline: {
+					...doc.timeline,
+					trimRanges: [
+						...doc.timeline.trimRanges.filter((trim) => trim.reason !== YAPPING_REASON),
+						...trims,
+					],
+				},
+				zoomRanges: [
+					...doc.zoomRanges.filter((zoom) => !zoom.id.startsWith(`${YAPPING_ZOOM_PREFIX}_`)),
+					...zooms,
+				] as AxcutDocument["zoomRanges"],
+			};
+			// A style the user picked stays. Otherwise an edit like this one wants words that light up.
+			doc = patchCaptionSettings(
+				doc,
+				{
+					enabled: true,
+					...(captionStyleOf(getCaptionSettings(doc, aspect)) === "classic"
+						? captionStylePatch("punch", aspect)
+						: {}),
+				},
+				aspect,
+			);
+			return saveDocument(doc, { history: true });
+		},
+		[projectId, saveDocument],
+	);
+
+	/** The look of one clip on every clip, and on the clips to come. */
+	const applyLookToAll = useCallback(
+		async (clipId: string) => {
+			const doc = useProjectStore.getState().document;
+			if (doc) await saveDocument(applyLookToAllClips(doc, clipId), { history: true });
+		},
+		[saveDocument],
+	);
+
+	const updateZoomMotion = useCallback(
+		(id: string, motion: ZoomMotion | undefined) => saveZoomPatch(id, { motion }),
+		[saveZoomPatch],
+	);
+
 	// Nothing could set `focusMode`: "auto" only ever arrived from the automatic suggestion pass
 	// (`zoomSuggestions.ts`), so a hand-drawn zoom stayed pinned to its static focus point with no
 	// way to make it follow the cursor. The capability itself was complete end to end —
@@ -1230,6 +1439,230 @@ export function useTimeline() {
 				},
 			};
 			await saveDocument(next, { history: true });
+		},
+		[document, saveDocument],
+	);
+
+	const setClipAudioMuted = useCallback(
+		async (clipId: string, muted: boolean) => {
+			const doc = useProjectStore.getState().document;
+			if (!doc) return;
+			await saveDocument(
+				{
+					...doc,
+					timeline: {
+						...doc.timeline,
+						clips: doc.timeline.clips.map((clip) =>
+							clip.id === clipId ? { ...clip, audioMuted: muted || undefined } : clip,
+						),
+					},
+				},
+				{ history: true },
+			);
+		},
+		[saveDocument],
+	);
+
+	// Show another attempt at this clip: the one showing goes in its place among the takes.
+	const showClipTake = useCallback(
+		async (
+			clipId: string,
+			take: { assetId?: string; sourceStartSec: number; sourceEndSec: number },
+		) => {
+			const doc = useProjectStore.getState().document;
+			const clip = doc?.timeline.clips.find((c) => c.id === clipId);
+			if (!doc || !clip?.alternates) return;
+			const sameFile = (other: { assetId?: string }) =>
+				(other.assetId ?? clip.assetId) === (take.assetId ?? clip.assetId);
+			const alternates = [
+				...clip.alternates.filter(
+					(other) => !(sameFile(other) && other.sourceStartSec === take.sourceStartSec),
+				),
+				{
+					assetId: clip.assetId,
+					sourceStartSec: clip.sourceStartSec,
+					sourceEndSec: clip.sourceEndSec ?? 0,
+				},
+			];
+			// Another recording first: the range is measured against the file it plays.
+			const onFile: AxcutDocument = {
+				...doc,
+				timeline: {
+					...doc.timeline,
+					clips: doc.timeline.clips.map((c) =>
+						c.id === clipId ? { ...c, assetId: take.assetId ?? c.assetId } : c,
+					),
+				},
+			};
+			const moved = setClipSourceRange(onFile, clipId, take.sourceStartSec, take.sourceEndSec);
+			await saveDocument(
+				{
+					...moved,
+					timeline: {
+						...moved.timeline,
+						clips: moved.timeline.clips.map((c) => (c.id === clipId ? { ...c, alternates } : c)),
+					},
+				},
+				{ history: true },
+			);
+		},
+		[saveDocument],
+	);
+
+	// A motion graphic placed from `startSec`, no further than `endLimitSec`. The render comes first,
+	// and the save uses the document as it stands once it is back.
+	const addGraphic = useCallback(
+		async (template: GraphicTemplate, startSec: number, endLimitSec: number) => {
+			const before = useProjectStore.getState().document;
+			if (!before) return false;
+			const fields = template.variables.map((v) => ({
+				id: v.id,
+				label: v.label,
+				value: v.default,
+			}));
+			try {
+				const rendered = await window.electronAPI.graphics.render({
+					templateId: template.id,
+					variables: Object.fromEntries(fields.map((f) => [f.id, f.value])),
+					...graphicFrameSize(
+						resolveAspectRatioValue(before, getEditorSettings(before).aspectRatio),
+					),
+				});
+				const doc = useProjectStore.getState().document;
+				if (!doc) return false;
+				const startMs = Math.round(startSec * 1000);
+				const region: AnnotationRegion = {
+					id: createId("ann"),
+					startMs,
+					endMs: Math.min(startMs + rendered.durationMs, Math.round(endLimitSec * 1000)),
+					type: "image",
+					content: "",
+					space: "frame",
+					position: { x: 0, y: 0 },
+					size: { width: 100, height: 100 },
+					style: DEFAULT_ANNOTATION_STYLE,
+					zIndex: doc.annotations.length + 1,
+					graphicData: {
+						graphicId: createId("gfx"),
+						templateId: template.id,
+						name: template.name,
+						fields,
+						...rendered,
+					},
+				};
+				const created = anchorRegionsWithDerivedMs([region], doc.timeline.clips, () =>
+					createId("ann"),
+				);
+				const next: AxcutDocument = {
+					...doc,
+					annotations: [...doc.annotations, ...created] as unknown as AxcutDocument["annotations"],
+				};
+				if (!(await saveDocument(next, { history: true }))) return false;
+				const newId = created[0]?.id ?? region.id;
+				setMultiSelection([{ kind: "annotation", id: newId }]);
+				setSelection({ kind: "annotation", id: newId });
+				return true;
+			} catch (error) {
+				toast.error(error instanceof Error ? error.message : String(error));
+				return false;
+			}
+		},
+		[saveDocument],
+	);
+
+	// Every piece of one graphic, from a render of `fields` for the project's format.
+	const rerenderGraphic = useCallback(
+		async (
+			graphic: GraphicData,
+			fields: GraphicData["fields"],
+			options: { history: boolean },
+		): Promise<boolean> => {
+			const before = useProjectStore.getState().document;
+			if (!before) return false;
+			const rendered = await window.electronAPI.graphics.render({
+				templateId: graphic.templateId,
+				variables: Object.fromEntries(fields.map((f) => [f.id, f.value])),
+				...graphicFrameSize(resolveAspectRatioValue(before, getEditorSettings(before).aspectRatio)),
+			});
+			const doc = useProjectStore.getState().document;
+			if (!doc) return false;
+			if (fields === graphic.fields && rendered.frames[0]?.path === graphic.frames[0]?.path) {
+				return true;
+			}
+			const annotations = (doc.annotations as unknown as AnnotationRegion[]).map((region) =>
+				region.graphicData?.graphicId === graphic.graphicId
+					? { ...region, graphicData: { ...region.graphicData, fields, ...rendered } }
+					: region,
+			);
+			return saveDocument(
+				{ ...doc, annotations: annotations as unknown as AxcutDocument["annotations"] },
+				options,
+			);
+		},
+		[saveDocument],
+	);
+
+	const updateGraphicField = useCallback(
+		async (graphic: GraphicData, fieldId: string, value: string) => {
+			const fields = graphic.fields.map((f) => (f.id === fieldId ? { ...f, value } : f));
+			try {
+				await rerenderGraphic(graphic, fields, { history: true });
+			} catch (error) {
+				toast.error(error instanceof Error ? error.message : String(error));
+			}
+		},
+		[rerenderGraphic],
+	);
+
+	// Graphics follow the project's format, and find their frames again on another machine. Cached
+	// renders come straight back, so this costs nothing when nothing changed.
+	const refreshGraphics = useCallback(async () => {
+		const doc = useProjectStore.getState().document;
+		const graphics = new Map(
+			((doc?.annotations ?? []) as unknown as AnnotationRegion[]).flatMap((region) =>
+				region.graphicData ? [[region.graphicData.graphicId, region.graphicData] as const] : [],
+			),
+		);
+		if (graphics.size === 0) return;
+		// Said only when it takes a while: an export in this window would still show the old frames.
+		const notice = setTimeout(
+			() => toast.loading(toastText("editor", "studio.adaptingGraphics"), { id: "graphics" }),
+			800,
+		);
+		for (const graphic of graphics.values()) {
+			try {
+				await rerenderGraphic(graphic, graphic.fields, { history: false });
+			} catch (error) {
+				console.warn("[graphics] could not render", graphic.name, error);
+			}
+		}
+		clearTimeout(notice);
+		toast.dismiss("graphics");
+	}, [rerenderGraphic]);
+
+	// Change what one scene shows, keeping its span.
+	const updateCameraFullscreenScene = useCallback(
+		async (id: string, choice: SceneChoice) => {
+			if (!document) return;
+			const legacy = (document.legacyEditor as Record<string, unknown>) ?? {};
+			const prev = (legacy.cameraFullscreenRegions as CameraFullscreenRegion[]) ?? [];
+			const pill = coalesceRegionsForRuler(prev).find((p) => p.ids.includes(id));
+			if (!pill) return;
+			const members = new Set(pill.ids);
+			await saveDocument(
+				{
+					...document,
+					legacyEditor: {
+						...legacy,
+						cameraFullscreenRegions: prev.map((region) => {
+							if (!members.has(region.id)) return region;
+							const { scene: _scene, ...rest } = region;
+							return choice === "camera" ? rest : { ...rest, scene: choice };
+						}),
+					},
+				},
+				{ history: true },
+			);
 		},
 		[document, saveDocument],
 	);
@@ -1747,13 +2180,7 @@ export function useTimeline() {
 
 	const cameraFullscreenRegions = hasDoc
 		? (((document.legacyEditor as Record<string, unknown> | null)
-				?.cameraFullscreenRegions as Array<{
-				id: string;
-				startMs: number;
-				endMs: number;
-				animateIn?: boolean;
-				animateOut?: boolean;
-			}>) ?? [])
+				?.cameraFullscreenRegions as CameraFullscreenRegion[]) ?? [])
 		: [];
 
 	// One region per effect, never two at once; each names its definition.
@@ -1994,6 +2421,9 @@ export function useTimeline() {
 		updateZoomDepth,
 		updateZoomCustomScale,
 		updateZoomRotation,
+		updateZoomMotion,
+		applyLookToAll,
+		applyYapping,
 		updateZoomFocusMode,
 		updateZoomHideCursor,
 		updateAnnotationSpan,
@@ -2003,6 +2433,12 @@ export function useTimeline() {
 		updateSpeedValue,
 		updateCameraFullscreenSpan,
 		updateCameraFullscreenAnimation,
+		updateCameraFullscreenScene,
+		setClipAudioMuted,
+		showClipTake,
+		addGraphic,
+		updateGraphicField,
+		refreshGraphics,
 		updateShaderEffectSpan,
 		updateShaderEffect,
 		updateShaderEffectLive,

@@ -141,6 +141,13 @@ generated at build time and shipped beside this file.
   so nothing of PipeWire's ships inside our installers beyond the compiled
   result of its headers (inline functions and struct layouts).
 
+## HyperFrames runtime
+
+- **Component**: `electron/graphics/hyperframe.runtime.iife.js`, from the `hyperframes` npm package
+  0.9.16 (HeyGen), Apache License 2.0.
+- **Used by**: the motion graphics renderer in `electron/graphics/index.ts`, which seeks a
+  composition frame by frame in a hidden window.
+
 ## Fonts — Inter, Lora, Oswald, Caveat, IBM Plex Mono
 
 - **Components**: the Regular and Bold `.ttf` of each family, under

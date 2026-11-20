@@ -49,6 +49,11 @@ pub struct SceneLayout {
     /// l'écran (au-dessus du bord bas de `screen_rect`) ; en dessous, elle reste telle que filmée.
     #[serde(default)]
     pub webcam_cutout_over_screen: bool,
+    /// This moment's camera effect, when a segment's look decides it: see `install_layout`.
+    #[serde(skip)]
+    pub webcam_effect_mode: Option<String>,
+    #[serde(skip)]
+    pub webcam_blur: Option<f32>,
     /// Sous la caméra 3D en orbite, l'écran couvre toujours son slot et y est rogné (jamais de fond
     /// dans les angles, rien sur le padding). Absent : la carte penchée garde ses angles.
     #[serde(default)]
@@ -116,6 +121,10 @@ pub struct SceneLayout {
     /// `#[serde(default)]` : absent → `false` → fenêtre centrée, comme avant.
     #[serde(default)]
     pub screen_follow: bool,
+    /// Où la fenêtre du remplissage se pose quand aucun pointeur ne la mène (0..1 dans
+    /// l'enregistrement) : le visage d'une prise de caméra seule. Absent : au centre.
+    #[serde(default)]
+    pub screen_rest: Option<[f32; 2]>,
     /// Un layout résolu PAR CLIP visible, aligné par index sur `Scene::clips` / `crop_by_clip`.
     /// Les champs scalaires ci-dessus sont ceux du PREMIER clip (repli pour un payload sans ce
     /// tableau, et valeur de départ tant qu'aucun clip n'est actif).
@@ -140,6 +149,13 @@ pub struct SceneLayout {
     /// `#[serde(default)]` : ancien payload / tests → None → table Rust historique.
     #[serde(default)]
     pub webcam_radius_frac: Option<f32>,
+    /// How far a scene has taken the camera to the full frame, eased (0..1). Set per frame by
+    /// `Scene::with_scene_layout_at`, never read from the payload.
+    #[serde(skip)]
+    pub scene_full_camera: f32,
+    /// The same, not eased: the corners dissolve on it, late in the move.
+    #[serde(skip)]
+    pub scene_full_camera_phase: f32,
 }
 
 impl SceneLayout {
@@ -161,7 +177,7 @@ impl SceneLayout {
 /// Les rayons sont des fractions du petit côté de LEUR boîte, exactement comme les champs
 /// scalaires `screen_radius_frac`/`webcam_radius_frac` — aucune longueur ne traverse ce
 /// contrat en pixels, par clip ou non.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ResolvedClipLayout {
     pub screen_rect: SceneRect,
@@ -179,16 +195,130 @@ pub struct ResolvedClipLayout {
     pub webcam_shape: Option<String>,
     #[serde(default)]
     pub screen_cover: bool,
+    /// Each take has its own face to rest on (`SceneLayout::screen_rest`).
+    #[serde(default)]
+    pub screen_rest: Option<[f32; 2]>,
+    // What else a segment's own look can change. Absent: the scene's value stands.
+    #[serde(default)]
+    pub screen_shadow: Option<f32>,
+    #[serde(default)]
+    pub roundness_frac: Option<f32>,
+    #[serde(default)]
+    pub frame: Option<SceneFrame>,
+    #[serde(default)]
+    pub frame_theme: Option<SceneFrameTheme>,
+    #[serde(default)]
+    pub webcam_shadow: Option<f32>,
+    #[serde(default)]
+    pub webcam_mirror: Option<bool>,
+    #[serde(default)]
+    pub webcam_reactive_zoom: Option<bool>,
+    #[serde(default)]
+    pub webcam_crop: Option<SceneCrop>,
+    /// "none" | "transparent" | "blur" | "custom", as in `SceneWebcamEffect::mode`.
+    #[serde(default)]
+    pub webcam_effect: Option<String>,
+    #[serde(default)]
+    pub webcam_blur: Option<f32>,
+    #[serde(default)]
+    pub webcam_cutout_over_screen: Option<bool>,
 }
 
 /// Rect normalisé 0..1 du cadre de sortie : x, y en haut-gauche ; width, height.
-#[derive(Debug, Clone, Copy, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SceneRect {
     pub x: f32,
     pub y: f32,
     pub width: f32,
     pub height: f32,
+}
+
+fn lerp_f32(a: f32, b: f32, t: f32) -> f32 {
+    a + (b - a) * t
+}
+
+fn lerp_rect(a: SceneRect, b: SceneRect, t: f32) -> SceneRect {
+    SceneRect {
+        x: lerp_f32(a.x, b.x, t),
+        y: lerp_f32(a.y, b.y, t),
+        width: lerp_f32(a.width, b.width, t),
+        height: lerp_f32(a.height, b.height, t),
+    }
+}
+
+/// A camera that is absent from a scene is a zero-size rect, which says nothing about where: it
+/// grows out of, or shrinks into, the centre of the rect at the other end of the move.
+fn lerp_webcam(a: Option<SceneRect>, b: Option<SceneRect>, t: f32) -> Option<SceneRect> {
+    let point_at_centre = |r: SceneRect| SceneRect {
+        x: r.x + r.width * 0.5,
+        y: r.y + r.height * 0.5,
+        width: 0.0,
+        height: 0.0,
+    };
+    match (a, b) {
+        (Some(a), Some(b)) => {
+            let from = if a.width <= 0.0 { point_at_centre(b) } else { a };
+            let to = if b.width <= 0.0 { point_at_centre(a) } else { b };
+            Some(lerp_rect(from, to, t))
+        }
+        (a, b) => {
+            if t >= 0.5 {
+                b
+            } else {
+                a
+            }
+        }
+    }
+}
+
+fn lerp_option(a: Option<f32>, b: Option<f32>, t: f32) -> Option<f32> {
+    match (a, b) {
+        (Some(a), Some(b)) => Some(lerp_f32(a, b, t)),
+        (a, b) => a.or(b),
+    }
+}
+
+/// The in-between of two resolved layouts. `t` is 0 at `from` and 1 at `to`.
+pub(crate) fn lerp_clip_layout(
+    from: &ResolvedClipLayout,
+    to: &ResolvedClipLayout,
+    t: f32,
+) -> ResolvedClipLayout {
+    let nearer = if t >= 0.5 { to } else { from };
+    ResolvedClipLayout {
+        screen_rect: lerp_rect(from.screen_rect, to.screen_rect, t),
+        webcam_rect: lerp_webcam(from.webcam_rect, to.webcam_rect, t),
+        webcam_dodge_rect: nearer.webcam_dodge_rect,
+        webcam_cutout_line: nearer.webcam_cutout_line,
+        screen_radius_frac: lerp_option(from.screen_radius_frac, to.screen_radius_frac, t),
+        webcam_radius_frac: lerp_option(from.webcam_radius_frac, to.webcam_radius_frac, t),
+        webcam_shape: nearer.webcam_shape.clone(),
+        screen_shadow: lerp_option(from.screen_shadow, to.screen_shadow, t),
+        roundness_frac: lerp_option(from.roundness_frac, to.roundness_frac, t),
+        frame: nearer.frame,
+        frame_theme: nearer.frame_theme.clone(),
+        webcam_shadow: lerp_option(from.webcam_shadow, to.webcam_shadow, t),
+        webcam_mirror: nearer.webcam_mirror,
+        webcam_reactive_zoom: nearer.webcam_reactive_zoom,
+        webcam_crop: nearer.webcam_crop,
+        webcam_effect: nearer.webcam_effect.clone(),
+        webcam_blur: lerp_option(from.webcam_blur, to.webcam_blur, t),
+        webcam_cutout_over_screen: nearer.webcam_cutout_over_screen,
+        // A box at the footage's own shape looks the same covered or contained, so covering for
+        // the whole move spares a jump at either end of it.
+        screen_cover: if t <= 0.0 {
+            from.screen_cover
+        } else if t >= 1.0 {
+            to.screen_cover
+        } else {
+            from.screen_cover || to.screen_cover
+        },
+        screen_rest: match (from.screen_rest, to.screen_rest) {
+            (Some(a), Some(b)) => Some([a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]),
+            _ => nearer.screen_rest,
+        },
+    }
 }
 
 fn blur_amount<'de, D: serde::Deserializer<'de>>(d: D) -> Result<f32, D::Error> {
@@ -471,6 +601,156 @@ pub struct SceneAnnotationText {
     pub vertical_align: Option<String>,
     #[serde(default)]
     pub animation: Option<String>,
+    /// Ce qu'une partie du texte fait autrement : le mot qui s'allume, le mot d'accent. Absent :
+    /// le texte uni de toujours.
+    #[serde(default)]
+    pub runs: Vec<SceneTextRun>,
+    #[serde(default)]
+    pub stroke: Option<SceneTextStroke>,
+    #[serde(default)]
+    pub shadow: Option<SceneTextShadow>,
+    /// Lumière, dégradés, plasma, reflet : cf. `text_fx`. Absent : le texte de toujours.
+    /// Illisible : pareil, un projet édité à la main ne perd pas toute sa scène pour un effet.
+    #[serde(default, deserialize_with = "lenient_fx")]
+    pub fx: Option<SceneTextFx>,
+}
+
+fn lenient_fx<'de, D: serde::Deserializer<'de>>(de: D) -> Result<Option<SceneTextFx>, D::Error> {
+    let value = serde_json::Value::deserialize(de)?;
+    Ok(serde_json::from_value(value).ok())
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SceneTextFill {
+    #[serde(default)]
+    pub kind: String,
+    /// Une rampe par ligne, en boucle.
+    #[serde(default)]
+    pub palettes: Vec<Vec<String>>,
+    #[serde(default)]
+    pub angle: f32,
+    #[serde(default)]
+    pub flow: f32,
+    #[serde(default)]
+    pub scale: f32,
+    #[serde(default)]
+    pub core: f32,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SceneTextGlow {
+    pub colors: Vec<String>,
+    pub em: f32,
+    pub strength: f32,
+    #[serde(default)]
+    pub night: Option<f32>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SceneTextShine {
+    pub color: String,
+    pub period_ms: f32,
+    pub sweep_ms: f32,
+    pub em: f32,
+    pub angle: f32,
+    pub strength: f32,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SceneTextHardShadow {
+    pub color: String,
+    pub x_em: f32,
+    pub y_em: f32,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SceneLinePlate {
+    pub color: String,
+    pub radius_em: f32,
+    pub pad_x_em: f32,
+    pub pad_y_em: f32,
+    #[serde(default)]
+    pub block: bool,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SceneTextFx {
+    #[serde(default)]
+    pub fill: Option<SceneTextFill>,
+    #[serde(default)]
+    pub glow: Option<SceneTextGlow>,
+    #[serde(default)]
+    pub shine: Option<SceneTextShine>,
+    #[serde(default)]
+    pub hard_shadow: Option<SceneTextHardShadow>,
+    #[serde(default)]
+    pub bevel: f32,
+    #[serde(default)]
+    pub tracking_em: f32,
+    #[serde(default)]
+    pub line_plate: Option<SceneLinePlate>,
+    #[serde(default)]
+    pub leading: f32,
+    #[serde(default)]
+    pub enter: Option<String>,
+}
+
+/// Une partie du texte, en unités UTF-16 comme le compte la chaîne JS qui l'a écrite.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SceneTextRun {
+    pub start: usize,
+    pub len: usize,
+    #[serde(default)]
+    pub color: Option<String>,
+    /// Une pastille arrondie sous ce mot.
+    #[serde(default)]
+    pub pill: Option<String>,
+    #[serde(default)]
+    pub font_family: Option<String>,
+    #[serde(default)]
+    pub size_mul: Option<f32>,
+    #[serde(default)]
+    pub italic: bool,
+    /// Un halo de cette couleur autour de ce mot seul.
+    #[serde(default)]
+    pub glow: Option<String>,
+    /// Ce mot avec son propre remplissage.
+    #[serde(default)]
+    pub fill: Option<SceneTextFill>,
+    /// Le mot grandit jusqu'à `pop_peak`, puis reste à `pop_hold`.
+    #[serde(default)]
+    pub pop_peak: Option<f32>,
+    #[serde(default)]
+    pub pop_hold: Option<f32>,
+    /// Pas encore dit : il garde sa place et ne se voit pas.
+    #[serde(default)]
+    pub hide: bool,
+    /// La pastille arrive d'ici : `[start, len]` du mot précédent.
+    #[serde(default)]
+    pub pill_from: Option<(usize, usize)>,
+}
+
+/// Le contour des lettres. `em` : en fraction de la taille de police.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SceneTextStroke {
+    pub color: String,
+    pub em: f32,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SceneTextShadow {
+    pub color: String,
+    pub blur_em: f32,
+    pub y_em: f32,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -609,6 +889,11 @@ pub struct SceneZoomRegion {
     /// Masque le curseur pendant cette région de zoom.
     #[serde(default)]
     pub hide_cursor: bool,
+    /// A zoom that plays dry on its span, with no ease reaching outside: "hold" stays at `scale`, "in"
+    /// and "out" drift between 1× and `scale`, "emphasis" goes up at the middle and back. Null: the
+    /// usual zoom, easing in before its span and out after it.
+    #[serde(default)]
+    pub motion: Option<String>,
 }
 
 /// Une zone de vitesse portée par le temps source d'un clip.
@@ -626,7 +911,7 @@ pub struct SceneSpeedRegion {
 /// Une zone "Full Camera" de la timeline (temps en secondes) : la caméra PREND tout le cadre
 /// pendant cette fenêtre (plein écran net — ni marge, ni arrondi, ni masque, ni fond derrière).
 /// Pas de champs au-delà des bornes temporelles (miroir de `CameraFullscreenRegion`, TS).
-#[derive(Debug, Clone, Copy, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SceneCameraFullscreenRegion {
     /// Index du clip dont les temps source portent cette région (voir `SceneZoomRegion`).
@@ -642,6 +927,19 @@ pub struct SceneCameraFullscreenRegion {
     /// Pendant de `continues_before` à la fin : pas de descente au bord de la coupe.
     #[serde(default)]
     pub continues_after: bool,
+    /// A scene change: this span takes this layout instead of the clip's own, easing in and out.
+    /// Absent: the plain Full Camera above, in payloads from before scenes existed.
+    #[serde(default)]
+    pub layout: Option<ResolvedClipLayout>,
+    /// The camera fills the frame during this scene.
+    #[serde(default)]
+    pub full_camera: bool,
+    /// The scene just before touches this one, so this one eases from that scene's layout rather
+    /// than dipping through the clip's own in between.
+    #[serde(default)]
+    pub from_layout: Option<ResolvedClipLayout>,
+    #[serde(default)]
+    pub from_full_camera: bool,
 }
 
 /// Un fragment de région d'effet shader (`docs/shader-effects.md`, B.5). Temps source du clip,
@@ -935,7 +1233,11 @@ impl SceneWebcamEffect {
     /// Code passé au shader dans `fx.z` : 0 = aucun (la webcam se dessine telle quelle),
     /// 1 = détourage, 2 = flou, 3 = fond personnalisé.
     pub(crate) fn shader_code(&self) -> f32 {
-        match self.mode.as_str() {
+        Self::code_of(&self.mode)
+    }
+
+    pub(crate) fn code_of(mode: &str) -> f32 {
+        match mode {
             "transparent" => 1.0,
             "blur" => 2.0,
             "custom" => 3.0,
@@ -1052,6 +1354,7 @@ impl Scene {
             scene.layout.screen_radius_frac = l.screen_radius_frac;
             scene.layout.webcam_radius_frac = l.webcam_radius_frac;
             scene.layout.screen_cover = l.screen_cover;
+            scene.layout.screen_rest = l.screen_rest;
             if let Some(shape) = l.webcam_shape {
                 scene.layout.webcam_shape = shape;
             }
@@ -1059,10 +1362,179 @@ impl Scene {
         scene.active_clip_index = clip_index;
         scene
     }
+
+    /// Installs `resolved` in the scalar fields `compose_frame` reads, as `for_clip_window` does.
+    fn install_layout(&mut self, resolved: ResolvedClipLayout) {
+        self.layout.screen_rect = Some(resolved.screen_rect);
+        self.layout.webcam_rect = resolved.webcam_rect;
+        self.layout.webcam_dodge_rect = resolved.webcam_dodge_rect;
+        self.layout.webcam_cutout_line = resolved.webcam_cutout_line;
+        self.layout.screen_radius_frac = resolved.screen_radius_frac;
+        self.layout.webcam_radius_frac = resolved.webcam_radius_frac;
+        self.layout.screen_cover = resolved.screen_cover;
+        self.layout.screen_rest = resolved.screen_rest;
+        if let Some(shape) = resolved.webcam_shape {
+            self.layout.webcam_shape = shape;
+        }
+        if let Some(shadow) = resolved.screen_shadow {
+            self.effects.shadow = shadow;
+        }
+        if let Some(roundness) = resolved.roundness_frac {
+            self.effects.roundness_frac = roundness;
+        }
+        if let Some(frame) = resolved.frame {
+            self.effects.frame = frame;
+        }
+        if let Some(theme) = resolved.frame_theme {
+            self.effects.frame_theme = theme;
+        }
+        if resolved.webcam_shadow.is_some() {
+            self.layout.webcam_shadow = resolved.webcam_shadow;
+        }
+        if let Some(mirror) = resolved.webcam_mirror {
+            self.layout.webcam_mirror = mirror;
+        }
+        if let Some(reactive) = resolved.webcam_reactive_zoom {
+            self.layout.webcam_reactive_zoom = reactive;
+        }
+        if resolved.webcam_crop.is_some() {
+            self.layout.webcam_crop = resolved.webcam_crop;
+        }
+        if resolved.webcam_effect.is_some() {
+            self.layout.webcam_effect_mode = resolved.webcam_effect;
+        }
+        if resolved.webcam_blur.is_some() {
+            self.layout.webcam_blur = resolved.webcam_blur;
+        }
+        if let Some(over_screen) = resolved.webcam_cutout_over_screen {
+            self.layout.webcam_cutout_over_screen = over_screen;
+        }
+    }
+
+    /// This scene with the layout a scene region asks for at `t` (source seconds), or `None` when
+    /// no scene region is active and the clip's own layout stands.
+    pub(crate) fn with_scene_layout_at(&self, t: f32) -> Option<Scene> {
+        let clock = crate::regions::ScreenClock::new(&self.speed_regions, self.active_clip_index);
+        let active = crate::regions::scene_region_at(&self.camera_fullscreen_regions, t, &clock)?;
+        let region = active.region;
+        let to = region.layout.as_ref()?;
+        let own = ResolvedClipLayout {
+            screen_rect: self.layout.screen_rect?,
+            webcam_rect: self.layout.webcam_rect,
+            webcam_dodge_rect: self.layout.webcam_dodge_rect,
+            webcam_cutout_line: self.layout.webcam_cutout_line,
+            screen_radius_frac: self.layout.screen_radius_frac,
+            webcam_radius_frac: self.layout.webcam_radius_frac,
+            webcam_shape: Some(self.layout.webcam_shape.clone()),
+            screen_cover: self.layout.screen_cover,
+            ..Default::default()
+        };
+        // On the way out a scene returns to the clip's layout; only the way in has a neighbour.
+        let (from, from_full) = match (&region.from_layout, active.leaving) {
+            (Some(previous), false) => (previous, region.from_full_camera),
+            _ => (&own, false),
+        };
+        let resolved = lerp_clip_layout(from, to, active.eased);
+        let full = |t: f32| lerp_f32(from_full as u8 as f32, region.full_camera as u8 as f32, t);
+        let (scene_full_camera, scene_full_camera_phase) = (full(active.eased), full(active.phase));
+        let mut scene = self.clone();
+        scene.install_layout(resolved);
+        scene.layout.scene_full_camera = scene_full_camera;
+        scene.layout.scene_full_camera_phase = scene_full_camera_phase;
+        Some(scene)
+    }
 }
 
 #[cfg(test)]
 mod tests {
+    fn scene_with_regions(regions: Vec<SceneCameraFullscreenRegion>) -> Scene {
+        let json = r##"{"clips":[],"layout":{"preset":"picture-in-picture","webcamSize":1,"webcamShape":"rectangle","webcamMirror":false,"webcamPosition":null,"webcamReactiveZoom":false},"effects":{"padding":0,"blur":false,"shadow":0,"roundnessFrac":0,"motionBlur":0},"background":{"kind":"color","color":"#000000"},"zoomRegions":[],"cursor":{"show":false,"size":1,"smoothing":0,"motionBlur":0,"clickBounce":0,"clipToBounds":false,"theme":"default"},"cropByClip":[],"output":{"width":1920,"height":1080,"fps":null}}"##;
+        let mut scene = Scene::from_json(json).expect("scene json");
+        scene.layout.screen_rect = Some(SceneRect { x: 0.0, y: 0.0, width: 1.0, height: 1.0 });
+        scene.layout.webcam_rect = Some(SceneRect { x: 0.8, y: 0.8, width: 0.1, height: 0.1 });
+        scene.layout.webcam_radius_frac = Some(0.5);
+        scene.camera_fullscreen_regions = regions;
+        scene
+    }
+
+    fn stack() -> ResolvedClipLayout {
+        ResolvedClipLayout {
+            screen_rect: SceneRect { x: 0.0, y: 0.0, width: 1.0, height: 0.5 },
+            webcam_rect: Some(SceneRect { x: 0.0, y: 0.5, width: 1.0, height: 0.5 }),
+            webcam_radius_frac: Some(0.0),
+            screen_cover: true,
+            ..Default::default()
+        }
+    }
+
+    fn scene_region(start: f64, end: f64) -> SceneCameraFullscreenRegion {
+        SceneCameraFullscreenRegion {
+            start_sec: start,
+            end_sec: end,
+            layout: Some(stack()),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn a_scene_eases_from_the_clip_layout_to_its_own_and_back() {
+        let scene = scene_with_regions(vec![scene_region(2.0, 10.0)]);
+        assert!(scene.with_scene_layout_at(1.0).is_none(), "before it, the clip's layout stands");
+        let rect = |t: f32| scene.with_scene_layout_at(t).unwrap().layout.screen_rect.unwrap();
+        let settled = rect(6.0);
+        assert_eq!((settled.height, settled.width), (0.5, 1.0));
+        let moving = rect(2.1);
+        assert!(moving.height > 0.5 && moving.height < 1.0, "part way in: {}", moving.height);
+        let camera = scene.with_scene_layout_at(2.1).unwrap().layout.webcam_rect.unwrap();
+        assert!(camera.width > 0.1 && camera.width < 1.0, "camera moves too: {}", camera.width);
+        let leaving = rect(9.9);
+        assert!(leaving.height > 0.5 && leaving.height < 1.0, "part way back: {}", leaving.height);
+    }
+
+    #[test]
+    fn a_scene_touching_the_one_before_starts_from_that_layout() {
+        let mut region = scene_region(5.0, 10.0);
+        region.from_layout = Some(ResolvedClipLayout {
+            screen_rect: SceneRect { x: 0.0, y: 0.0, width: 0.5, height: 1.0 },
+            ..Default::default()
+        });
+        let scene = scene_with_regions(vec![region]);
+        let just_after = scene.with_scene_layout_at(5.001).unwrap().layout.screen_rect.unwrap();
+        assert!(just_after.width < 0.6, "starts near the neighbour: {}", just_after.width);
+    }
+
+    #[test]
+    fn a_camera_scene_reaches_full_frame_from_a_camera_neighbour_or_from_none() {
+        let mut region = scene_region(2.0, 10.0);
+        region.full_camera = true;
+        let scene = scene_with_regions(vec![region.clone()]);
+        let at = |s: &Scene, t: f32| s.with_scene_layout_at(t).unwrap().layout.scene_full_camera;
+        assert_eq!(at(&scene, 6.0), 1.0);
+        assert!(at(&scene, 2.05) < 1.0);
+
+        region.full_camera = false;
+        region.from_full_camera = true;
+        region.from_layout = Some(stack());
+        let leaving_camera = scene_with_regions(vec![region]);
+        assert!(at(&leaving_camera, 2.001) > 0.9, "starts with the camera still full");
+        assert_eq!(at(&leaving_camera, 6.0), 0.0);
+    }
+
+    #[test]
+    fn a_camera_absent_from_a_scene_shrinks_into_its_own_centre() {
+        let mut to = stack();
+        to.webcam_rect = Some(SceneRect { x: 0.5, y: 0.5, width: 0.0, height: 0.0 });
+        let scene = scene_with_regions(vec![SceneCameraFullscreenRegion {
+            start_sec: 0.5,
+            end_sec: 10.0,
+            layout: Some(to),
+            ..Default::default()
+        }]);
+        let camera = scene.with_scene_layout_at(0.55).unwrap().layout.webcam_rect.unwrap();
+        assert!(camera.x > 0.8 && camera.x < 0.85, "stays around the corner: {}", camera.x);
+        assert_eq!(scene.with_scene_layout_at(6.0).unwrap().layout.webcam_rect.unwrap().width, 0.0);
+    }
+
     use super::*;
 
     /// lui. Sans ce défaut, ouvrir un projet fait par une version antérieure échouerait au

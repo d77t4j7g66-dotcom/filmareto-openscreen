@@ -3,7 +3,6 @@ import "@testing-library/jest-dom";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { EditorDialogsProvider } from "@/contexts/EditorDialogsContext";
 import { useChatPromptBus } from "@/lib/ai-edition/store/useChatPromptBus";
 
 vi.mock("@/contexts/ShortcutsContext", async () => {
@@ -50,9 +49,7 @@ import { NewEditorShell } from "./NewEditorShell";
 function renderShell() {
 	return render(
 		<TooltipProvider>
-			<EditorDialogsProvider>
 				<NewEditorShell />
-			</EditorDialogsProvider>
 		</TooltipProvider>,
 	);
 }

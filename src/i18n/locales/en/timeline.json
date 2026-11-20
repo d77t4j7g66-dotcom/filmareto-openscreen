@@ -51,7 +51,7 @@
 		"zoomExistsAtLocation": "Zoom already exists at this location or not enough space available.",
 		"zoomSuggestionUnavailable": "Zoom suggestion handler unavailable",
 		"noCursorTelemetry": "No cursor data in this recording",
-		"noCursorTelemetryDescription": "Record your screen with OpenScreen to get zooms that follow the cursor.",
+		"noCursorTelemetryDescription": "Record your screen with Filmareto to get zooms that follow the cursor.",
 		"noUsableTelemetry": "Not enough cursor movement",
 		"noUsableTelemetryDescription": "The recording does not include enough cursor movement data.",
 		"noDwellMoments": "No clear cursor dwell moments found",
@@ -154,5 +154,16 @@
 		"close": "Close",
 		"added": "Added {{count}} keycaps",
 		"manualInvalid": "Write a key, for example Cmd+K or E."
+	},
+	"yapping": {
+		"name": "Yapping",
+		"hint": "Cuts silences, breaths and bad takes, adds zooms and captions",
+		"listening": "Listening to the take…",
+		"done": "Cut {{seconds}} s of silences and breaths, {{bad}} bad takes, {{zooms}} zooms",
+		"noTranscript": "Without a transcript, bad takes are not searched for",
+		"failed": "Yapping did not finish",
+		"noSound": "This take has no sound, so there is nothing to edit by. Turn the microphone on and record it again.",
+		"unmuteClip": "This clip’s sound is off: press to turn it on",
+		"unmuteClipLabel": "Turn on this clip’s sound"
 	}
 }

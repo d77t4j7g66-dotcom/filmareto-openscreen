@@ -85,7 +85,7 @@ describe("ZoomLevelControl", () => {
 			"false",
 		]);
 		expect(field).toBeInTheDocument();
-		expect(field).toHaveAttribute("placeholder", "");
+		expect(field.getAttribute("placeholder")).toMatch(/customShort/);
 	});
 
 	// The ends of the table and every custom level live in the field, not the row.

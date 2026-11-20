@@ -2,7 +2,7 @@
 	"tooltips": {
 		"hideHUD": "Hide recording bar",
 		"hideHUDTip": "Hide the recording bar. Show it again from the tray icon.",
-		"closeApp": "Quit OpenScreen",
+		"closeApp": "Quit Filmareto",
 		"restartRecording": "Delete this recording and start a new one",
 		"cancelRecording": "Stop and delete this recording",
 		"pauseRecording": "Pause recording",
@@ -13,8 +13,8 @@
 		"systemAudio": "System audio: records the sound your computer plays",
 		"microphone": "Microphone: records your voice",
 		"camera": "Camera: records you as a separate layer you can move in the editor",
-		"openStudio": "Open Studio: the editor for your recordings",
-		"openNotes": "Open Notes: text to read while you record",
+		"openStudio": "Open the editor",
+		"openNotes": "Teleprompter",
 		"openNotesPlaceholder": "Take notes here...",
 		"notesToolbar": {
 			"bold": "Bold",
@@ -70,8 +70,8 @@
 		"screens": "Screens ({{count}})",
 		"windows": "Windows ({{count}})",
 		"emptyTitle": "No screens or windows found",
-		"emptyDescription": "If you just granted screen recording permission, reload this picker. On macOS you may need to reopen OpenScreen.",
-		"loadFailedDescription": "OpenScreen couldn't load your screens and windows. Reload this picker and try again.",
+		"emptyDescription": "If you just granted screen recording permission, reload this picker. On macOS you may need to reopen Filmareto.",
+		"loadFailedDescription": "Filmareto couldn't load your screens and windows. Reload this picker and try again.",
 		"defaultSourceName": "Screen"
 	},
 	"recording": {
@@ -79,19 +79,20 @@
 		"systemPicker": "Your system will ask what to share",
 		"start": "Start recording",
 		"stop": "Stop and save the recording",
-		"saving": "Saving..."
+		"saving": "Saving...",
+		"noMicrophone": "The microphone is off: this take will have no sound."
 	},
 	"language": "Language",
 	"languageWithName": "Language: {{language}}",
 	"systemLanguagePrompt": {
 		"title": "Use your system language?",
-		"description": "We detected {{language}} as your system language. Do you want to switch OpenScreen to {{language}}?",
+		"description": "We detected {{language}} as your system language. Do you want to switch Filmareto to {{language}}?",
 		"switch": "Switch to {{language}}",
 		"keepDefault": "Keep current language"
 	},
 	"softwareEncoderFallback": {
 		"title": "Switched to a backup encoder",
-		"description": "Your graphics card's encoder didn't start, so OpenScreen switched to a backup. Your recording is fine, though your computer may work a little harder.",
+		"description": "Your graphics card's encoder didn't start, so Filmareto switched to a backup. Your recording is fine, though your computer may work a little harder.",
 		"dismiss": "Got it",
 		"dontShowAgain": "Don't show again"
 	},
@@ -108,7 +109,7 @@
 		"checkingForUpdates": "Checking…"
 	},
 	"permissions": {
-		"title": "OpenScreen needs a few permissions",
+		"title": "Filmareto needs a few permissions",
 		"subtitle": "macOS asks you to grant each one once. You can change them at any time in System Settings.",
 		"level": {
 			"required": "Required",
@@ -145,21 +146,71 @@
 			"continue": "Continue",
 			"allow": "Allow",
 			"openSettings": "Open Settings",
-			"restart": "Restart OpenScreen",
+			"restart": "Restart Filmareto",
 			"start": "Get started"
 		},
 		"help": {
-			"screenPrompt": "macOS will then ask you to turn on OpenScreen in System Settings.",
-			"screenSettings": "In System Settings, turn on OpenScreen. If macOS offers to quit and reopen it, accept: this window will come back.",
-			"screenNotListed": "OpenScreen isn't in the list? Click +, then choose OpenScreen in Applications.",
-			"screenRestart": "Allowed. OpenScreen needs to restart before it can use it.",
-			"screenRecurring": "On your first recording, macOS will ask whether OpenScreen may access your screen directly, without the system picker. Click Allow. macOS asks again from time to time; that's expected.",
-			"systemAudioPrompt": "macOS will ask you to allow OpenScreen to record the sound your Mac plays.",
-			"systemAudioRequested": "If you said no, turn on OpenScreen under “System Audio Recording Only” in System Settings."
+			"screenPrompt": "macOS will then ask you to turn on Filmareto in System Settings.",
+			"screenSettings": "In System Settings, turn on Filmareto. If macOS offers to quit and reopen it, accept: this window will come back.",
+			"screenNotListed": "Filmareto isn't in the list? Click +, then choose Filmareto in Applications.",
+			"screenRestart": "Allowed. Filmareto needs to restart before it can use it.",
+			"screenRecurring": "On your first recording, macOS will ask whether Filmareto may access your screen directly, without the system picker. Click Allow. macOS asks again from time to time; that's expected.",
+			"systemAudioPrompt": "macOS will ask you to allow Filmareto to record the sound your Mac plays.",
+			"systemAudioRequested": "If you said no, turn on Filmareto under “System Audio Recording Only” in System Settings."
 		},
 		"footer": {
 			"screenRequired": "Screen recording is needed to record.",
 			"ready": "You're all set."
 		}
+	},
+	"scene": {
+		"startCameraOnly": "Start recording, camera only",
+		"cameraOnly": "Camera only",
+		"cameraOnlyOn": "Records only the camera and the microphone",
+		"cameraOnlyOff": "Record only the camera, no screen",
+		"nextOf": "Next {{number}}/{{count}}: {{name}}",
+		"allDone": "All scenes recorded",
+		"again": "Again",
+		"againNamed": "Again: {{name}}",
+		"end": "End",
+		"toEdit": "To Edit",
+		"retrySegment": "This segment again from the start",
+		"lastSegment": "Last segment",
+		"nextSegment": "Next segment",
+		"modeVoice": "Voice",
+		"modeManual": "Constant speed",
+		"modeBullets": "Bullets",
+		"posTop": "Top",
+		"posWindow": "Window",
+		"posScreen": "Over the screen",
+		"posFull": "Full screen",
+		"scrolling": "Scrolling",
+		"speed": "Speed",
+		"listensTo": "Listens to: {{mic}}. Change it in System Settings → Sound → Input.",
+		"macInput": "the Mac's input",
+		"bulletsHint": "Each line of the text is a bullet. Move on with ↓ Line or ⌃⌥↓.",
+		"position": "Position",
+		"display": "Display",
+		"automatic": "Automatic",
+		"activeLine": "Active line",
+		"guideLine": "Guide line",
+		"width": "Width",
+		"lines": "Lines",
+		"look": "Look",
+		"letters": "Text size",
+		"lineSpacing": "Line spacing",
+		"paddingSides": "Side padding",
+		"paddingTop": "Top and bottom padding",
+		"background": "Background",
+		"hide": "Hide",
+		"pause": "Pause",
+		"start": "Start",
+		"fromSegmentStart": "From the start of the segment",
+		"prevLine": "↑ Line",
+		"nextLine": "↓ Line",
+		"text": "Text",
+		"textPlaceholder": "Write or paste the text. A line with only a / starts a new segment.",
+		"newSegment": "New segment ( / )",
+		"recHides": "Rec hides this window and starts the teleprompter."
 	}
 }

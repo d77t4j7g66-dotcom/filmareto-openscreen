@@ -24,6 +24,48 @@ declare namespace NodeJS {
 // Used in Renderer process, expose in `preload.ts`
 interface Window {
 	electronAPI: {
+		teleprompter: {
+			perform: (action: string) => Promise<unknown>;
+			state: () => Promise<{
+				open: boolean;
+				stageIndex: number;
+				stageCount: number;
+				run: {
+					ready: boolean;
+					next: string | null;
+					done: string | null;
+					nextNumber: number | null;
+					count: number;
+				} | null;
+			}>;
+			startRun: (request: {
+				projectId: string | null;
+				scenes: { id: string; name: string; text: string }[];
+				start: number;
+				text: string;
+			}) => Promise<void>;
+			runGoto: (which: "next" | "done") => Promise<void>;
+			endRun: () => Promise<void>;
+			takeRun: () => Promise<{
+				projectId: string | null;
+				scenes: { id: string; name: string; text: string }[];
+				takes: {
+					session: { screenVideoPath?: string; cursorCaptureMode?: string } | null;
+					marks: { atMs: number; segment: number }[];
+				}[];
+			} | null>;
+		};
+		graphics: {
+			list: () => Promise<import("./graphics").GraphicTemplate[]>;
+			render: (request: {
+				templateId: string;
+				variables: Record<string, string>;
+				width: number;
+				height: number;
+			}) => Promise<import("./graphics").GraphicRender>;
+			preview: (request: { templateId: string; width: number; height: number }) => Promise<string>;
+			openFolder: () => Promise<string>;
+		};
 		invokeNativeBridge: <TData = unknown>(
 			request: import("../src/native/contracts").NativeBridgeRequest,
 		) => Promise<import("../src/native/contracts").NativeBridgeResponse<TData>>;
@@ -295,10 +337,6 @@ interface Window {
 		}>;
 		onStopRecordingFromTray: (callback: () => void) => () => void;
 		openExternalUrl: (url: string) => Promise<{ success: boolean; error?: string }>;
-		openRepoPage: () => Promise<void>;
-		starPromptExportFinished: () => Promise<{ offer: boolean; store: boolean }>;
-		dismissStarPrompt: () => Promise<void>;
-		openStoreReview: () => Promise<{ success: boolean }>;
 		pickExportSavePath: (
 			fileName: string,
 			exportFolder?: string,
@@ -400,6 +438,18 @@ interface Window {
 			filePath: string,
 			durationSec: number,
 		) => Promise<import("./media/screenActivity").ScreenActivityResult>;
+		claudeStatus: () => Promise<import("./ai-edition/claude-subscription").ClaudeStatus>;
+		claudeSignIn: () => Promise<void>;
+		findFace: (filePath: string, durationSec: number) => Promise<{ x: number; y: number } | null>;
+		hearTalkingHead: (
+			filePath: string,
+			spans: { start: number; end: number }[],
+			options: { language?: string; prompt?: string },
+		) => Promise<import("./stt/transcriptionContract").SttTranscribeResponse | null>;
+		analyseTalkingHead: (
+			filePath: string,
+			durationSec: number,
+		) => Promise<import("./media/talkingHead").TalkingHeadAnalysis>;
 		readFileChunk: (
 			filePath: string,
 			offset: number,

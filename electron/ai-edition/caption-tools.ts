@@ -16,6 +16,7 @@ import {
 	CAPTION_PLATE_OPACITY_MAX,
 	CAPTION_PLATE_OPACITY_MIN,
 	CAPTION_STYLES,
+	captionStylePatch,
 	type CaptionSettings,
 	type CaptionSettingsPatch,
 	type CaptionStyleId,
@@ -208,7 +209,7 @@ export function executeCaptionTool(
 			}
 			// The pane's order: a style sets the look as a whole, a plate then recolours the
 			// text that would vanish on it, and an explicit field wins over both.
-			const patch: CaptionSettingsPatch = { ...(style ? CAPTION_STYLES[style] : {}) };
+			const patch: CaptionSettingsPatch = style ? captionStylePatch(style, aspect) : {};
 			if (plate) Object.assign(patch, captionPlatePatch({ ...current, ...patch }, plate));
 			for (const [key, value] of Object.entries(fields)) {
 				if (value !== undefined) Object.assign(patch, { [key]: value });

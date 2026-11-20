@@ -1,3 +1,26 @@
+
+
+/* Geist has a few stray Greek letters (ω among them, drawn like Ω) and no others, so a Greek word
+   came out in two fonts. All of Greek goes to one system font instead. */
+@font-face {
+	font-family: "Filmareto Greek";
+	src: local("Helvetica Neue");
+	font-weight: 100 450;
+	unicode-range: U+0370-03FF, U+1F00-1FFF;
+}
+@font-face {
+	font-family: "Filmareto Greek";
+	src: local("Helvetica Neue Medium");
+	font-weight: 451 550;
+	unicode-range: U+0370-03FF, U+1F00-1FFF;
+}
+@font-face {
+	font-family: "Filmareto Greek";
+	src: local("Helvetica Neue Bold");
+	font-weight: 551 900;
+	unicode-range: U+0370-03FF, U+1F00-1FFF;
+}
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;

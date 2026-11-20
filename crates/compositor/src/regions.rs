@@ -423,7 +423,7 @@ fn zoom_transition_s(scale: f32) -> f32 {
 fn zoom_region_strength(region: &SceneZoomRegion, t: f32, clock: &ScreenClock) -> f32 {
     let start = region.start_sec as f32;
     let end = region.end_sec as f32;
-    if region.under_trim {
+    if region.under_trim || region.motion.is_some() {
         return if t >= start && t < end { 1.0 } else { 0.0 };
     }
     let (start, end, t) = (clock.at(start), clock.at(end), clock.at(t));
@@ -824,7 +824,7 @@ fn connected_pairs(
     clock: &ScreenClock,
 ) -> Vec<(usize, usize, f32, f32)> {
     let mut order: Vec<usize> = (0..regions.len())
-        .filter(|&i| !regions[i].under_trim)
+        .filter(|&i| !regions[i].under_trim && regions[i].motion.is_none())
         .collect();
     order.sort_by(|&a, &b| {
         regions[a]
@@ -847,6 +847,46 @@ fn connected_pairs(
         }
     }
     pairs
+}
+
+/// The zoom of a region with a `motion`, played dry on its own span: it lives on a cut of its own,
+/// so a window reaching outside would only show on another cut. The view ends up centred on the
+/// region's focus at its peak, and on the way one point of the picture stays where it is on screen,
+/// so a face does not slide while the picture grows.
+fn moving_zoom_at(
+    regions: &[SceneZoomRegion],
+    t: f32,
+    cursor: Option<&CursorTrack>,
+    clock: &ScreenClock,
+) -> Option<ZoomState> {
+    let r = regions
+        .iter()
+        .find(|r| r.motion.is_some() && t >= r.start_sec as f32 && t < r.end_sec as f32)?;
+    let (from, to) = (clock.at(r.start_sec as f32), clock.at(r.end_sec as f32));
+    let p = clamp01((clock.at(t) - from) / (to - from).max(1e-3));
+    let reach = match r.motion.as_deref() {
+        Some("hold") => 1.0,
+        Some("in") => p,
+        Some("out") => 1.0 - p,
+        _ => {
+            let up = 1.0 - (2.0 * p - 1.0).abs();
+            up * up * (3.0 - 2.0 * up)
+        }
+    };
+    let scale = scale_lerp(1.0, r.scale, reach);
+    let peak = r.scale.max(1.001);
+    let hold = |centre: f32| {
+        let anchor = (centre * peak - 0.5) / (peak - 1.0);
+        anchor + (0.5 - anchor) / scale
+    };
+    let focus = resolve_focus(r, t, cursor, clock);
+    Some(ZoomState {
+        scale,
+        strength: 1.0,
+        focus: [hold(focus[0]), hold(focus[1])],
+        pin: pin_flag(r),
+        ..IDENTITY_ZOOM
+    })
 }
 
 /// `zoom_state_in` sans speed region ni piste pour l'orbite : ce que les tests comparent.
@@ -881,6 +921,9 @@ pub fn zoom_state_in(
 ) -> ZoomState {
     if regions.is_empty() {
         return IDENTITY_ZOOM;
+    }
+    if let Some(state) = moving_zoom_at(regions, t, cursor, clock) {
+        return state;
     }
     let pairs = connected_pairs(regions, clock);
     let screen_t = clock.at(t);
@@ -1087,13 +1130,46 @@ fn camera_fullscreen_phase_at(
     clock: &ScreenClock,
 ) -> f32 {
     let mut strongest = 0.0f32;
-    for r in regions {
+    // A scene carries its own layout and camera progress: see `scene_region_at`.
+    for r in regions.iter().filter(|r| r.layout.is_none()) {
         let s = camera_fullscreen_region_phase(r, t, clock);
         if s > strongest {
             strongest = s;
         }
     }
     strongest
+}
+
+/// The scene region in force at a moment, and how far it has eased in.
+pub struct ActiveSceneRegion<'a> {
+    pub region: &'a SceneCameraFullscreenRegion,
+    pub phase: f32,
+    pub eased: f32,
+    /// Past its middle, so a move under way is the one back to the clip's layout.
+    pub leaving: bool,
+}
+
+/// The strongest scene region at `t`. Scenes ease exactly as Full Camera does, so a change of
+/// scene moves at the same speed whatever the two scenes are.
+pub fn scene_region_at<'a>(
+    regions: &'a [SceneCameraFullscreenRegion],
+    t: f32,
+    clock: &ScreenClock,
+) -> Option<ActiveSceneRegion<'a>> {
+    let mut best: Option<ActiveSceneRegion<'a>> = None;
+    for region in regions.iter().filter(|r| r.layout.is_some()) {
+        let phase = camera_fullscreen_region_phase(region, t, clock);
+        if phase > 0.0 && best.as_ref().is_none_or(|b| phase > b.phase) {
+            let middle = (region.start_sec + region.end_sec) as f32 * 0.5;
+            best = Some(ActiveSceneRegion {
+                region,
+                phase,
+                eased: ease_out_screen_studio(phase),
+                leaving: t > middle,
+            });
+        }
+    }
+    best
 }
 
 /// Progrès Full Camera (0..1) au temps `t` : 0 = webcam à sa taille normale, 1 = plein cadre.
@@ -1627,7 +1703,7 @@ pub fn square_to_quad(c: &[(f32, f32); 4], u: f32, v: f32) -> (f32, f32) {
     ((c[0].0 as f64 + x) as f32, (c[0].1 as f64 + y) as f32)
 }
 
-fn smoothstep(e0: f32, e1: f32, x: f32) -> f32 {
+pub(crate) fn smoothstep(e0: f32, e1: f32, x: f32) -> f32 {
     let u = clamp01((x - e0) / (e1 - e0));
     u * u * (3.0 - 2.0 * u)
 }
@@ -1717,6 +1793,35 @@ mod zoom_focus_tests {
             rotation: None,
             under_trim: false,
             hide_cursor: false,
+            motion: None,
+        }
+    }
+
+    #[test]
+    fn a_moving_zoom_drifts_through_its_span_and_holds_one_point_still() {
+        let moving = |kind: &str| SceneZoomRegion {
+            motion: Some(kind.into()),
+            focus_y: 0.4,
+            ..region(1.2, 0.5)
+        };
+        let scale_at = |kind: &str, t: f32| zoom_state_at(&[moving(kind)], t, None).scale;
+        assert_eq!(scale_at("in", 2.0), 1.0);
+        assert!((scale_at("in", 7.999) - 1.2).abs() < 1e-2);
+        assert!((scale_at("out", 2.0) - 1.2).abs() < 1e-3);
+        assert!((scale_at("emphasis", 5.0) - 1.2).abs() < 1e-3);
+        assert!(scale_at("emphasis", 2.01) < 1.01 && scale_at("emphasis", 7.99) < 1.01);
+        // Dry: nothing outside the span, no window reaching a neighbouring cut.
+        assert_eq!(scale_at("in", 1.99), 1.0);
+        assert_eq!(scale_at("out", 8.0), 1.0);
+        // This focus and peak leave the point at 0.3 of the frame where it is, all the way.
+        let on_screen = |t: f32| {
+            let mut still = moving("in");
+            still.focus_y = 0.3 + (0.5 - 0.3) / 1.2;
+            let zs = zoom_state_at(&[still], t, None);
+            0.5 + (0.3 - zs.focus[1]) * zs.scale
+        };
+        for t in [2.0, 3.5, 5.0, 7.999] {
+            assert!((on_screen(t) - 0.3).abs() < 1e-3, "{t}: {}", on_screen(t));
         }
     }
 
@@ -2074,6 +2179,7 @@ mod zoom_focus_tests {
                 end_sec: 22.0 * k,
                 continues_before: false,
                 continues_after: false,
+                ..Default::default()
             }]
         };
         let (sped, plain) = (zooms(4.0), zooms(1.0));
@@ -2113,6 +2219,7 @@ mod zoom_focus_tests {
             end_sec,
             continues_before,
             continues_after,
+        ..Default::default()
         }
     }
 
@@ -2701,6 +2808,7 @@ mod tilt_tests {
             rotation: rotation.map(Into::into),
             under_trim: false,
             hide_cursor: false,
+            motion: None,
         };
         // `orbit` n'incline pas l'écran (caméra réelle, `camera.rs`) : chaînée à un angle
         // fixe, la transition passe par l'écran droit, que ce balayage couvre aussi.
@@ -3123,6 +3231,7 @@ mod tilt_tests {
             rotation: rotation.map(Into::into),
             under_trim: false,
             hide_cursor: false,
+            motion: None,
         };
         assert_eq!(zoom_state_at(&[region(Some("left"))], 5.0, None).tilt, 1.0);
         assert_eq!(zoom_state_at(&[region(None)], 5.0, None).tilt, 0.0);
@@ -3502,6 +3611,7 @@ mod orbit_camera_tests {
             rotation: Some(rotation.into()),
             under_trim: false,
             hide_cursor: false,
+            motion: None,
         }
     }
 

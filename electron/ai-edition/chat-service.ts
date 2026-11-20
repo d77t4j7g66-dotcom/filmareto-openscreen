@@ -169,6 +169,8 @@ export interface ChatSession {
 	/** Main-process bookkeeping: the compaction boundary, not part of the
 	 *  transcript. See `modelMessages`. */
 	compaction?: SessionCompaction;
+	/** Claude Code's own id for this conversation, to carry on from it. */
+	claudeSessionId?: string;
 }
 
 /** The message list compaction hands the model: summary first, then everything
@@ -322,6 +324,59 @@ export interface ChatRunEnv {
 	checkShaderEffect?: ShaderEffectChecker;
 	/** Runtime-only model retry override used by bounded measurement harnesses. */
 	maxRetries?: number;
+	/** Run the turn on the user's Claude plan (`claude-subscription.ts`). */
+	claude?: { folder: string; appBinary: string };
+}
+
+function claudeSystemPrompt(projectId: string, document: AxcutDocument | null): string {
+	const faces = (document?.assets ?? []).flatMap((asset) =>
+		asset.face ? [`${asset.label}: x ${asset.face.x}, y ${asset.face.y}`] : [],
+	);
+	return [
+		"You are the video editor inside Filmareto OpenScreen, talking with the person editing this video.",
+		document
+			? `The project open in the editor is "${document.project.title}", projectId ${projectId}: pass that projectId to every tool.`
+			: "No project is open in the editor.",
+		"Do the edit with the openscreen tools rather than describing it. Each edit lands live in the editor as one undo step.",
+		...(faces.length > 0
+			? [
+					`Where the face is in each take, as 0-1 of its whole picture: ${faces.join("; ")}. A zoom on someone talking goes there, with focusMode manual: this take has no pointer to follow.`,
+				]
+			: []),
+		"Do not create projects or export unless asked.",
+		"Reply in the language the person writes in: short, plain, no technical terms, saying what changed.",
+	].join(" ");
+}
+
+/** The agent's turn on the user's Claude plan. The tools edit the open editor themselves, so there is
+ *  no document to hand back. */
+async function runClaudeTurn(
+	session: ChatSession,
+	message: string,
+	history: Array<{ role: string; content: string }>,
+	document: AxcutDocument | null,
+	sink: Required<ChatEventSink>,
+	claude: NonNullable<ChatRunEnv["claude"]>,
+): Promise<{ text: string; reason?: string; mutated: boolean; document?: AxcutDocument }> {
+	const { claudeTurn } = await import("./claude-subscription");
+	const turn = (resume?: string) =>
+		claudeTurn({
+			prompt: resume
+				? message
+				: [
+						...history.slice(0, -1).map((m) => `${m.role}: ${m.content}`),
+						history.length > 1 ? `user: ${message}` : message,
+					].join("\n\n"),
+			systemPrompt: claudeSystemPrompt(session.projectId, document),
+			resume,
+			folder: claude.folder,
+			appBinary: claude.appBinary,
+			events: sink,
+		});
+	let result = await turn(session.claudeSessionId);
+	if (result.resumeLost) result = await turn();
+	session.claudeSessionId = result.sessionId ?? undefined;
+	return { text: result.text, reason: result.error, mutated: false };
 }
 
 // ponytail: zero-config noop for sink callbacks that the caller did not provide.
@@ -351,25 +406,28 @@ export async function runChat(
 ): Promise<AiEditionChatResult> {
 	const emit: Required<ChatEventSink> = { ...NOOP_SINK, ...sink };
 	const config = llmConfig.getConfig();
-	if (!config) {
-		return {
-			success: false,
-			error: "No LLM provider configured. Open Settings → AI to configure.",
-		};
-	}
+	let apiKey: string | null = null;
+	if (!env.claude) {
+		if (!config) {
+			return {
+				success: false,
+				error: "No LLM provider configured. Open Settings → AI to configure.",
+			};
+		}
 
-	const def = PROVIDER_DEFINITIONS.find((d) => d.id === config.provider);
-	if (!def) {
-		return { success: false, error: `Unknown provider: ${config.provider}` };
-	}
+		const def = PROVIDER_DEFINITIONS.find((d) => d.id === config.provider);
+		if (!def) {
+			return { success: false, error: `Unknown provider: ${config.provider}` };
+		}
 
-	const credential = llmConfig.getCredential(def.id, def.envKeys);
-	const apiKey = credential?.value ?? null;
-	if (!apiKey && def.authKind === "api-key") {
-		return {
-			success: false,
-			error: `No API key for ${def.label}. Add one in Settings → AI.`,
-		};
+		const credential = llmConfig.getCredential(def.id, def.envKeys);
+		apiKey = credential?.value ?? null;
+		if (!apiKey && def.authKind === "api-key") {
+			return {
+				success: false,
+				error: `No API key for ${def.label}. Add one in Settings → AI.`,
+			};
+		}
 	}
 
 	const sessions = getProjectSessions(projectId);
@@ -415,7 +473,7 @@ export async function runChat(
 	session.messages.push(userMessage);
 	persistProject(projectId);
 
-	const editsAllowed = config.allowAgentEdits !== false;
+	const editsAllowed = env.claude ? true : config?.allowAgentEdits !== false;
 
 	// ponytail: NO automatic compaction here. A turn used to first check the
 	// history against a guessed 80k-token budget and, past 70% of it, block on
@@ -448,26 +506,29 @@ export async function runChat(
 		error: (message: string) => emit.error(message),
 	};
 
-	const { invokeOpenScreenAgent } = await import("./deep-agent/service");
-
-	const result = await invokeOpenScreenAgent({
-		document: workingDocument ?? emptyDocumentForTextOnly(projectId),
-		model: {
-			provider: config.provider,
-			model: config.model,
-			apiKey: apiKey ?? undefined,
-			baseUrl: config.baseUrl,
-			reasoningEffort: config.reasoningEffort,
-			maxRetries: env.maxRetries,
-		},
-		history,
-		userMessage: message,
-		sink: agentSink,
-		editsAllowed,
-		cursor: env.cursor,
-		cameraSegmentation: env.cameraSegmentation,
-		checkShaderEffect: env.checkShaderEffect,
-	});
+	const result = env.claude
+		? await runClaudeTurn(session, message, history, workingDocument, agentSink, env.claude)
+		: await (async () => {
+				const { invokeOpenScreenAgent } = await import("./deep-agent/service");
+				return invokeOpenScreenAgent({
+					document: workingDocument ?? emptyDocumentForTextOnly(projectId),
+					model: {
+						provider: config?.provider ?? "",
+						model: config?.model ?? "",
+						apiKey: apiKey ?? undefined,
+						baseUrl: config?.baseUrl,
+						reasoningEffort: config?.reasoningEffort,
+						maxRetries: env.maxRetries,
+					},
+					history,
+					userMessage: message,
+					sink: agentSink,
+					editsAllowed,
+					cursor: env.cursor,
+					cameraSegmentation: env.cameraSegmentation,
+					checkShaderEffect: env.checkShaderEffect,
+				});
+			})();
 
 	// The project was deleted while the agent ran: its sessions are gone, so a
 	// reply recorded now would be reported as sent and then never be seen again.
@@ -563,6 +624,8 @@ export function rewindToMessage(
 		toolCalls: m.toolCalls ? [...m.toolCalls] : undefined,
 	}));
 	session.messages = survived;
+	// Claude Code's copy of the conversation still has what was just rewound. Start it afresh.
+	session.claudeSessionId = undefined;
 	// ponytail: a rewind that cuts back past the compaction boundary leaves a
 	// summary standing for messages this lineage no longer has. Drop it and let
 	// the next turn re-derive one, same reasoning as the checkpoints below.

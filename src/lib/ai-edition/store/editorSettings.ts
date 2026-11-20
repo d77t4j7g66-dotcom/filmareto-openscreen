@@ -35,8 +35,8 @@ import {
 	type WebcamAnchor,
 	type WebcamMask,
 } from "@/lib/projectDefaults";
-import type { AspectRatio } from "@/utils/aspectRatioUtils";
-import type { AxcutDocument } from "../schema";
+import { type AspectRatio, getAspectRatioValue } from "@/utils/aspectRatioUtils";
+import type { AxcutClip, AxcutDocument } from "../schema";
 
 // ponytail: avoid dragging in lib/exporter full surface here — we only
 // need the type names. Wallpaper + cursor theme are stored as plain strings
@@ -99,6 +99,8 @@ export interface CropPan {
 /** Centred: the crop window sits in the middle of whatever room the zoom leaves. */
 const DEFAULT_CROP_PAN: CropPan = { x: 0.5, y: 0.5 };
 
+export type SegmentScene = "camera" | "screen";
+
 export interface EditorSettingsSnapshot {
 	wallpaper: string;
 	/** Only a gradient wallpaper moves; kept as chosen when the wallpaper changes kind. */
@@ -126,6 +128,8 @@ export interface EditorSettingsSnapshot {
 	padding: number;
 	cropRegion: CropRegion;
 	webcamLayoutPreset: WebcamLayoutPreset;
+	/** A segment that shows the camera alone or the screen alone, over whatever its layout is. */
+	segmentScene: SegmentScene | null;
 	/** The camera's proportions. `circle` and `rounded` are read as a roundness: see `readWebcamMask`. */
 	webcamMaskShape: WebcamMask;
 	/** 0 square corners to 1 fully round, a fraction of half the camera's short side. */
@@ -198,6 +202,7 @@ export const DEFAULT_EDITOR_SETTINGS: EditorSettingsSnapshot = {
 	recordingDuckDepthDb: DUCK_DEPTH_DEFAULT_DB,
 	recordingDuckRegions: null,
 	formatFollowCursor: null,
+	segmentScene: null,
 };
 
 interface LegacyShape {
@@ -220,6 +225,7 @@ interface LegacyShape {
 	padding?: number;
 	cropRegion?: CropRegion;
 	webcamLayoutPreset?: WebcamLayoutPreset;
+	segmentScene?: SegmentScene | null;
 	webcamMaskShape?: WebcamMaskShape;
 	webcamRoundness?: number;
 	webcamMirrored?: boolean;
@@ -286,6 +292,23 @@ function isBoolean(v: unknown): v is boolean {
 }
 function isString(v: unknown): v is string {
 	return typeof v === "string";
+}
+
+/**
+ * The project's layout in a frame of this format. The format is one for the whole project, and a
+ * layout made for a tall frame means nothing in a wide one, so what is stored stays the choice and
+ * this is what it comes to here: back in 9:16, the 9:16 layout returns. "auto" takes its shape from
+ * the layout and "native" has no shape to read here, so neither changes it.
+ */
+export function webcamPresetForFormat(
+	preset: WebcamLayoutPreset,
+	aspectRatio: AspectRatio,
+): WebcamLayoutPreset {
+	if (aspectRatio === "auto" || aspectRatio === "native") return preset;
+	if (getAspectRatioValue(aspectRatio) < 1)
+		return preset === "dual-frame" ? "vertical-stack" : preset;
+	if (preset === "vertical-stack") return "dual-frame";
+	return preset === "cutout-stack" ? "picture-in-picture" : preset;
 }
 
 export function getEditorSettings(doc: AxcutDocument | null | undefined): EditorSettingsSnapshot {
@@ -356,6 +379,10 @@ export function getEditorSettings(doc: AxcutDocument | null | undefined): Editor
 			: (stored?.theme ?? DEFAULT_EDITOR_SETTINGS.frameTheme),
 		aspectRatio: legacy?.aspectRatio ?? DEFAULT_EDITOR_SETTINGS.aspectRatio,
 		screenAspect: legacy?.screenAspect ?? DEFAULT_EDITOR_SETTINGS.screenAspect,
+		segmentScene:
+			legacy?.segmentScene === "camera" || legacy?.segmentScene === "screen"
+				? legacy.segmentScene
+				: null,
 		webcamAspect: legacy?.webcamAspect ?? DEFAULT_EDITOR_SETTINGS.webcamAspect,
 		formatFollowCursor:
 			typeof legacy?.formatFollowCursor === "boolean" ? legacy.formatFollowCursor : null,
@@ -376,7 +403,10 @@ export function getEditorSettings(doc: AxcutDocument | null | undefined): Editor
 		borderRadius: readBounded(legacy?.borderRadius, "borderRadius", defaults.borderRadius),
 		padding: readBounded(legacy?.padding, "padding", defaults.padding),
 		cropRegion: legacy?.cropRegion ?? DEFAULT_EDITOR_SETTINGS.cropRegion,
-		webcamLayoutPreset: legacy?.webcamLayoutPreset ?? DEFAULT_EDITOR_SETTINGS.webcamLayoutPreset,
+		webcamLayoutPreset: webcamPresetForFormat(
+			legacy?.webcamLayoutPreset ?? DEFAULT_EDITOR_SETTINGS.webcamLayoutPreset,
+			legacy?.aspectRatio ?? DEFAULT_EDITOR_SETTINGS.aspectRatio,
+		),
 		webcamMaskShape: webcamMask.shape,
 		webcamRoundness: webcamMask.roundness,
 		webcamMirrored: bool(legacy?.webcamMirrored, DEFAULT_EDITOR_SETTINGS.webcamMirrored),
@@ -483,6 +513,7 @@ export interface EditorSettingsPatch {
 	padding?: number;
 	cropRegion?: CropRegion;
 	webcamLayoutPreset?: WebcamLayoutPreset;
+	segmentScene?: SegmentScene | null;
 	webcamMaskShape?: WebcamMask;
 	webcamRoundness?: number;
 	webcamMirrored?: boolean;
@@ -565,6 +596,135 @@ export function patchEditorSettings(doc: AxcutDocument, patch: EditorSettingsPat
 	return {
 		...doc,
 		legacyEditor: nextLegacy(current, patch) as Record<string, unknown>,
+	};
+}
+
+/** What one segment can have of its own. The rest is the project's: format, background, cursor, audio. */
+export const SEGMENT_LOOK_KEYS = [
+	"segmentScene",
+	"frame",
+	"frameTheme",
+	"shadowIntensity",
+	"borderRadius",
+	"padding",
+	"screenAspect",
+	"webcamLayoutPreset",
+	"webcamMaskShape",
+	"webcamRoundness",
+	"webcamMirrored",
+	"webcamReactiveZoom",
+	"webcamSizePreset",
+	"webcamAnchor",
+	"webcamAspect",
+	"webcamMargin",
+	"webcamShadow",
+	"webcamOverlap",
+	"webcamStackSize",
+	"freeScreenX",
+	"freeScreenY",
+	"freeScreenWidth",
+	"freeCamX",
+	"freeCamY",
+	"freeCamWidth",
+	"webcamPadLeft",
+	"webcamPadRight",
+	"webcamPadBottom",
+	"webcamPadTop",
+	"webcamPadLinkSides",
+	"webcamPadLinkAll",
+	"webcamPadMatchScreen",
+	"webcamDodge",
+	"webcamCropRegion",
+	"webcamCropPan",
+	"webcamBackgroundMode",
+	"webcamBlurIntensity",
+] as const satisfies readonly (keyof LegacyShape)[];
+
+const LOOK_KEY_SET: ReadonlySet<string> = new Set(SEGMENT_LOOK_KEYS);
+
+/** The clip the program is showing, which is the one the controls act on. */
+export function clipUnderPlayhead(
+	doc: AxcutDocument | null | undefined,
+	timeSec: number,
+): AxcutClip | null {
+	const clips = doc?.timeline.clips ?? [];
+	return (
+		clips.find((clip) => clip.timelineStartSec <= timeSec && timeSec < clip.timelineEndSec) ??
+		clips.at(-1) ??
+		null
+	);
+}
+
+/** The settings as one clip sees them: the project's, with its own look on top. */
+export function getClipEditorSettings(
+	doc: AxcutDocument,
+	clip: Pick<AxcutClip, "look"> | null | undefined,
+): EditorSettingsSnapshot {
+	if (!clip?.look) return getEditorSettings(doc);
+	const legacy = isShape(doc.legacyEditor) ? doc.legacyEditor : {};
+	return getEditorSettings({ ...doc, legacyEditor: { ...legacy, ...clip.look } });
+}
+
+/** What in a patch belongs to a segment, and what to the project. */
+export function splitLookPatch(patch: EditorSettingsPatch): {
+	look: EditorSettingsPatch;
+	rest: EditorSettingsPatch;
+} {
+	const look: Record<string, unknown> = {};
+	const rest: Record<string, unknown> = {};
+	for (const [key, value] of Object.entries(patch)) {
+		(LOOK_KEY_SET.has(key) ? look : rest)[key] = value;
+	}
+	// Picking a layout leaves "the camera alone" or "the screen alone".
+	if (look.webcamLayoutPreset !== undefined && look.segmentScene === undefined) {
+		look.segmentScene = null;
+	}
+	return { look, rest };
+}
+
+/** `patch` on one clip. A clip stores only where it differs from the project. */
+export function patchClipLook(
+	doc: AxcutDocument,
+	clipId: string,
+	patch: EditorSettingsPatch,
+): AxcutDocument {
+	const clip = doc.timeline.clips.find((c) => c.id === clipId);
+	if (!clip) return doc;
+	const project = (isShape(doc.legacyEditor) ? doc.legacyEditor : {}) as Record<string, unknown>;
+	const merged = nextLegacy({ ...project, ...clip.look } as LegacyShape, patch) as Record<
+		string,
+		unknown
+	>;
+	const look: Record<string, unknown> = {};
+	for (const key of SEGMENT_LOOK_KEYS) {
+		const value = merged[key];
+		if (value !== undefined && JSON.stringify(value) !== JSON.stringify(project[key] ?? null)) {
+			look[key] = value;
+		}
+	}
+	const { look: _old, ...rest } = clip;
+	const next = Object.keys(look).length > 0 ? { ...rest, look } : rest;
+	return {
+		...doc,
+		timeline: {
+			...doc.timeline,
+			clips: doc.timeline.clips.map((c) => (c.id === clipId ? next : c)),
+		},
+	};
+}
+
+/** One clip's look becomes the project's, so every clip and every clip to come has it. */
+export function applyLookToAllClips(doc: AxcutDocument, clipId: string): AxcutDocument {
+	const clip = doc.timeline.clips.find((c) => c.id === clipId);
+	if (!clip) return doc;
+	const project = isShape(doc.legacyEditor) ? doc.legacyEditor : {};
+	return {
+		...doc,
+		legacyEditor: { ...project, ...clip.look },
+		timeline: {
+			...doc.timeline,
+			clips: doc.timeline.clips.map(({ look: _look, ...rest }) => rest),
+		},
 	};
 }
 

@@ -31,7 +31,7 @@ The same tools are served over two transports, by two different processes:
 | [`electron/mcp/mcp-settings-store.ts`](../../electron/mcp/mcp-settings-store.ts) | `mcp-server.json` (enabled, port, allowEdits) and `mcp-token.enc` (bearer token, `safeStorage`). |
 | [`src/lib/ai-edition/store/mcpDocumentHost.ts`](../../src/lib/ai-edition/store/mcpDocumentHost.ts) | Renderer side: answers snapshot / apply requests from the project store, and transcribe requests through the editor's transcription queue. Mounted by `NewEditorShell`. |
 | [`electron/ai-edition/caption-tools.ts`](../../electron/ai-edition/caption-tools.ts) | The caption and vocabulary tools, routed there by `executeAgentTool`. |
-| [`src/components/ai-edition/McpServerSettings.tsx`](../../src/components/ai-edition/McpServerSettings.tsx) | The settings section: server toggle, the **MCP edits** toggle, port, token, copyable `claude mcp add` / `codex mcp add` commands. |
+| ``src/components/ai-edition/McpServerSettings.tsx`` | The settings section: server toggle, the **MCP edits** toggle, port, token, copyable `claude mcp add` / `codex mcp add` commands. |
 
 ## One tool surface, two agents
 

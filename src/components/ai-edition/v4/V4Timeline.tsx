@@ -1,3 +1,5 @@
+import { useSceneLabels } from "@/lib/ai-edition/timeline/useSceneLabels";
+import { useHasRecordedCursor } from "../recordedCursorTypes";
 import {
 	AudioLines,
 	Clock,
@@ -13,6 +15,7 @@ import {
 	Scissors,
 	Sparkles,
 	Trash2,
+	VolumeX,
 	Wand2,
 	ZoomIn,
 } from "lucide-react";
@@ -46,10 +49,13 @@ import {
 } from "@/lib/ai-edition/document/audioTracks";
 import { createId } from "@/lib/ai-edition/document/ids";
 import { isGeneratedAssetId } from "@/lib/ai-edition/document/insertion";
+import { resolveAspectRatioValue } from "@/lib/ai-edition/document/outputFormat";
+import { clipLabel } from "@/lib/ai-edition/document/script";
 import { setUiProbeScrubbing } from "@/lib/ai-edition/perf/uiFrameProbe";
 import type { AxcutAudioTrack, AxcutClip } from "@/lib/ai-edition/schema";
-import { audioGainScalar } from "@/lib/ai-edition/store/editorSettings";
+import { audioGainScalar, getClipEditorSettings } from "@/lib/ai-edition/store/editorSettings";
 import { useProjectStore } from "@/lib/ai-edition/store/projectStore";
+import { useTranscriptionStore } from "@/lib/ai-edition/store/transcriptionStore";
 import { useEditorSettings } from "@/lib/ai-edition/store/useEditorSettings";
 import type { useTimeline } from "@/lib/ai-edition/store/useTimeline";
 import { collectAutoZoomSuggestionsForLatestDocument } from "@/lib/ai-edition/timeline/apply-auto-zooms";
@@ -60,6 +66,7 @@ import {
 	setTimelineScale,
 } from "@/lib/ai-edition/timeline/newRegionDuration";
 import { ventilateSpanAcrossClips } from "@/lib/ai-edition/timeline/region-ventilation";
+import { sceneForFormat, sceneOf } from "@/lib/ai-edition/timeline/scenes";
 import {
 	changingPicture,
 	planSmartCuts,
@@ -72,18 +79,26 @@ import {
 	resolveTimelineSpanToTrim,
 	ventilateTimelineSpanToTrims,
 } from "@/lib/ai-edition/timeline/trim-mapping";
+import {
+	piecesIn,
+	planYapping,
+	subtractSpans,
+	YAPPING_REASON,
+} from "@/lib/ai-edition/timeline/yapping";
 import { effectiveZoomScale } from "@/lib/ai-edition/timeline/zoom-scale";
 import {
 	chainedPans,
 	transitionCutsMs,
 	zoomTransitions,
 } from "@/lib/ai-edition/timeline/zoom-transitions";
+import { segmentsFromStt, transcriptFromSegments } from "@/lib/ai-edition/transcription/fromStt";
 import { formatBinding } from "@/lib/shortcuts";
 import { nativeBridgeClient } from "@/native/client";
 import { TransportBar } from "../TransportBar";
 import type { VideoSource } from "../VirtualPreview";
 import styles from "./EditorShellV4.module.css";
 import { KeycapsDialog } from "./KeycapsDialog";
+import { LayoutThumb, layoutBoxes } from "./layoutThumb";
 
 type TimelineApi = ReturnType<typeof useTimeline>;
 
@@ -593,6 +608,31 @@ interface LanePill {
 	sourceIds: string[];
 }
 
+/** A clip's look, drawn small on the clip. */
+function ClipLookThumb({ clip }: { clip: AxcutClip }) {
+	const document = useProjectStore((s) => s.document);
+	if (!document) return null;
+	const asset = document.assets.find((a) => a.id === clip.assetId);
+	if (!asset?.cameraTrack) return null;
+	const look = getClipEditorSettings(document, clip);
+	const aspect = resolveAspectRatioValue(document, look.aspectRatio);
+	const portrait = aspect < 1;
+	const choice =
+		look.segmentScene ??
+		(look.webcamLayoutPreset === "no-webcam" ? "screen" : look.webcamLayoutPreset);
+	const boxes = layoutBoxes(look, sceneForFormat(choice, portrait), {
+		aspect,
+		fill: false,
+		screen: { width: asset.video?.width ?? 1920, height: asset.video?.height ?? 1080 },
+		camera: { width: asset.cameraTrack.width ?? 1280, height: asset.cameraTrack.height ?? 720 },
+	});
+	return (
+		<span className={styles.tlClipThumb}>
+			<LayoutThumb aspect={aspect} boxes={boxes} height={22} />
+		</span>
+	);
+}
+
 export function V4Timeline({
 	tl,
 	setCurrentTime,
@@ -618,6 +658,7 @@ export function V4Timeline({
 	 *  dialog owns the microphone and the shell owns the transport. */
 	onAddVoiceover: () => void;
 }) {
+	const sceneLabels = useSceneLabels();
 	const t = useScopedT("timeline");
 	// The live bindings, not the defaults: these keys are remappable, and a menu
 	// that taught the wrong one would be worse than teaching none.
@@ -663,6 +704,8 @@ export function V4Timeline({
 	const { settings, set: setSettings } = useEditorSettings();
 
 	const [autoEnhanceOpen, setAutoEnhanceOpen] = useState(false);
+	// Automatic zooms, idle cuts, keycaps and focus-follows-cursor all read recorded pointer data.
+	const hasCursor = useHasRecordedCursor() === true;
 	const [audioMenuOpen, setAudioMenuOpen] = useState(false);
 	const [autoBusy, setAutoBusy] = useState(false);
 	const [keycapsOpen, setKeycapsOpen] = useState(false);
@@ -685,6 +728,7 @@ export function V4Timeline({
 			),
 		[clips],
 	);
+	const projectDocument = useProjectStore((s) => s.document);
 	const pctOf = useCallback((sec: number) => (sec / total) * 100, [total]);
 	/** Stored raw seconds → a percentage of the expanded ruler. */
 	const pctAt = pctOf;
@@ -717,7 +761,7 @@ export function V4Timeline({
 		kind: "annotation",
 		start: p.start,
 		end: p.end,
-		label: t("toolbar.newAnnotation"),
+		label: p.member.graphicData?.name ?? t("toolbar.newAnnotation"),
 		sourceIds: p.ids,
 	}));
 	const speedRuns = coalesceRegionsForRuler(tl.speedRegions);
@@ -729,13 +773,15 @@ export function V4Timeline({
 		label: `${(p.member as { speed?: number }).speed ?? 1.5}×`,
 		sourceIds: p.ids,
 	}));
+	const portraitFormat =
+		resolveAspectRatioValue(useProjectStore.getState().document, settings.aspectRatio) < 1;
 	const cameraFullscreenPills: LanePill[] = coalesceRegionsForRuler(tl.cameraFullscreenRegions).map(
 		(p) => ({
 			id: p.ids[0],
 			kind: "cameraFullscreen",
 			start: p.start,
 			end: p.end,
-			label: "Full Camera",
+			label: sceneLabels[sceneForFormat(sceneOf(p.member), portraitFormat)],
 			sourceIds: p.ids,
 		}),
 	);
@@ -1618,6 +1664,118 @@ export function V4Timeline({
 		}
 	}, [tl, t]);
 
+	// Auto-enhance option: the edit of a talking head, with Filmareto's own numbers. No AI and nothing
+	// leaves the machine: silences and breaths go by the loudness of the take, repeated lines by the
+	// transcript, and the zooms follow the cuts and the voice. All ordinary pills and trims afterwards.
+	const runYapping = useCallback(async () => {
+		setAutoEnhanceOpen(false);
+		const start = useProjectStore.getState().document;
+		if (!start || start.timeline.clips.length === 0) {
+			toast.error(t("toolbar.importRecordingFirst"));
+			return;
+		}
+		setAutoBusy(true);
+		const progress = toast.loading(t("yapping.listening"));
+		try {
+			const plans = [];
+			let heardWords = false;
+			for (const asset of start.assets) {
+				const clips = start.timeline.clips.filter((clip) => clip.assetId === asset.id);
+				if (asset.kind !== "video" || !asset.originalPath || clips.length === 0) continue;
+				// A background run landing after this one would write over what it hears.
+				const running = useTranscriptionStore.getState().jobs[asset.id];
+				if (running && running.status !== "failed") {
+					await useTranscriptionStore
+						.getState()
+						.ensureTranscript(asset.id)
+						.catch(() => undefined);
+				}
+				const doc = useProjectStore.getState().document ?? start;
+				const durationSec = asset.durationSec ?? 0;
+				const analysis = await window.electronAPI.analyseTalkingHead(
+					asset.originalPath,
+					durationSec,
+				);
+				if (analysis.noSound) continue;
+				if (!analysis.success || !analysis.levelsDb) {
+					throw new Error(analysis.message ?? t("yapping.failed"));
+				}
+				// Cuts made by hand stay as they are: this edit works on what they leave.
+				const yours = doc.timeline.trimRanges.filter(
+					(trim) => trim.assetId === asset.id && trim.reason !== YAPPING_REASON,
+				);
+				const windows = clips.flatMap((clip) =>
+					subtractSpans(
+						{
+							start: clip.sourceStartSec,
+							end:
+								clip.sourceEndSec ??
+								clip.sourceStartSec + (clip.timelineEndSec - clip.timelineStartSec),
+						},
+						yours.map((trim) => ({ start: trim.startSec, end: trim.endSec })),
+					),
+				);
+				const known = doc.transcripts.find((entry) => entry.assetId === asset.id)?.language;
+				const heard = await window.electronAPI
+					.hearTalkingHead(asset.originalPath, piecesIn(analysis.levelsDb, windows), {
+						language: known && known !== "auto" ? known : undefined,
+						prompt: doc.project.vocabulary,
+					})
+					.catch((err: unknown) => {
+						console.warn("[yapping] could not hear the take:", err);
+						return null;
+					});
+				const transcript = heard
+					? transcriptFromSegments(
+							asset.id,
+							segmentsFromStt(heard).segments,
+							heard.detectedLanguage,
+						)
+					: null;
+				const words = (transcript?.words ?? []).map((word) => ({
+					start: word.startSec,
+					end: word.endSec,
+					text: word.text,
+				}));
+				heardWords ||= words.length > 0;
+				const face = analysis.face ?? null;
+				const hasCameraOfItsOwn = !!asset.cameraTrack;
+				plans.push({
+					assetId: asset.id,
+					face,
+					talkingHeadOnly: !hasCameraOfItsOwn,
+					transcript: words.length > 0 ? transcript : null,
+					plan: planYapping({
+						levelsDb: analysis.levelsDb,
+						words,
+						windows,
+						// Its picture is the talking head only when the take is the camera alone.
+						zoom: !hasCameraOfItsOwn && face !== null,
+					}),
+				});
+			}
+			if (plans.length === 0) {
+				toast.error(t("yapping.noSound"));
+				return;
+			}
+			if (!(await tl.applyYapping(plans))) return;
+			const cutSec = plans.reduce((sum, p) => sum + p.plan.stats.cutSec, 0);
+			const bad = plans.reduce((sum, p) => sum + p.plan.stats.badPieces, 0);
+			const zooms = plans.reduce((sum, p) => sum + p.plan.zooms.length, 0);
+			toast.success(
+				t("yapping.done", { seconds: Math.round(cutSec), bad, zooms }),
+				{ description: heardWords ? undefined : t("yapping.noTranscript") },
+			);
+		} catch (err) {
+			toast.error(t("yapping.failed"), {
+				description: err instanceof Error ? err.message : String(err),
+			});
+		} finally {
+			toast.dismiss(progress);
+			setAutoBusy(false);
+		}
+	}, [tl, t]);
+
 	// Auto-enhance option: cut the dead time and speed up what is done without being said. No AI
 	// and nothing leaves the machine: the transcript says where there is speech, the cursor sidecar
 	// and ffmpeg's freeze detection say where something is happening. Idle stretches become trims,
@@ -2045,6 +2203,20 @@ export function V4Timeline({
 										<button
 											type="button"
 											className={styles.recMenuRow}
+											onClick={() => void runYapping()}
+										>
+											<Sparkles size={16} style={{ flexShrink: 0 }} />
+											<span style={{ display: "flex", flexDirection: "column", gap: 1 }}>
+												<span style={{ fontWeight: 600 }}>{t("yapping.name")}</span>
+												<span style={{ fontSize: 12, color: "var(--muted)" }}>
+													{t("yapping.hint")}
+												</span>
+											</span>
+										</button>
+										{hasCursor ? (
+<button
+											type="button"
+											className={styles.recMenuRow}
 											onClick={() => void runAutoZooms()}
 										>
 											<ZoomIn size={16} style={{ flexShrink: 0 }} />
@@ -2055,7 +2227,9 @@ export function V4Timeline({
 												</span>
 											</span>
 										</button>
-										<button
+) : null}
+										{hasCursor ? (
+<button
 											type="button"
 											className={styles.recMenuRow}
 											onClick={() => void runSmartCuts()}
@@ -2068,7 +2242,9 @@ export function V4Timeline({
 												</span>
 											</span>
 										</button>
-										<button
+) : null}
+										{hasCursor ? (
+<button
 											type="button"
 											className={styles.recMenuRow}
 											onClick={() => {
@@ -2084,6 +2260,7 @@ export function V4Timeline({
 												</span>
 											</span>
 										</button>
+) : null}
 									</div>
 								</PopoverContent>
 							</Popover>
@@ -2202,7 +2379,8 @@ export function V4Timeline({
 								</button>
 							</Tooltip>
 							{/* One name and one tip for both states: `aria-pressed` carries which one it is. */}
-							<Tooltip content={t("buttons.autoFocusAllTip")}>
+							{hasCursor ? (
+<Tooltip content={t("buttons.autoFocusAllTip")}>
 								<button
 									type="button"
 									className={styles.tlToolBtn}
@@ -2213,8 +2391,9 @@ export function V4Timeline({
 									<Crosshair size={16} />
 								</button>
 							</Tooltip>
+) : null}
 							{/* Absent, not greyed out, in a project with no camera: nothing to show full screen. */}
-							{hasAnyCamera ? (
+							{hasAnyCamera && cameraFullscreenPills.length > 0 ? (
 								<Tooltip
 									content={t("buttons.addCameraFullscreen")}
 									shortcut={formatBinding(shortcuts.addCameraFullscreen, isMac)}
@@ -2362,19 +2541,37 @@ export function V4Timeline({
 										t("hints.pressZoom", { key: formatBinding(shortcuts.addZoom, isMac) }),
 									)}
 								</div>
-								<div className={styles.tlLane}>
-									{/* Advertising "Press C" on a project with no webcam invites a keystroke
-									    that `addCameraFullscreen` now refuses (#353). The toolbar button is
-									    already disabled; this keeps the lane from contradicting it. */}
-									{renderPills(
-										cameraFullscreenPills,
-										hasAnyCamera
-											? t("hints.pressCameraFullscreen", {
-													key: formatBinding(shortcuts.addCameraFullscreen, isMac),
-												})
-											: ts("layout.noWebcam"),
+								{/* The scenes over the clips, as the script names them. */}
+								<div className={styles.tlSceneNames}>
+									{tl.clips.map((clip, index) =>
+										clip.sceneId || /^Segment \d+$/.test(clip.reason) ? (
+											<button
+												type="button"
+												key={clip.id}
+												data-current={clip.id === tl.clipSelection || undefined}
+												style={{
+													left: `${pctOf(clip.timelineStartSec)}%`,
+													width: `${pctOf(clip.timelineEndSec - clip.timelineStartSec)}%`,
+												}}
+												onPointerDown={(event) => event.stopPropagation()}
+												onClick={() => {
+													tl.selectClip(clip.id);
+													setCurrentTime(
+														clip.timelineStartSec +
+															Math.min(1.1, (clip.timelineEndSec - clip.timelineStartSec) / 2),
+													);
+												}}
+											>
+												<i aria-hidden />
+												{clipLabel(projectDocument, clip, index)}
+											</button>
+										) : null,
 									)}
 								</div>
+								{/* Only for regions made before each segment had its own look. */}
+								{cameraFullscreenPills.length > 0 ? (
+									<div className={styles.tlLane}>{renderPills(cameraFullscreenPills, "")}</div>
+								) : null}
 								{/* Agent-written shader effects: one at a time, so one row. Only when the project
 								    has one: an agent writes them, nothing in the editor adds one, so an empty
 								    row would offer nothing. The shell grows by its height
@@ -2563,6 +2760,12 @@ export function V4Timeline({
 												return;
 											}
 											tl.selectClip(c.id);
+											// The controls act on the clip the program shows, so a click stands
+											// in it, past where it eases in from the one before.
+											const now = useProjectStore.getState().currentTimeSec;
+											if (now < c.timelineStartSec || now >= c.timelineEndSec) {
+												setCurrentTime(c.timelineStartSec + Math.min(1.1, dur / 2));
+											}
 										}}
 										onDoubleClick={(e) => {
 											e.stopPropagation();
@@ -2594,7 +2797,31 @@ export function V4Timeline({
 											>
 												<Pencil size={15} />
 											</button>
-											{cardFitsDuration(boxLen * pxPerSec - gutterPx, durText) ? (
+											{c.audioMuted ? (
+												<button
+													type="button"
+													className={styles.tlClipEdit}
+													data-no-clip-drag
+													title={t("yapping.unmuteClip")}
+													aria-label={t("yapping.unmuteClipLabel")}
+													onClick={(e) => {
+														e.stopPropagation();
+														void tl.setClipAudioMuted(c.id, false);
+													}}
+												>
+													<VolumeX size={15} />
+												</button>
+											) : null}
+											<ClipLookThumb clip={c} />
+											{cardFitsDuration(
+												boxLen * pxPerSec - gutterPx,
+												`${clipLabel(projectDocument, c, tl.clips.indexOf(c))} · ${durText}`,
+											) &&
+											(c.sceneId || /^Segment \d+$/.test(c.reason)) ? (
+												<span className={styles.tlClipDuration}>
+													{clipLabel(projectDocument, c, tl.clips.indexOf(c))} · {durText}
+												</span>
+											) : cardFitsDuration(boxLen * pxPerSec - gutterPx, durText) ? (
 												<span className={styles.tlClipDuration}>{durText}</span>
 											) : null}
 										</div>

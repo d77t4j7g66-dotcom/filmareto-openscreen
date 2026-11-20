@@ -57,6 +57,7 @@ pub mod segmentation;
 // Livraison de la preview par textures partagées (Windows) ; la tenue des cases est portable.
 pub mod shared_frames;
 pub mod text_anim;
+pub mod text_fx;
 pub mod text_fonts;
 pub mod text_plate;
 pub mod timeline_walk;

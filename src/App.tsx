@@ -7,12 +7,11 @@ installBrowserShims();
 
 import { CountdownOverlay } from "./components/launch/CountdownOverlay.tsx";
 import { LaunchWindow } from "./components/launch/LaunchWindow";
-import { NotesWindow } from "./components/launch/NotesWindow.tsx";
 import { SourceSelector } from "./components/launch/SourceSelector";
+import { TeleprompterWindow } from "./components/launch/TeleprompterWindow.tsx";
 import { PermissionsWindow } from "./components/permissions/PermissionsWindow";
 import { Toaster } from "./components/ui/sonner";
 import { TooltipProvider } from "./components/ui/tooltip";
-import { EditorDialogsProvider } from "./contexts/EditorDialogsContext";
 import { useScopedT } from "./contexts/I18nContext";
 import { ShortcutsProvider } from "./contexts/ShortcutsContext";
 import { loadAllCustomFonts } from "./lib/customFonts";
@@ -30,11 +29,6 @@ const CliCaptionsRunner = lazy(() => import("./cli/CliCaptionsRunner"));
 const ShortcutsConfigDialog = lazy(() =>
 	import("./components/video-editor/ShortcutsConfigDialog").then((module) => ({
 		default: module.ShortcutsConfigDialog,
-	})),
-);
-const ProviderSettingsDialog = lazy(() =>
-	import("./components/ai-edition/ProviderSettings").then((module) => ({
-		default: module.ProviderSettingsDialog,
 	})),
 );
 
@@ -118,7 +112,7 @@ export default function App() {
 			case "editor":
 				return (
 					<ShortcutsProvider>
-						<EditorDialogsProvider>
+						<>
 							<Suspense
 								fallback={
 									<div className="flex flex-col items-center justify-center gap-3 h-screen bg-[var(--bg)]">
@@ -150,9 +144,8 @@ export default function App() {
 							>
 								<VideoEditorEntry />
 								<ShortcutsConfigDialog />
-								<ProviderSettingsDialog />
 							</Suspense>
-						</EditorDialogsProvider>
+						</>
 					</ShortcutsProvider>
 				);
 			default:
@@ -168,7 +161,7 @@ export default function App() {
 
 	return (
 		<TooltipProvider>
-			{showNotes ? <NotesWindow /> : content}
+			{showNotes ? <TeleprompterWindow /> : content}
 			{/* The HUD mounts its own, placed clear of the bar (LaunchWindow). */}
 			{windowType !== "hud-overlay" && <Toaster />}
 		</TooltipProvider>

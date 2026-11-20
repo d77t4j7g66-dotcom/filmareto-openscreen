@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { toFileUrl } from "@/components/video-editor/projectPersistence";
-import { useEditorDialogActions } from "@/contexts/EditorDialogsContext";
 import { useScopedT } from "@/contexts/I18nContext";
 import { useShortcuts } from "@/contexts/ShortcutsContext";
 import { seedBuiltInStylePresets } from "@/lib/ai-edition/builtInStylePresets";
@@ -10,6 +9,7 @@ import {
 	computeAudioRowCount,
 } from "@/lib/ai-edition/document/audioTracks";
 import { createId } from "@/lib/ai-edition/document/ids";
+import { prompterTextOf, scenesOf } from "@/lib/ai-edition/document/script";
 import {
 	documentAfterProbedDuration,
 	PLACEHOLDER_DURATION_SEC,
@@ -29,7 +29,11 @@ import type {
 } from "@/lib/ai-edition/schema";
 import { withPastedShaderEffect } from "@/lib/ai-edition/shaderEffects";
 import { useMcpDocumentHost } from "@/lib/ai-edition/store/mcpDocumentHost";
-import { saveWithDeadline, useProjectStore } from "@/lib/ai-edition/store/projectStore";
+import {
+	saveWithDeadline,
+	useProjectStore,
+	waitForDocumentSaves,
+} from "@/lib/ai-edition/store/projectStore";
 import {
 	useAssetTranscriptions,
 	useAutoTranscription,
@@ -68,13 +72,20 @@ import {
 	type UnsavedChoice,
 } from "./Modals";
 import { Preview } from "./Preview";
-import { importPendingRecording, maybeSaveFreshRecordingAutoZooms } from "./recordingImport";
+import {
+	importPendingRecording,
+	maybeSaveFreshRecordingAutoZooms,
+	setTakeTargetProject,
+} from "./recordingImport";
 import { AddAudioLayerDialog } from "./v4/AddAudioLayerDialog";
 import v4 from "./v4/EditorShellV4.module.css";
 import { type EditorMode, EditorTopBar } from "./v4/EditorTopBar";
 import { type Facet, FloatingInspector } from "./v4/FloatingInspector";
+import { LayoutPanel } from "./v4/LayoutPanel";
 import { MediaStage } from "./v4/MediaStage";
 import { RecStage } from "./v4/RecStage";
+import { SceneCards } from "./v4/SceneCards";
+import { ScriptStage } from "./v4/ScriptStage";
 import { V4Timeline } from "./v4/V4Timeline";
 
 interface SeekTarget {
@@ -147,6 +158,9 @@ export async function runLoadedMetadataWrite(
 		saveTimeoutMs?: number;
 	} = {},
 ): Promise<void> {
+	// The queue only orders the writes on it. The import places a take's clips off it, and the store
+	// holds them only once the bridge answers: reading before that seeds a clip over all of them.
+	if ((await waitForDocumentSaves()) === "timeout") return;
 	// ponytail: WebM recordings from MediaRecorder report NaN/Infinity until the
 	// main-process EBML fix lands. Seed against a placeholder so the timeline never
 	// gets stuck empty; `documentAfterProbedDuration` is what refuses to write it over
@@ -285,7 +299,6 @@ export function NewEditorShell() {
 	// one, and subscribing it to the open state would re-render the whole editor — timeline,
 	// preview, transport — twice per dialog interaction. Whether a dialog is open is a question
 	// for `isModalOpen`, which answers for every modal rather than for this context's one.
-	const { openDialog } = useEditorDialogActions();
 	// Transcription is local and every transcript-driven feature (Smart cuts,
 	// captions, the transcript pane) needs one, so the editor produces them by
 	// itself instead of waiting for the user to find the button. This hook is
@@ -394,8 +407,13 @@ export function NewEditorShell() {
 		void (async () => {
 			if (!window.electronAPI) return;
 			try {
-				if (await importPendingRecording((warning) => toast.warning(warning))) {
-					toast.success("Recording added to a new project");
+				const imported = await importPendingRecording((warning) => toast.warning(warning));
+				if (imported) {
+					toast.success(
+						imported === "take"
+							? te("studio.takeAdded")
+							: "Recording added to a new project",
+					);
 					return;
 				}
 			} catch (err) {
@@ -951,6 +969,7 @@ export function NewEditorShell() {
 		[saveDocument, unsavedPrompt],
 	);
 
+	const [takeInProject, setTakeInProject] = useState(true);
 	const handleNewRecording = useCallback(async () => {
 		const choice = await promptUnsaved("record");
 		if (choice !== "cancel") {
@@ -959,6 +978,24 @@ export function NewEditorShell() {
 			});
 		}
 	}, [promptUnsaved]);
+
+	// Record on a scene: the script goes to the prompter at that scene, and the bar takes over.
+	const startSceneRun = useCallback(
+		async (start: number) => {
+			const doc = useProjectStore.getState().document;
+			if (!doc) return;
+			const scenes = scenesOf(doc);
+			await window.electronAPI.teleprompter?.startRun({
+				projectId: doc.project.id,
+				scenes,
+				start,
+				text: prompterTextOf(scenes),
+			});
+			setTakeTargetProject(null);
+			void handleNewRecording();
+		},
+		[handleNewRecording],
+	);
 
 	const handleExport = useCallback(() => {
 		if (!hasAsset) {
@@ -999,16 +1036,26 @@ export function NewEditorShell() {
 	// spoken. Captured on the way in, used on the way out.
 	const voiceoverStartSecRef = useRef(0);
 
+	// The selected clip takes the voice-over: from its start, to its end, in place of its own sound.
+	const voiceoverClipRef = useRef<string | null>(null);
 	const openVoiceoverFlow = useCallback(() => {
 		const doc = useProjectStore.getState().document;
 		if (!doc) return;
+		const clip = doc.timeline.clips.find((c) => c.id === tl.clipSelection);
+		voiceoverClipRef.current = clip?.id ?? null;
+		if (clip) {
+			handleSeek(clip.timelineStartSec);
+			voiceoverStartSecRef.current = clip.timelineStartSec;
+			setVoiceoverFlow({ maxDurationSec: clip.timelineEndSec - clip.timelineStartSec });
+			return;
+		}
 		const total = doc.timeline.clips.reduce((max, c) => Math.max(max, c.timelineEndSec), 0);
 		const playhead = useProjectStore.getState().currentTimeSec;
 		voiceoverStartSecRef.current = playhead;
 		// Recording stops itself at the end of the timeline: a take can never
 		// outlive the video it was recorded over.
 		setVoiceoverFlow({ maxDurationSec: Math.max(0.5, total - playhead) });
-	}, []);
+	}, [handleSeek, tl.clipSelection]);
 
 	// Silences the timeline's own audio tracks for the duration of a take — see
 	// where it is passed to the preview.
@@ -1019,8 +1066,10 @@ export function NewEditorShell() {
 		// hitting Record, and playback starts from wherever the playhead is now.
 		voiceoverStartSecRef.current = useProjectStore.getState().currentTimeSec;
 		setVoiceoverRecording(true);
+		// Off from the first word: on speakers the clip's own voice would land in the take.
+		if (voiceoverClipRef.current) void tl.setClipAudioMuted(voiceoverClipRef.current, true);
 		if (videoElement?.paused) void videoElement.play().catch(() => undefined);
-	}, [videoElement]);
+	}, [videoElement, tl.setClipAudioMuted]);
 
 	const handleVoiceoverRecordingStop = useCallback(() => {
 		setVoiceoverRecording(false);
@@ -1030,6 +1079,7 @@ export function NewEditorShell() {
 	const handleVoiceoverReady = useCallback(
 		async (assetId: string, durationSec: number) => {
 			setVoiceoverFlow(null);
+			voiceoverClipRef.current = null;
 			await tl.addAudioTrack(assetId, voiceoverStartSecRef.current, {
 				kind: "voiceover",
 				durationSec,
@@ -1315,7 +1365,9 @@ export function NewEditorShell() {
 				// exactly like every other.
 				if (tl.selectedAudioTrackId) {
 					void tl.removeAudioTrack(tl.selectedAudioTrackId);
+					return;
 				}
+				if (tl.clipSelection) void tl.removeClip(tl.clipSelection);
 			};
 
 			// F2.9 — configurable actions read the user's saved bindings instead
@@ -1467,7 +1519,7 @@ export function NewEditorShell() {
 		handleSeek,
 	]);
 
-	const showTimeline = mode !== "rec";
+	const showTimeline = mode !== "rec" && mode !== "script";
 	const timelineRow = mode === "media" ? "188px" : `${timelineHeightPx}px`;
 	const bodyColumns = mode === "edit" && chatOpen ? `${chatWidthPx}px 1fr` : "1fr";
 
@@ -1574,7 +1626,6 @@ export function NewEditorShell() {
 					openSettings: handleOpenSettings,
 					renameProject: handleRenameProject,
 					toggleChat: () => setChatOpen((v) => !v),
-					openProviderSettings: () => openDialog("providers"),
 					showAbout: handleShowAbout,
 					checkForUpdates: handleCheckForUpdates,
 					undo: runUndo,
@@ -1623,7 +1674,7 @@ export function NewEditorShell() {
 									// rail:50 + gap:10 + panel ≈ 80 + panel, +a small gap) so it doesn't
 									// draw its own translucent panel flush against the canvas edge. The
 									// panel's width is `--inspector-w` (see .stage), so the room follows it.
-									padding: `16px ${inspectorOpen ? "calc(var(--inspector-w, 300px) + 100px)" : "74px"} 16px 16px`,
+									padding: `16px ${inspectorOpen ? "calc(var(--inspector-w, 300px) + 100px)" : "74px"} 16px ${hasAsset ? "calc(var(--layout-panel-w, 240px) + 36px)" : "16px"}`,
 									boxSizing: "border-box",
 								}}
 							>
@@ -1675,6 +1726,7 @@ export function NewEditorShell() {
 									playing={playing}
 								/>
 							</div>
+							{hasAsset ? <LayoutPanel tl={tl} onSeek={handleSeek} /> : null}
 							<FloatingInspector
 								facet={facet}
 								open={inspectorOpen}
@@ -1691,10 +1743,28 @@ export function NewEditorShell() {
 						</>
 					) : mode === "media" ? (
 						<MediaStage onAddToTimeline={handleDropAsset} />
+					) : mode === "script" ? (
+						<ScriptStage onContinue={() => setMode("rec")} />
 					) : (
 						<RecStage
-							onStartRecording={() => void handleNewRecording()}
+							scenes={
+								scenesOf(document).length > 0 ? (
+									<SceneCards
+										onRecord={(index) => void startSceneRun(index)}
+										onShowTake={(clipId, take) => void tl.showClipTake(clipId, take)}
+									/>
+								) : undefined
+							}
+							onWriteScript={() => setMode("script")}
+							onStartRecording={() => {
+								setTakeTargetProject(
+									takeInProject && hasAsset ? (document?.project.id ?? null) : null,
+								);
+								void handleNewRecording();
+							}}
 							onClose={() => setMode("edit")}
+							takeInProject={hasAsset ? takeInProject : undefined}
+							onTakeInProjectChange={setTakeInProject}
 						/>
 					)}
 				</section>
@@ -1796,6 +1866,9 @@ export function NewEditorShell() {
 					// flow that ends any other way must not leave the timeline muted.
 					setVoiceoverRecording(false);
 					setVoiceoverFlow(null);
+					// A take cancelled on a clip gives it its sound back.
+					if (voiceoverClipRef.current) void tl.setClipAudioMuted(voiceoverClipRef.current, false);
+					voiceoverClipRef.current = null;
 				}}
 				onComplete={(assetId, durationSec) => {
 					void handleVoiceoverReady(assetId, durationSec);

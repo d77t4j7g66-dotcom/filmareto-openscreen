@@ -2,6 +2,7 @@ import { ArrowDown, Film, Plus, RotateCw, Search, X } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Tooltip } from "@/components/ui/tooltip";
+import { toFileUrl } from "@/components/video-editor/projectPersistence";
 import { useI18n, useScopedT } from "@/contexts/I18nContext";
 import { VOCABULARY_MAX_CHARS, withVocabulary } from "@/lib/ai-edition/document/transcript";
 import type { AxcutAsset, AxcutTranscript, TranscriptLanguageCode } from "@/lib/ai-edition/schema";
@@ -33,7 +34,7 @@ import styles from "./EditorShellV4.module.css";
 const ASSET_MIME = "application/x-axcut-asset";
 const THUMB_GRADIENTS = [
 	"linear-gradient(135deg, #fb7185, #f97316)",
-	"linear-gradient(135deg, #10b981, #0d986a)",
+	"linear-gradient(135deg, #ee6c0e, #0d986a)",
 	"linear-gradient(135deg, #fbbf24, #f59e0b)",
 	"linear-gradient(135deg, #38bdf8, #6366f1)",
 ];
@@ -186,7 +187,17 @@ export function MediaStage({
 											className={styles.mediaThumb}
 											style={{ background: THUMB_GRADIENTS[i % THUMB_GRADIENTS.length] }}
 										>
-											<Film size={30} strokeWidth={1.8} />
+											{asset.kind === "video" && asset.originalPath ? (
+												<video
+													className={styles.mediaThumbFrame}
+													src={`${toFileUrl(asset.originalPath)}#t=0.5`}
+													preload="metadata"
+													muted
+													playsInline
+												/>
+											) : (
+												<Film size={30} strokeWidth={1.8} />
+											)}
 										</div>
 										<div className={styles.mediaCardMeta}>
 											{asset.id === selectedId ? (

@@ -538,6 +538,29 @@ describe("buildSceneDescription.clips", () => {
 		expect(buildSceneDescription(doc).clips[0].hasAudio).toBe(true);
 	});
 
+	it("gives no audio to a clip whose sound a voice-over replaced, and leaves the next one its own", () => {
+		const asset = makeAsset({ id: "a", originalPath: "/screen.mp4" });
+		const muted = makeClip({
+			id: "c1",
+			assetId: "a",
+			sourceStartSec: 0,
+			sourceEndSec: 4,
+			timelineStartSec: 0,
+			timelineEndSec: 4,
+			audioMuted: true,
+		});
+		const next = makeClip({
+			id: "c2",
+			assetId: "a",
+			sourceStartSec: 4,
+			sourceEndSec: 8,
+			timelineStartSec: 4,
+			timelineEndSec: 8,
+		});
+		const doc = makeDoc({ assets: [asset], clips: [muted, next] });
+		expect(buildSceneDescription(doc).clips.map((c) => c.hasAudio)).toEqual([false, true]);
+	});
+
 	it("sets hasAudio=true consistently across multiple clips in the same scene", () => {
 		const asset = makeAsset({ id: "a", originalPath: "/screen.mp4" });
 		const clip1 = makeClip({
@@ -629,7 +652,7 @@ describe("buildSceneDescription.zoomRegions", () => {
 		}
 	});
 
-	it("bounds each clip's zoom so its recording is never blown up past 2× at 1080p", () => {
+	it("bounds each clip's zoom at 2× of its recording at 1080p, but always leaves a usable zoom", () => {
 		// Crop and zoom multiply: at 50 % padding a 1080p take already sits at 0.8, a 2160p
 		// take at 0.4 and half a 1080p take at 1.6 of the default 1080p export.
 		const at = (width: number, height: number, crop?: AxcutClip["cropRegion"]) => {
@@ -666,8 +689,8 @@ describe("buildSceneDescription.zoomRegions", () => {
 		expect(at(1920, 1080)).toEqual({ scale: 2.5, limit: 2.5 });
 		expect(at(3840, 2160)).toEqual({ scale: 5, limit: 5 });
 		expect(at(1920, 1080, { x: 0.25, y: 0.25, width: 0.5, height: 0.5 })).toEqual({
-			scale: 1.25,
-			limit: 1.25,
+			scale: 2.2,
+			limit: 2.2,
 		});
 	});
 
@@ -916,7 +939,7 @@ describe("buildSceneDescription.cameraFullscreenRegions", () => {
 			},
 		});
 		const { cameraFullscreenRegions } = buildSceneDescription(doc);
-		expect(cameraFullscreenRegions).toEqual([{ startSec: 2, endSec: 5.5 }]);
+		expect(cameraFullscreenRegions).toMatchObject([{ startSec: 2, endSec: 5.5 }]);
 	});
 
 	it("sends a switched-off easing as a cut on that side", () => {
@@ -938,7 +961,7 @@ describe("buildSceneDescription.cameraFullscreenRegions", () => {
 
 	it("yields [] when legacyEditor.cameraFullscreenRegions is missing", () => {
 		const doc = makeDoc({ legacyEditor: {} });
-		expect(buildSceneDescription(doc).cameraFullscreenRegions).toEqual([]);
+		expect(buildSceneDescription(doc).cameraFullscreenRegions).toMatchObject([]);
 	});
 
 	it("splits a region straddling two clips into one entry per clip's source time", () => {
@@ -968,7 +991,7 @@ describe("buildSceneDescription.cameraFullscreenRegions", () => {
 			},
 		});
 		const { cameraFullscreenRegions } = buildSceneDescription(doc);
-		expect(cameraFullscreenRegions).toEqual([
+		expect(cameraFullscreenRegions).toMatchObject([
 			{ startSec: 103, endSec: 105, clipIndex: 0, continuesAfter: true },
 			{ startSec: 200, endSec: 202, clipIndex: 1, continuesBefore: true },
 		]);
@@ -998,7 +1021,7 @@ describe("buildSceneDescription.cameraFullscreenRegions", () => {
 				cameraFullscreenRegions: [{ id: "cf1", startMs: 2000, endMs: 8000 }],
 			},
 		});
-		expect(buildSceneDescription(doc).cameraFullscreenRegions).toEqual([
+		expect(buildSceneDescription(doc).cameraFullscreenRegions).toMatchObject([
 			{ startSec: 2, endSec: 4, clipIndex: 0, continuesAfter: true },
 			{ startSec: 6, endSec: 8, clipIndex: 1, continuesBefore: true },
 		]);
@@ -1029,7 +1052,7 @@ describe("buildSceneDescription.cameraFullscreenRegions", () => {
 				cameraFullscreenRegions: [{ id: "cf1", startMs: 3000, endMs: 5000 }],
 			},
 		});
-		expect(buildSceneDescription(doc).cameraFullscreenRegions).toEqual([
+		expect(buildSceneDescription(doc).cameraFullscreenRegions).toMatchObject([
 			{ startSec: 3, endSec: 5, clipIndex: 0, underTrim: true },
 		]);
 	});

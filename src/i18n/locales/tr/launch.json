@@ -14,7 +14,7 @@
 		"microphone": "Mikrofon: sesinizi kaydeder",
 		"camera": "Kamera: sizi düzenleyicide taşıyabileceğiniz ayrı bir katman olarak kaydeder",
 		"openStudio": "Stüdyoyu aç: kayıtlarınızın düzenleyicisi",
-		"openNotes": "Notları aç: kayıt sırasında okuyacağınız metin",
+		"openNotes": "Teleprompter",
 		"openNotesPlaceholder": "Notlarınızı buraya yazın...",
 		"notesToolbar": {
 			"bold": "Kalın",
@@ -70,8 +70,8 @@
 		"screens": "Ekranlar ({{count}})",
 		"windows": "Pencereler ({{count}})",
 		"emptyTitle": "Ekran veya pencere bulunamadı",
-		"emptyDescription": "Ekran kaydı iznini az önce verdiyseniz bu seçiciyi yeniden yükleyin. macOS'ta OpenScreen'i yeniden açmanız gerekebilir.",
-		"loadFailedDescription": "OpenScreen yakalama kaynaklarını yükleyemedi. Bu seçiciyi yeniden yükleyip tekrar deneyin.",
+		"emptyDescription": "Ekran kaydı iznini az önce verdiyseniz bu seçiciyi yeniden yükleyin. macOS'ta Filmareto'i yeniden açmanız gerekebilir.",
+		"loadFailedDescription": "Filmareto yakalama kaynaklarını yükleyemedi. Bu seçiciyi yeniden yükleyip tekrar deneyin.",
 		"defaultSourceName": "Ekran"
 	},
 	"recording": {
@@ -79,19 +79,20 @@
 		"systemPicker": "Sisteminiz neyi paylaşacağınızı soracak",
 		"start": "Kaydı başlat",
 		"stop": "Kaydı durdur ve kaydet",
-		"saving": "Kaydediliyor..."
+		"saving": "Kaydediliyor...",
+		"noMicrophone": "The microphone is off: this take will have no sound."
 	},
 	"language": "Dil",
 	"languageWithName": "Dil: {{language}}",
 	"systemLanguagePrompt": {
 		"title": "Sistem dilinizi kullanmak ister misiniz?",
-		"description": "Sistem diliniz {{language}} olarak algılandı. OpenScreen i {{language}} diline geçirmek ister misiniz?",
+		"description": "Sistem diliniz {{language}} olarak algılandı. Filmareto i {{language}} diline geçirmek ister misiniz?",
 		"switch": "{{language}} diline geç",
 		"keepDefault": "Mevcut dili koru"
 	},
 	"softwareEncoderFallback": {
 		"title": "Yazılım kodlamasına geçildi",
-		"description": "Varsayılan GPU kodlayıcı başlatılamadığı için OpenScreen yazılım tabanlı H.264 kodlamasına geçti. Kayıt normal şekilde devam eder, ancak CPU kullanımı daha yüksek olabilir.",
+		"description": "Varsayılan GPU kodlayıcı başlatılamadığı için Filmareto yazılım tabanlı H.264 kodlamasına geçti. Kayıt normal şekilde devam eder, ancak CPU kullanımı daha yüksek olabilir.",
 		"dismiss": "Anladım",
 		"dontShowAgain": "Bir daha gösterme"
 	},
@@ -108,7 +109,7 @@
 		"checkingForUpdates": "Denetleniyor…"
 	},
 	"permissions": {
-		"title": "OpenScreen'in birkaç izne ihtiyacı var",
+		"title": "Filmareto'in birkaç izne ihtiyacı var",
 		"subtitle": "macOS her birini yalnızca bir kez ister. Bunları istediğiniz zaman Sistem Ayarları'ndan değiştirebilirsiniz.",
 		"level": {
 			"required": "Gerekli",
@@ -145,21 +146,71 @@
 			"continue": "Devam",
 			"allow": "İzin ver",
 			"openSettings": "Ayarları Aç",
-			"restart": "OpenScreen'i yeniden başlat",
+			"restart": "Filmareto'i yeniden başlat",
 			"start": "Başla"
 		},
 		"help": {
-			"screenPrompt": "Ardından macOS, Sistem Ayarları'nda OpenScreen'i açmanızı isteyecek.",
-			"screenSettings": "Sistem Ayarları'nda OpenScreen'i açın. macOS uygulamayı kapatıp yeniden açmayı önerirse kabul edin: bu pencere geri gelecek.",
-			"screenNotListed": "OpenScreen listede yok mu? + düğmesine tıklayın ve Uygulamalar'dan OpenScreen'i seçin.",
-			"screenRestart": "İzin verildi. OpenScreen'in bunu kullanabilmesi için yeniden başlatılması gerekiyor.",
-			"screenRecurring": "İlk kaydınızda macOS, OpenScreen'in sistem seçicisi olmadan ekranınıza doğrudan erişip erişemeyeceğini soracak. İzin Ver'e tıklayın. macOS bunu zaman zaman yeniden sorar; bu normaldir.",
-			"systemAudioPrompt": "macOS, OpenScreen'in Mac'inizin sesini kaydetmesine izin vermenizi isteyecek.",
-			"systemAudioRequested": "Reddettiyseniz, Sistem Ayarları'nda “Yalnızca Sistem Sesi Kaydı” altında OpenScreen'i açın."
+			"screenPrompt": "Ardından macOS, Sistem Ayarları'nda Filmareto'i açmanızı isteyecek.",
+			"screenSettings": "Sistem Ayarları'nda Filmareto'i açın. macOS uygulamayı kapatıp yeniden açmayı önerirse kabul edin: bu pencere geri gelecek.",
+			"screenNotListed": "Filmareto listede yok mu? + düğmesine tıklayın ve Uygulamalar'dan Filmareto'i seçin.",
+			"screenRestart": "İzin verildi. Filmareto'in bunu kullanabilmesi için yeniden başlatılması gerekiyor.",
+			"screenRecurring": "İlk kaydınızda macOS, Filmareto'in sistem seçicisi olmadan ekranınıza doğrudan erişip erişemeyeceğini soracak. İzin Ver'e tıklayın. macOS bunu zaman zaman yeniden sorar; bu normaldir.",
+			"systemAudioPrompt": "macOS, Filmareto'in Mac'inizin sesini kaydetmesine izin vermenizi isteyecek.",
+			"systemAudioRequested": "Reddettiyseniz, Sistem Ayarları'nda “Yalnızca Sistem Sesi Kaydı” altında Filmareto'i açın."
 		},
 		"footer": {
 			"screenRequired": "Kayıt için ekran kaydı gereklidir.",
 			"ready": "Her şey hazır."
 		}
+	},
+	"scene": {
+		"startCameraOnly": "Start recording, camera only",
+		"cameraOnly": "Camera only",
+		"cameraOnlyOn": "Records only the camera and the microphone",
+		"cameraOnlyOff": "Record only the camera, no screen",
+		"nextOf": "Next {{number}}/{{count}}: {{name}}",
+		"allDone": "All scenes recorded",
+		"again": "Again",
+		"againNamed": "Again: {{name}}",
+		"end": "End",
+		"toEdit": "To Edit",
+		"retrySegment": "This segment again from the start",
+		"lastSegment": "Last segment",
+		"nextSegment": "Next segment",
+		"modeVoice": "Voice",
+		"modeManual": "Constant speed",
+		"modeBullets": "Bullets",
+		"posTop": "Top",
+		"posWindow": "Window",
+		"posScreen": "Over the screen",
+		"posFull": "Full screen",
+		"scrolling": "Scrolling",
+		"speed": "Speed",
+		"listensTo": "Listens to: {{mic}}. Change it in System Settings → Sound → Input.",
+		"macInput": "the Mac's input",
+		"bulletsHint": "Each line of the text is a bullet. Move on with ↓ Line or ⌃⌥↓.",
+		"position": "Position",
+		"display": "Display",
+		"automatic": "Automatic",
+		"activeLine": "Active line",
+		"guideLine": "Guide line",
+		"width": "Width",
+		"lines": "Lines",
+		"look": "Look",
+		"letters": "Text size",
+		"lineSpacing": "Line spacing",
+		"paddingSides": "Side padding",
+		"paddingTop": "Top and bottom padding",
+		"background": "Background",
+		"hide": "Hide",
+		"pause": "Pause",
+		"start": "Start",
+		"fromSegmentStart": "From the start of the segment",
+		"prevLine": "↑ Line",
+		"nextLine": "↓ Line",
+		"text": "Text",
+		"textPlaceholder": "Write or paste the text. A line with only a / starts a new segment.",
+		"newSegment": "New segment ( / )",
+		"recHides": "Rec hides this window and starts the teleprompter."
 	}
 }

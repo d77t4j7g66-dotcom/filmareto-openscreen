@@ -370,12 +370,19 @@ export function PreviewCanvas(props: PreviewCanvasProps) {
 	// exporters and the native compositor, so all four animate identically.
 	const cameraFullscreenProgress = useMemo(
 		() =>
-			computeCameraFullscreenProgress(
-				props.cameraFullscreenRegions ?? [],
-				Math.round(props.currentTimeSec * 1000),
-				props.speedRegions,
-			),
-		[props.cameraFullscreenRegions, props.currentTimeSec, props.speedRegions],
+			settings.segmentScene === "camera"
+				? 1
+				: computeCameraFullscreenProgress(
+						props.cameraFullscreenRegions ?? [],
+						Math.round(props.currentTimeSec * 1000),
+						props.speedRegions,
+					),
+		[
+			settings.segmentScene,
+			props.cameraFullscreenRegions,
+			props.currentTimeSec,
+			props.speedRegions,
+		],
 	);
 	const effectiveLayout = useMemo<WebcamCompositeLayout | null>(() => {
 		if (!layout?.webcamRect || cameraFullscreenProgress <= 0) return layout;
@@ -403,7 +410,18 @@ export function PreviewCanvas(props: PreviewCanvasProps) {
 	);
 	// `layout` already resolves to "no-webcam" (hence `webcamRect: null`) for a
 	// camera-less clip, so this is belt-and-braces rather than the only guard.
-	const showWebcamSlot = Boolean(layout?.webcamRect && activeClipHasCamera);
+	const showWebcamSlot = Boolean(
+		layout?.webcamRect && activeClipHasCamera && settings.segmentScene !== "screen",
+	);
+	// A layout that is not free yet still lets go of its boxes when you take hold of one: from then
+	// on this segment is free, starting from exactly where they were.
+	const canGrab =
+		settings.segmentScene === null &&
+		(settings.webcamLayoutPreset === "free-layout" ||
+			settings.webcamLayoutPreset === "vertical-stack" ||
+			settings.webcamLayoutPreset === "dual-frame" ||
+			settings.webcamLayoutPreset === "cutout-stack");
+	const [pointerOverFrame, setPointerOverFrame] = useState(false);
 	const [isPlaying, setIsPlaying] = useState(false);
 	const handleVideoElement = useMemo(() => props.onVideoElement, [props.onVideoElement]);
 	// L'élément `<video>` lui-même n'est plus retenu : il ne servait qu'à échantillonner des pixels
@@ -501,6 +519,8 @@ export function PreviewCanvas(props: PreviewCanvasProps) {
 			ref={frameRef}
 			className={styles.previewFrame}
 			style={{ ...frameStyle, width: frameSize.width, height: frameSize.height }}
+			onPointerEnter={() => setPointerOverFrame(true)}
+			onPointerLeave={() => setPointerOverFrame(false)}
 		>
 			{/* Sole pixel source: the D3D-composited frame (wallpaper + screen + webcam +
 			    cursor), streamed into a canvas. The <video> elements below are CSS-hidden
@@ -559,7 +579,8 @@ export function PreviewCanvas(props: PreviewCanvasProps) {
 					<WebcamOverlay clips={props.clips} currentTimeSec={props.currentTimeSec} />
 				</div>
 			) : null}
-			{settings.webcamLayoutPreset === "free-layout" &&
+			{canGrab &&
+			(settings.webcamLayoutPreset === "free-layout" || pointerOverFrame) &&
 			layout?.screenRect &&
 			layout.webcamRect &&
 			showWebcamSlot &&
@@ -569,7 +590,32 @@ export function PreviewCanvas(props: PreviewCanvasProps) {
 					screenRect={layout.screenRect}
 					cameraRect={layout.webcamRect}
 					frameRef={frameRef}
-					onChange={(patch) => setLive(patch)}
+					quiet={settings.webcamLayoutPreset !== "free-layout"}
+					onChange={(patch) => {
+						if (settings.webcamLayoutPreset === "free-layout") {
+							setLive(patch);
+							return;
+						}
+						const { screenRect: s, webcamRect: c } = layout;
+						const pctX = (v: number) => Math.round((v / frameSize.width) * 1000) / 10;
+						const pctY = (v: number) => Math.round((v / frameSize.height) * 1000) / 10;
+						setLive({
+							webcamLayoutPreset: "free-layout",
+							webcamMaskShape: "rectangle",
+							// Taken from the cutout, it stays a cutout.
+							...(settings.webcamLayoutPreset === "cutout-stack" &&
+							settings.webcamBackgroundMode === "none"
+								? { webcamBackgroundMode: "transparent" as const }
+								: {}),
+							freeScreenX: pctX(s.x + s.width / 2),
+							freeScreenY: pctY(s.y + s.height / 2),
+							freeScreenWidth: pctX(s.width),
+							freeCamX: c ? pctX(c.x + c.width / 2) : settings.freeCamX,
+							freeCamY: c ? pctY(c.y + c.height / 2) : settings.freeCamY,
+							freeCamWidth: c ? pctX(c.width) : settings.freeCamWidth,
+							...patch,
+						});
+					}}
 					onCommit={() => void commit()}
 				/>
 			) : null}

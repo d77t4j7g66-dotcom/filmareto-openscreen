@@ -14,7 +14,15 @@ import { clamp } from "@/utils/math";
 import type { AxcutDocument } from "../schema";
 import { textForPlate } from "../textContrast";
 import { type TranscriptLane, voiceoverPlacements } from "../timeline/aggregated-transcript";
+import { CAPTION_STYLE_FIT, CAPTION_STYLES, type CaptionStyleId } from "./styleCatalog";
 import { CAPTION_WORDS_PER_LINE_MAX, CAPTION_WORDS_PER_LINE_MIN } from "./wordsPerLine";
+
+export {
+	CAPTION_STYLE_GROUPS,
+	CAPTION_STYLES,
+	type CaptionStyleId,
+	TITLE_STYLE_IDS,
+} from "./styleCatalog";
 
 /**
  * Which frame edge the caption block is pinned to. The block grows AWAY from it:
@@ -46,6 +54,55 @@ export type CaptionAnchorV = "bottom" | "top";
  * without seeing the band.
  */
 export type CaptionAnchorH = "left" | "center" | "right";
+
+/** "upper" also drops Greek accents, as capitals do. */
+export type CaptionTextCase = "as-spoken" | "upper";
+
+/**
+ * One word of each caption stands out, the longest. `big-word`: big, in a serif, on a line of its
+ * own, the rest small around it. `key-word`: lit up with a glow.
+ */
+export type CaptionEmphasis = "none" | "big-word" | "key-word";
+
+/** Colour inside the letters. `palettes`: one ramp per line, repeating. */
+export interface CaptionFill {
+	kind: "gradient" | "plasma" | "none";
+	palettes: string[][];
+	/** Degrees: 90 runs top to bottom. */
+	angle?: number;
+	/** Trips through the ramp per second. */
+	flow?: number;
+	/** How big a wave of plasma is, in font sizes. */
+	scale?: number;
+	/** The inside of a stroke burns towards white. 0 to 1. */
+	core?: number;
+}
+
+/** What the letters do beyond colour. The compositor draws it: `crates/compositor/src/text_fx.rs`. */
+export interface CaptionFx {
+	fill?: CaptionFill;
+	/** Real light. `colors`: one per line, repeating. `em`: how far it reaches. */
+	glow?: { colors: string[]; em: number; strength: number; night?: number };
+	/** A glint that crosses the letters. */
+	shine?: {
+		color: string;
+		periodMs: number;
+		sweepMs: number;
+		em: number;
+		angle: number;
+		strength: number;
+	};
+	hardShadow?: { color: string; xEm: number; yEm: number };
+	/** Light from the top left on the letters' edges. 0 to 1. */
+	bevel?: number;
+	trackingEm?: number;
+	/** A box behind each line. */
+	linePlate?: { color: string; radiusEm: number; padXEm: number; padYEm: number; block?: boolean };
+	/** Line spacing as a multiple of the font's own. */
+	leading?: number;
+	/** How the block arrives. */
+	enter?: "blur" | "wipe";
+}
 
 export interface CaptionSettings {
 	/** Master show/hide for the whole caption layer (preview AND export). */
@@ -102,6 +159,45 @@ export interface CaptionSettings {
 	minWordsPerLine: number;
 	/** Upper bound on words shown at once. */
 	maxWordsPerLine: number;
+	textCase: CaptionTextCase;
+	/** The word being said takes this colour. Null: no colour change. */
+	activeWordColor: string | null;
+	/** The word being said sits on a pill of this colour. Null: no pill. */
+	activeWordPill: string | null;
+	emphasis: CaptionEmphasis;
+	/** The colour of the `emphasis` word. */
+	emphasisColor: string;
+	/** An outline round the letters, as a fraction of the font size. 0: none. */
+	strokeEm: number;
+	/** A soft shadow, for text with no plate behind it. */
+	shadow: boolean;
+	/** Each new caption comes in with a quick pop. */
+	pop: boolean;
+	/** No full stops or commas: on screen a few words at a time they only add noise. */
+	dropPunctuation: boolean;
+	emphasisFont: string;
+	emphasisItalic: boolean;
+	/** The `big-word` in font sizes. */
+	emphasisSize: number;
+	strokeColor: string;
+	fx: CaptionFx | null;
+	/** The word being said grows to this, for a moment. 1: not at all. */
+	activeWordPop: number;
+	/** And stays this much bigger while it is said. */
+	activeWordHold: number;
+	activeWordGlow: string | null;
+	/** The pill glides from the last word instead of jumping. */
+	pillSlides: boolean;
+	/** Words appear as they are said, each already in its place. */
+	build: boolean;
+	pastWordColor: string | null;
+	futureWordColor: string | null;
+	/** Any two words or more take two even lines. */
+	twoLines: boolean;
+	/** An emoji with the phrases Claude gave one to. */
+	emoji: boolean;
+	/** Moves down when a zoom would put the caption on the mouth. */
+	avoidFace: boolean;
 }
 
 export const DEFAULT_CAPTION_SETTINGS: CaptionSettings = {
@@ -124,6 +220,30 @@ export const DEFAULT_CAPTION_SETTINGS: CaptionSettings = {
 	insetX: 10,
 	minWordsPerLine: 2,
 	maxWordsPerLine: 7,
+	textCase: "as-spoken",
+	activeWordColor: null,
+	activeWordPill: null,
+	emphasis: "none",
+	emphasisColor: "#ff8a2a",
+	strokeEm: 0,
+	shadow: false,
+	pop: false,
+	dropPunctuation: false,
+	emphasisFont: "Georgia",
+	emphasisItalic: true,
+	emphasisSize: 2,
+	strokeColor: "#000000",
+	fx: null,
+	activeWordPop: 1,
+	activeWordHold: 1,
+	activeWordGlow: null,
+	pillSlides: false,
+	build: false,
+	pastWordColor: null,
+	futureWordColor: null,
+	twoLines: false,
+	emoji: false,
+	avoidFace: true,
 };
 
 /** The font sizes the Captions pane offers, in px at a 1080-high frame. */
@@ -167,7 +287,7 @@ export function captionPlatePatch(
 }
 
 /** The look fields a named style sets together. Placement and line length are not look. */
-type CaptionLook = Pick<
+export type CaptionLook = Pick<
 	CaptionSettings,
 	| "fontFamily"
 	| "fontWeight"
@@ -176,62 +296,110 @@ type CaptionLook = Pick<
 	| "backgroundEnabled"
 	| "backgroundColor"
 	| "backgroundOpacity"
+	| "textCase"
+	| "activeWordColor"
+	| "activeWordPill"
+	| "emphasis"
+	| "emphasisColor"
+	| "emphasisFont"
+	| "emphasisItalic"
+	| "emphasisSize"
+	| "strokeEm"
+	| "strokeColor"
+	| "shadow"
+	| "pop"
+	| "dropPunctuation"
+	| "fx"
+	| "activeWordPop"
+	| "activeWordHold"
+	| "activeWordGlow"
+	| "pillSlides"
+	| "build"
+	| "pastWordColor"
+	| "futureWordColor"
+	| "twoLines"
+	| "emoji"
 >;
 
-/**
- * Named caption styles, first in the pane. Each is a readable pair by construction (the
- * test asserts it); the detailed controls below them stay available for everything else.
- * Classic is the default look, so a fresh project opens with it selected.
- */
-export const CAPTION_STYLES = {
-	classic: {
-		fontFamily: "Inter",
-		fontWeight: "bold",
-		fontSize: 48,
-		color: "#ffffff",
-		backgroundEnabled: true,
-		backgroundColor: CAPTION_PLATES.dark,
-		backgroundOpacity: 0.55,
-	},
-	bold: {
-		fontFamily: "Oswald",
-		fontWeight: "bold",
-		fontSize: 60,
-		color: "#fde047",
-		backgroundEnabled: true,
-		backgroundColor: CAPTION_PLATES.dark,
-		backgroundOpacity: 0.85,
-	},
-	minimal: {
-		fontFamily: "Inter",
-		fontWeight: "normal",
-		fontSize: 40,
-		color: "#ffffff",
-		backgroundEnabled: true,
-		backgroundColor: CAPTION_PLATES.dark,
-		backgroundOpacity: 0.4,
-	},
-	light: {
-		fontFamily: "Inter",
-		fontWeight: "bold",
-		fontSize: 48,
-		color: "#111111",
-		backgroundEnabled: true,
-		backgroundColor: CAPTION_PLATES.light,
-		backgroundOpacity: 0.9,
-	},
-} as const satisfies Record<string, CaptionLook>;
+/** Everything picking a style sets. */
+export function captionStylePatch(id: CaptionStyleId, aspectValue: number): CaptionSettingsPatch {
+	const fit = CAPTION_STYLE_FIT[id];
+	return {
+		...CAPTION_STYLES[id],
+		minWordsPerLine: fit.min,
+		maxWordsPerLine: fit.max,
+		...(aspectValue < 1 ? { insetY: fit.insetY ?? defaultCaptionInsetY(aspectValue) } : {}),
+	};
+}
 
-export type CaptionStyleId = keyof typeof CAPTION_STYLES;
+/**
+ * A title in a style's look. A title has no words being said, so only the look carries over; its
+ * text stays as typed, and it is bigger than a caption because it holds the frame alone.
+ */
+export function titleStylePatch(id: CaptionStyleId): Record<string, unknown> {
+	const look: CaptionLook = CAPTION_STYLES[id];
+	return {
+		fontFamily: look.fontFamily,
+		fontWeight: look.fontWeight,
+		fontSize: Math.round(look.fontSize * 1.25),
+		color: look.color,
+		backgroundColor: "transparent",
+		fx: look.fx ?? undefined,
+		strokeEm: look.strokeEm || undefined,
+		strokeColor: look.strokeEm ? look.strokeColor : undefined,
+		shadow: look.shadow || undefined,
+	};
+}
+
+/** Whether this look needs to know which word is said when. */
+export function captionUsesWordTimes(settings: CaptionSettings): boolean {
+	return (
+		Boolean(
+			settings.activeWordColor ||
+				settings.activeWordPill ||
+				settings.activeWordGlow ||
+				settings.pastWordColor ||
+				settings.futureWordColor,
+		) ||
+		settings.emphasis !== "none" ||
+		settings.build ||
+		settings.twoLines ||
+		settings.activeWordPop !== 1 ||
+		settings.activeWordHold !== 1
+	);
+}
+
+/**
+ * A piece of a caption as it is shown. Capitals lose the accents Greek capitals do not carry. A
+ * question or an exclamation keeps its mark, and Greek writes the question mark as ";".
+ */
+export function captionShown(
+	text: string,
+	settings: Pick<CaptionSettings, "textCase" | "dropPunctuation">,
+): string {
+	const plain = settings.dropPunctuation ? text.replace(/[.,·:\u2026]+(?=\s|$)/g, "") : text;
+	if (settings.textCase !== "upper") return plain;
+	return plain
+		.toLocaleUpperCase("el")
+		.normalize("NFD")
+		.replace(/([\u0370-\u03ff])[\u0301\u0308]/g, "$1")
+		.normalize("NFC");
+}
 
 /** The named style these settings match exactly, or `null` once anything was tuned. */
 export function captionStyleOf(settings: CaptionSettings): CaptionStyleId | null {
 	for (const [id, look] of Object.entries(CAPTION_STYLES) as [CaptionStyleId, CaptionLook][]) {
-		const matches = (Object.keys(look) as (keyof CaptionLook)[]).every((key) =>
-			typeof look[key] === "string"
-				? String(settings[key]).toLowerCase() === String(look[key]).toLowerCase()
-				: settings[key] === look[key],
-		);
+		const matches = (Object.keys(look) as (keyof CaptionLook)[]).every((key) => {
+			const want = look[key];
+			if (typeof want === "string") {
+				return String(settings[key]).toLowerCase() === want.toLowerCase();
+			}
+			// A look's light and colours are one value: equal as a whole or not at all.
+			if (want && typeof want === "object") {
+				return JSON.stringify(settings[key]) === JSON.stringify(want);
+			}
+			return settings[key] === want;
+		});
 		if (matches) return id;
 	}
 	return null;
@@ -625,6 +793,30 @@ export function getCaptionSettings(
 		...placement,
 		minWordsPerLine: Math.min(minWords, maxWords),
 		maxWordsPerLine: Math.max(minWords, maxWords),
+		textCase: readEnum(raw.textCase, ["as-spoken", "upper"] as const, d.textCase),
+		activeWordColor: typeof raw.activeWordColor === "string" ? raw.activeWordColor : null,
+		activeWordPill: typeof raw.activeWordPill === "string" ? raw.activeWordPill : null,
+		emphasis: readEnum(raw.emphasis, ["none", "big-word", "key-word"] as const, d.emphasis),
+		emphasisColor: readString(raw.emphasisColor, d.emphasisColor),
+		strokeEm: readNumber(raw.strokeEm, d.strokeEm, 0, 0.3),
+		shadow: readBoolean(raw.shadow, d.shadow),
+		pop: readBoolean(raw.pop, d.pop),
+		dropPunctuation: readBoolean(raw.dropPunctuation, d.dropPunctuation),
+		emphasisFont: readString(raw.emphasisFont, d.emphasisFont),
+		emphasisItalic: readBoolean(raw.emphasisItalic, d.emphasisItalic),
+		emphasisSize: readNumber(raw.emphasisSize, d.emphasisSize, 1, 4),
+		strokeColor: readString(raw.strokeColor, d.strokeColor),
+		fx: raw.fx && typeof raw.fx === "object" ? (raw.fx as CaptionFx) : null,
+		activeWordPop: readNumber(raw.activeWordPop, d.activeWordPop, 1, 2),
+		activeWordHold: readNumber(raw.activeWordHold, d.activeWordHold, 1, 2),
+		activeWordGlow: typeof raw.activeWordGlow === "string" ? raw.activeWordGlow : null,
+		pillSlides: readBoolean(raw.pillSlides, d.pillSlides),
+		build: readBoolean(raw.build, d.build),
+		pastWordColor: typeof raw.pastWordColor === "string" ? raw.pastWordColor : null,
+		futureWordColor: typeof raw.futureWordColor === "string" ? raw.futureWordColor : null,
+		twoLines: readBoolean(raw.twoLines, d.twoLines),
+		emoji: readBoolean(raw.emoji, d.emoji),
+		avoidFace: readBoolean(raw.avoidFace, d.avoidFace),
 	};
 }
 

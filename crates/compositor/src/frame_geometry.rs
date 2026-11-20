@@ -1848,6 +1848,15 @@ pub fn webcam_shape_code(shape: &str) -> u32 {
     }
 }
 
+/// See `FrameGeometry::segment_look`.
+#[derive(Debug, Clone, Default)]
+pub struct SegmentLook {
+    pub screen_shadow: f32,
+    pub webcam_mirror: bool,
+    pub webcam_effect: Option<String>,
+    pub webcam_blur: Option<f32>,
+}
+
 /// Construit les `LiveParams` équivalents à ce que l'inspector pousse en live, mais depuis la
 /// scène de l'app — l'export est un rendu one-shot sans historique de sliders, donc il doit lire
 /// directement la config déjà posée dans la scène plutôt que dupliquer un mécanisme d'inspector.
@@ -1909,6 +1918,14 @@ pub struct FrameGeometry {
     /// 0..1: how far the camera has taken the whole frame (Full Camera). The cutout stack
     /// reads it to let go of its cutout as the camera fills the frame.
     pub camera_fullscreen_progress: f32,
+    /// Where a cutout's camera turns back to as filmed, when this frame's layout cuts it out only
+    /// over the screen.
+    pub webcam_cutout_line: Option<f32>,
+    /// What the layout in force at this frame says, where a segment's look can differ from the
+    /// scene the compositor was handed. `None`: the live params and the scene stand.
+    pub segment_look: Option<SegmentLook>,
+    pub webcam_crop: Option<crate::scene::SceneCrop>,
+    pub webcam_shadow: Option<f32>,
     pub mb_taps: f32,
     pub mb_amount: f32,
     pub source_t: f32,
@@ -3038,7 +3055,11 @@ pub fn plan_frame(input: &FrameGeometryInput) -> FrameGeometry {
     let (u_max, v_max) = (input.u_max, input.v_max);
     let (frame, cfg) = (input.frame, input.cfg);
     let lp = input.live;
-    let scene = input.scene;
+    // A scene region replaces the clip's layout for its span: everything below reads the result.
+    let scene_at_frame = input
+        .scene
+        .and_then(|s| s.with_scene_layout_at(input.timeline_t_override.unwrap_or(frame / FPS)));
+    let scene = scene_at_frame.as_ref().or(input.scene);
     let cursor = input.cursor;
 
         // Scène de l'app présente → placements du layout preset (ou, mieux, le rect résolu par
@@ -3183,12 +3204,15 @@ pub fn plan_frame(input: &FrameGeometryInput) -> FrameGeometry {
         }
         // Full Camera ignore le rétrécissement réactif de la webcam (design web : mélanger
         // "rétrécit pour le zoom" et "grandit en plein cadre" dans la même frame n'a pas de sens).
-        let cam_progress =
-            crate::regions::camera_fullscreen_progress_at(cam_regions, source_t, &clock);
+        let scene_camera = scene.map(|s| s.layout.scene_full_camera).unwrap_or(0.0);
+        let scene_camera_phase = scene.map(|s| s.layout.scene_full_camera_phase).unwrap_or(0.0);
+        let cam_progress = crate::regions::camera_fullscreen_progress_at(cam_regions, source_t, &clock)
+            .max(scene_camera);
         let cam_progress_prev =
-            crate::regions::camera_fullscreen_progress_at(cam_regions, source_t_prev, &clock);
-        let shape_fade =
-            crate::regions::camera_fullscreen_shape_at(cam_regions, source_t, &clock);
+            crate::regions::camera_fullscreen_progress_at(cam_regions, source_t_prev, &clock)
+                .max(scene_camera);
+        let shape_fade = crate::regions::camera_fullscreen_shape_at(cam_regions, source_t, &clock)
+            .min(1.0 - crate::regions::smoothstep(0.5, 1.0, scene_camera_phase));
         // rétrécissement réactif : la webcam garde 70 % de sa taille pendant un zoom actif, quel
         // que soit son niveau (elle suivait 1/zoom, et rétrécissait donc d'autant plus que le zoom
         // était profond : ×0,6 au zoom maximal). L'enveloppe est celle de la région : elle descend
@@ -3353,10 +3377,14 @@ pub fn plan_frame(input: &FrameGeometryInput) -> FrameGeometry {
                 .then_some((s_base[2] * rw) / (s_base[3] * rh).max(0.0001))
         });
         // Remplissage du format (`screen_follow`) : la fenêtre du cover suit le curseur lissé,
-        // en UV. Sans piste, elle reste centrée.
+        // en UV. Sans piste, elle se pose sur `screen_rest`, ou reste centrée.
         let follow = cover_box_ar.is_some() && scene.is_some_and(|s| s.layout.screen_follow);
+        let rest = scene.and_then(|s| s.layout.screen_rest).filter(|_| follow);
         let follow_at = |t: f32| -> Option<[f32; 2]> {
-            let (x, y) = cursor.filter(|_| follow)?.follow_at(t)?;
+            let (x, y) = cursor
+                .filter(|_| follow)
+                .and_then(|track| track.follow_at(t))
+                .or(rest.map(|r| (r[0], r[1])))?;
             // Un zoom en focus manuel tient la fenêtre sur son point, et le curseur la reprend à sa
             // sortie : le mélange suit la force du zoom, donc l'entrée et la sortie glissent.
             let pin = zoom_pin.clamp(0.0, 1.0);
@@ -3666,6 +3694,17 @@ pub fn plan_frame(input: &FrameGeometryInput) -> FrameGeometry {
     FrameGeometry {
         scene_preset,
         camera_fullscreen_progress: cam_progress,
+        webcam_cutout_line: scene
+            .filter(|s| s.layout.webcam_cutout_over_screen)
+            .and_then(|s| s.layout.webcam_cutout_line),
+        segment_look: scene_at_frame.as_ref().map(|s| SegmentLook {
+            screen_shadow: s.effects.shadow,
+            webcam_mirror: s.layout.webcam_mirror,
+            webcam_effect: s.layout.webcam_effect_mode.clone(),
+            webcam_blur: s.layout.webcam_blur,
+        }),
+        webcam_crop: scene.and_then(|s| s.layout.webcam_crop),
+        webcam_shadow: scene.and_then(|s| s.layout.webcam_shadow),
         mb_taps,
         mb_amount,
         source_t,
@@ -6538,12 +6577,22 @@ mod tests {
         track: Option<&'static crate::cursor::CursorTrack>,
         zoom_regions: &str,
     ) -> FrameGeometry {
+        fill_plan_resting(follow, track, zoom_regions, "")
+    }
+
+    /// `fill_plan_track`, avec ces champs de plus dans `layout`.
+    fn fill_plan_resting(
+        follow: bool,
+        track: Option<&'static crate::cursor::CursorTrack>,
+        zoom_regions: &str,
+        layout_extra: &str,
+    ) -> FrameGeometry {
         let scene = Scene::from_json(&format!(
             r##"{{
             "clips":[{{"screenPath":"/s.mp4","webcamPath":"","sourceStartSec":0,"sourceEndSec":10,"webcamOffsetSec":0,"hasAudio":false}}],
             "layout":{{"preset":"no-webcam","webcamSize":1,"webcamShape":"rounded","webcamMirror":false,"webcamPosition":null,
                       "webcamReactiveZoom":false,"screenRect":{{"x":0.1,"y":0.1,"width":0.8,"height":0.8}},
-                      "screenCover":true,"screenFollow":{follow}}},
+                      "screenCover":true,"screenFollow":{follow}{layout_extra}}},
             "effects":{{"padding":0.5,"blur":false,"shadow":0.5,"roundnessFrac":0.02,"motionBlur":0}},
             "background":{{"kind":"color","color":"#1e1e2e"}},
             "zoomRegions":{zoom_regions},
@@ -6596,6 +6645,24 @@ mod tests {
             let w = seen(&g);
             assert!((0.5 * (w[0] + w[2]) - 0.5).abs() < 1e-3, "fenêtre centrée attendue, {w:?}");
         }
+    }
+
+    /// Une prise de caméra seule n'a pas de pointeur : la fenêtre se pose sur le visage.
+    #[test]
+    fn a_filled_take_with_no_pointer_rests_on_its_face() {
+        let centre = |g: &FrameGeometry| -> f32 {
+            let (s, d, c) = (g.s_ann, g.s_dst, g.cut);
+            let x = |f: f32| c[0] + (f - d[0]) / d[2] * (c[2] - c[0]);
+            0.5 * (x(s[0]) + x(s[0] + s[2]))
+        };
+        let rest = r#","screenRest":[0.7,0.3]"#;
+        let on_face = fill_plan_resting(true, None, "[]", rest);
+        assert!((centre(&on_face) - 0.7).abs() < 1e-3, "fenêtre sur {}", centre(&on_face));
+        // Un pointeur enregistré garde la main, et sans suivi rien ne bouge.
+        let led = fill_plan_resting(true, Some(parked_track(0.2, 0.5)), "[]", rest);
+        assert!((centre(&led) - 0.2).abs() < 0.3 && centre(&led) < 0.5, "fenêtre sur {}", centre(&led));
+        let still = fill_plan_resting(false, None, "[]", rest);
+        assert!((centre(&still) - 0.5).abs() < 1e-3, "fenêtre sur {}", centre(&still));
     }
 
     /// Le remplissage sous un plan incliné, angle fixe ou caméra en orbite : c'est la CARTE qui
@@ -8240,6 +8307,10 @@ mod tests {
     fn full_frame_geometry() -> FrameGeometry {
         FrameGeometry {
             camera_fullscreen_progress: 0.0,
+            webcam_cutout_line: None,
+            segment_look: None,
+            webcam_crop: None,
+            webcam_shadow: None,
             scene_preset: None,
             mb_taps: 1.0,
             mb_amount: 0.0,

@@ -26,9 +26,11 @@ export interface CaptionTranslateOptions {
 	targetLanguage: string;
 	/** Source language hint from the transcript; "auto" / undefined is fine. */
 	sourceLanguage?: string;
-	provider: string;
-	model: string;
-	apiKey: string;
+	/** Who answers: Claude on the user's plan. Without it, the API-key provider below. */
+	ask?: (systemPrompt: string, userPrompt: string) => Promise<string>;
+	provider?: string;
+	model?: string;
+	apiKey?: string;
 	baseUrl?: string;
 	reasoningEffort?: string;
 	/** Segments per request. Keeps each call small enough to stay reliable while
@@ -129,15 +131,24 @@ export async function translateCaptionSegments(
 
 	// Built once, not per batch: a long transcript is a lot of batches and the
 	// model object is reusable across all of them.
-	let model: Awaited<ReturnType<typeof createOpenScreenChatModel>>;
+	let ask = options.ask;
 	try {
-		model = await createOpenScreenChatModel({
-			provider: options.provider,
-			model: options.model,
-			apiKey: options.apiKey,
-			baseUrl: options.baseUrl,
-			reasoningEffort: options.reasoningEffort,
-		});
+		if (!ask) {
+			const model = await createOpenScreenChatModel({
+				provider: options.provider ?? "",
+				model: options.model ?? "",
+				apiKey: options.apiKey ?? "",
+				baseUrl: options.baseUrl,
+				reasoningEffort: options.reasoningEffort,
+			});
+			ask = async (systemPrompt, userPrompt) => {
+				const result = await model.invoke(
+					[new SystemMessage(systemPrompt), new HumanMessage(userPrompt)],
+					{ signal: options.signal },
+				);
+				return messageContentToText(result.content);
+			};
+		}
 	} catch (error) {
 		return {
 			success: false,
@@ -153,14 +164,10 @@ export async function translateCaptionSegments(
 		const batch = segments.slice(i, i + batchSize);
 		let reply = "";
 		try {
-			const result = await model.invoke(
-				[
-					new SystemMessage(SYSTEM_PROMPT),
-					new HumanMessage(buildUserPrompt(batch, options.targetLanguage, options.sourceLanguage)),
-				],
-				{ signal: options.signal },
+			reply = await ask(
+				SYSTEM_PROMPT,
+				buildUserPrompt(batch, options.targetLanguage, options.sourceLanguage),
 			);
-			reply = messageContentToText(result.content);
 			if (!reply) {
 				return {
 					success: false,

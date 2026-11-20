@@ -118,6 +118,8 @@ const DECLARED: WritePath[] = [
 		"save",
 		"gesture",
 	),
+	// So is letting Claude read the captions: one pass, one undo step.
+	w("src/components/ai-edition/CaptionsPane.tsx", "handleClaudeRead", "save", "gesture"),
 
 	// The project's names and terms for Whisper (#1023), saved when the field loses focus.
 	w("src/components/ai-edition/v4/MediaStage.tsx", "MediaStage", "save", "gesture"),
@@ -261,6 +263,18 @@ const DECLARED: WritePath[] = [
 	w("src/lib/ai-edition/store/useTimeline.ts", "addKeycaps", "save", "gesture"),
 	w("src/lib/ai-edition/store/useTimeline.ts", "applySmartCuts", "save", "gesture"),
 	w("src/lib/ai-edition/store/useTimeline.ts", "addCameraFullscreen", "save", "gesture"),
+	w("src/lib/ai-edition/store/useTimeline.ts", "applyLookToAll", "save", "gesture"),
+	w("src/lib/ai-edition/store/useTimeline.ts", "applyYapping", "save", "gesture"),
+	w("src/lib/ai-edition/store/useTimeline.ts", "useTimeline", "save", "automatic"),
+	w("src/lib/ai-edition/store/useTimeline.ts", "addGraphic", "save", "gesture"),
+	w("src/lib/ai-edition/store/useTimeline.ts", "setClipAudioMuted", "save", "gesture"),
+	w("src/lib/ai-edition/store/useTimeline.ts", "showClipTake", "save", "gesture"),
+	w("src/lib/ai-edition/store/useTimeline.ts", "rerenderGraphic", "save", "forwarded"),
+	w("src/lib/ai-edition/store/useTimeline.ts", "updateCameraFullscreenScene", "save", "gesture"),
+	w("src/components/ai-edition/recordingImport.ts", "placeTakeClips", "save", "automatic"),
+	w("src/components/ai-edition/recordingImport.ts", "importSceneRun", "save", "automatic"),
+	w("src/components/ai-edition/v4/SceneCards.tsx", "importFile", "save", "gesture"),
+	w("src/components/ai-edition/v4/ScriptStage.tsx", "flush", "save", "gesture"),
 	w("src/lib/ai-edition/store/useTimeline.ts", "addSpeed", "save", "gesture"),
 	w("src/lib/ai-edition/store/useTimeline.ts", "addTrim", "save", "gesture"),
 	w("src/lib/ai-edition/store/useTimeline.ts", "addZoom", "save", "gesture"),

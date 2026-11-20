@@ -6,4 +6,4 @@
  */
 export const FORK_BUILD = true;
 export const FORK_UPDATE_NOTICE =
-	"This is Filmareto OpenScreen. It is not updated from the internet: a new version arrives as a new installer from Filmareto.";
+	"This is Filmareto OpenScreen. New versions come from Filmareto through Check for Updates.";

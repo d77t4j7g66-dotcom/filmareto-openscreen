@@ -51,7 +51,7 @@
 		"microphoneDefaulted": "無法辨識所選麥克風，將錄製預設輸入裝置。",
 		"microphoneUnavailable": "此版本的 macOS 無法錄製麥克風，將在沒有麥克風的情況下錄製。",
 		"restartFailed": "無法開始新的錄製。先前的錄製已被刪除。",
-		"accessibilityAllowAndRetry": "允許 OpenScreen 使用輔助使用權限，然後再次按下錄製以開始倒數。",
+		"accessibilityAllowAndRetry": "允許 Filmareto 使用輔助使用權限，然後再次按下錄製以開始倒數。",
 		"cursorAccessibilityUnavailable": "輔助使用權限尚未開啟。錄影會繼續，但游標效果可能受限。請在系統設定中開啟此權限，以使用完整的游標效果。",
 		"selectSource": "請選擇要錄製的來源"
 	},
@@ -104,6 +104,7 @@
 		"editorMode": "編輯器模式",
 		"modes": {
 			"media": "媒體",
+			"script": "Script",
 			"edit": "編輯",
 			"rec": "錄製"
 		}
@@ -182,7 +183,7 @@
 		"detectedLanguage": "偵測到的語言：{{language}}",
 		"noAudioTrack": "無音訊軌道",
 		"noAudioTrackHint": "此媒體沒有音訊軌道，沒有可轉錄的內容。",
-		"mediaUnreadableHint": "無法讀取此媒體的音訊。請確認 OpenScreen 可以存取它所在的資料夾，然後重新產生。",
+		"mediaUnreadableHint": "無法讀取此媒體的音訊。請確認 Filmareto 可以存取它所在的資料夾，然後重新產生。",
 		"noSpeechDetected": "未偵測到語音"
 	},
 	"exportDialog": {
@@ -212,9 +213,6 @@
 		"exportedGif": "GIF 已匯出",
 		"exportedVideo": "影片已匯出",
 		"showInFolder": "在資料夾中顯示",
-		"starPrompt": "OpenScreen 免費且採用 MIT 授權。在 GitHub 上給顆星，能幫助更多人找到它。",
-		"starPromptNoThanks": "不用了",
-		"rateOnStore": "在 Microsoft Store 評分",
 		"exportFailed": "匯出失敗",
 		"failedToWriteFile": "寫入檔案失敗",
 		"qualityUpscaleWarning": "放大",
@@ -301,10 +299,12 @@
 			"feature2": "新增字幕、為鏡頭變焦、產生標題",
 			"feature3": "依需求重寫段落、換種說法或重新排列片段",
 			"cta": "設定提供者",
-			"disclaimer": "你影片的轉錄文字會送到你選擇的提供者。在你連接之前不會分享任何內容。"
+			"disclaimer": "你影片的轉錄文字會送到你選擇的提供者。在你連接之前不會分享任何內容。",
+			"subtitleInstall": "The chat runs on your own Claude plan through Claude Code, which isn't on this Mac yet. Install it, sign in, and come back.",
+			"ctaInstall": "Get Claude Code"
 		},
 		"authorUser": "你",
-		"authorAssistant": "OpenScreen",
+		"authorAssistant": "Filmareto",
 		"rewindToMessage": "倒轉至此訊息",
 		"rewindTip": "倒轉至此訊息。之後的變更會被復原。",
 		"copyMessage": "複製訊息",
@@ -326,7 +326,11 @@
 			"subtitle": "切換或新增工作階段",
 			"empty": "尚無對話。",
 			"msgsCount": "{{count}} 則訊息 · {{date}}"
-		}
+		},
+		"signInFirst": "Sign in to Claude to start chatting.",
+		"onPlan": "Claude · {{plan}}",
+		"claude": "Claude",
+		"working": "Working: {{tool}}…"
 	},
 	"newProjectDialog": {
 		"title": "新增專案",
@@ -426,7 +430,7 @@
 	},
 	"mcpServer": {
 		"title": "MCP 伺服器",
-		"description": "讓你自行執行的 MCP 用戶端（例如 Claude Code 或 Codex）在你的任何專案上使用 AI 編輯工具，而不只是編輯器中開啟的專案。它們使用各自的帳號登入，OpenScreen 永遠不會看到這些帳號。",
+		"description": "讓你自行執行的 MCP 用戶端（例如 Claude Code 或 Codex）在你的任何專案上使用 AI 編輯工具，而不只是編輯器中開啟的專案。它們使用各自的帳號登入，Filmareto 永遠不會看到這些帳號。",
 		"enableLabel": "伺服器",
 		"enable": "啟用 MCP 伺服器",
 		"editsLabel": "MCP 編輯",
@@ -453,5 +457,62 @@
 	"cpuCompositor": {
 		"notice": "沒有相容的 GPU，正在使用 CPU 算繪，因此播放較慢。",
 		"exportWarning": "沒有相容的 GPU：這次匯出將在 CPU 上執行，耗時會比平常長很多。"
+	},
+	"studio": {
+		"wholeProject": "whole project",
+		"changesOnly": "Changes only",
+		"takeAdded": "The take was added to the end of the project",
+		"makingGraphic": "Rendering the graphic…",
+		"rendering": "Rendering…",
+		"motion": "Motion",
+		"motionSmooth": "Smooth",
+		"motionHold": "Hold",
+		"motionIn": "Slow in",
+		"motionOut": "Slow out",
+		"motionEmphasis": "Punch",
+		"scene": "Scene",
+		"takes": "Takes",
+		"take": "Take",
+		"presetSaved": "“{{name}}” was added to your presets",
+		"applyToAll": "Apply to all segments",
+		"myPresets": "My presets",
+		"everyProject": "in every project",
+		"deleteNamed": "Delete {{name}}",
+		"myLook": "My look {{number}}",
+		"save": "Save",
+		"name": "Name",
+		"graphics": "Graphics",
+		"graphicsFolder": "Folder for your own HyperFrames",
+		"formatAndLayout": "Format and layout",
+		"cameraOnly": "Camera only",
+		"screen": "Screen",
+		"screenTip": "Off: records only the camera and the microphone",
+		"cameraQuality": "Camera quality",
+		"noScript": "No script: one recording, no scenes.",
+		"writeScript": "Write a script",
+		"newTake": "New take in this project",
+		"toScript": "Back to Script",
+		"continueToEdit": "Continue to Edit",
+		"fileNotAdded": "The file could not be added to the project",
+		"scenes": "Scenes",
+		"recordAll": "Record all in order",
+		"noText": "No text: speak freely.",
+		"archive": "Archive ({{count}})",
+		"fromFile": "or from a file",
+		"sceneNumber": "Scene {{number}}",
+		"scriptPlaceholder": "Write what you will say, or paste the whole script: each line with a single / starts a new scene.",
+		"newVideo": "New video",
+		"scriptTitle": "Script",
+		"sceneName": "Scene name",
+		"newScene": "New scene",
+		"continueToRecord": "Continue to Record",
+		"adaptingGraphics": "Adapting the graphics…",
+		"layoutCamera": "Camera",
+		"layoutCorner": "Corner",
+		"layoutStack": "Stacked",
+		"layoutSide": "Side by side",
+		"layoutCutout": "Cutout",
+		"layoutFree": "Free",
+		"layoutScreen": "Screen"
 	}
 }

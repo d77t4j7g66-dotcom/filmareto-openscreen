@@ -402,6 +402,113 @@ pub struct Compositor {
 
 /// Descripteur de texture — les six cibles ne diffèrent que par format, taille et
 /// storage, donc autant ne l'écrire qu'une fois.
+fn rgb3(color: &str) -> Option<[f32; 3]> {
+    parse_hex(color).map(|c| [c[0], c[1], c[2]])
+}
+
+fn text_fill(fill: &crate::scene::SceneTextFill) -> crate::text_fx::FillSpec {
+    crate::text_fx::FillSpec {
+        kind: fill.kind.clone(),
+        palettes: fill
+            .palettes
+            .iter()
+            .map(|palette| palette.iter().filter_map(|c| rgb3(c)).collect())
+            .collect(),
+        angle: fill.angle,
+        flow: fill.flow,
+        scale: fill.scale,
+        core: fill.core,
+    }
+}
+
+pub(crate) fn text_fx_of(fx: &crate::scene::SceneTextFx) -> crate::text_fx::TextFx {
+    crate::text_fx::TextFx {
+        fill: fx.fill.as_ref().map(text_fill),
+        glow: fx.glow.as_ref().map(|glow| crate::text_fx::GlowSpec {
+            colors: glow.colors.iter().filter_map(|c| rgb3(c)).collect(),
+            em: glow.em,
+            strength: glow.strength,
+            night: glow.night.unwrap_or(0.72),
+        }),
+        shine: fx.shine.as_ref().and_then(|shine| {
+            Some(crate::text_fx::ShineSpec {
+                color: rgb3(&shine.color)?,
+                period_ms: shine.period_ms,
+                sweep_ms: shine.sweep_ms,
+                em: shine.em,
+                angle: shine.angle,
+                strength: shine.strength,
+            })
+        }),
+        hard_shadow: fx
+            .hard_shadow
+            .as_ref()
+            .and_then(|s| Some((parse_hex(&s.color)?, s.x_em, s.y_em))),
+        bevel: fx.bevel,
+        tracking_em: fx.tracking_em,
+        line_plate: fx
+            .line_plate
+            .as_ref()
+            .and_then(|p| Some((parse_hex(&p.color)?, p.radius_em, p.pad_x_em, p.pad_y_em))),
+        plate_block: fx.line_plate.as_ref().is_some_and(|p| p.block),
+        leading: fx.leading,
+        enter: fx.enter.clone(),
+    }
+}
+
+pub(crate) fn text_spec_of(
+    text: &crate::scene::SceneAnnotationText,
+    font_size_px: f32,
+    box_px: [u32; 2],
+) -> crate::text::TextSpec {
+    crate::text::TextSpec {
+        content: text.content.clone(),
+        color: parse_hex(&text.color).unwrap_or([1.0, 1.0, 1.0, 1.0]),
+        background: parse_hex(&text.background_color)
+            .unwrap_or([0.0, 0.0, 0.0, 0.0]),
+        font_size_px,
+        font_family: text.font_family.clone(),
+        bold: text.font_weight == "bold",
+        italic: text.font_style == "italic",
+        underline: text.text_decoration == "underline",
+        align: text.text_align.clone(),
+        // Absent = "center", le comportement historique : les
+        // annotations ne changent pas d'un pixel.
+        valign: text.vertical_align.clone().unwrap_or_default(),
+        box_px,
+        runs: text
+            .runs
+            .iter()
+            .map(|run| crate::text::TextRunSpec {
+                start: run.start,
+                len: run.len,
+                color: run.color.as_deref().and_then(parse_hex),
+                pill: run.pill.as_deref().and_then(parse_hex),
+                font_family: run.font_family.clone(),
+                size_mul: run.size_mul.unwrap_or(1.0),
+                italic: run.italic,
+                glow: run.glow.as_deref().and_then(parse_hex),
+                fill: run.fill.as_ref().map(text_fill),
+                pop_peak: run.pop_peak.unwrap_or(1.0),
+                pop_hold: run.pop_hold.unwrap_or(1.0),
+                hide: run.hide,
+                pill_from: run.pill_from,
+            })
+            .collect(),
+        stroke: text
+            .stroke
+            .as_ref()
+            .and_then(|s| Some((parse_hex(&s.color)?, s.em))),
+        shadow: text
+            .shadow
+            .as_ref()
+            .and_then(|s| Some((parse_hex(&s.color)?, s.blur_em, s.y_em))),
+        fx: text.fx.as_ref().map(text_fx_of),
+        elapsed_ms: 0.0,
+        scene_ms: 0.0,
+    }
+}
+
 fn make_texture(
     device: &metal::Device,
     format: metal::MTLPixelFormat,
@@ -1952,7 +2059,13 @@ impl Compositor {
                         match self.load_image_texture(src) {
                             Ok((tex, w, h)) => {
                                 let e = (tex, w, h, src.len());
-                                self.ann_img_cache.borrow_mut().insert(a.id.clone(), e.clone());
+                                let mut cache = self.ann_img_cache.borrow_mut();
+                                // A motion graphic is one image per frame: unbounded, a project full
+                                // of them holds gigabytes. What is cleared decodes again when drawn.
+                                if cache.len() >= 120 {
+                                    cache.clear();
+                                }
+                                cache.insert(a.id.clone(), e.clone());
                                 Some(e)
                             }
                             Err(e) => {
@@ -2011,22 +2124,15 @@ impl Compositor {
                     if text.content.trim().is_empty() {
                         continue;
                     }
-                    let spec = crate::text::TextSpec {
-                        content: text.content.clone(),
-                        color: parse_hex(&text.color).unwrap_or([1.0, 1.0, 1.0, 1.0]),
-                        background: parse_hex(&text.background_color)
-                            .unwrap_or([0.0, 0.0, 0.0, 0.0]),
-                        font_size_px: text.font_size_rel * (anchor[3] * rh),
-                        font_family: text.font_family.clone(),
-                        bold: text.font_weight == "bold",
-                        italic: text.font_style == "italic",
-                        underline: text.text_decoration == "underline",
-                        align: text.text_align.clone(),
-                        // Absent = "center", le comportement historique : les
-                        // annotations ne changent pas d'un pixel.
-                        valign: text.vertical_align.clone().unwrap_or_default(),
-                        box_px: [quad_px[0].round() as u32, quad_px[1].round() as u32],
-                    };
+                    let spec = text_spec_of(
+                        text,
+                        text.font_size_rel * (anchor[3] * rh),
+                        [quad_px[0].round() as u32, quad_px[1].round() as u32],
+                    );
+                    // Le temps n'entre dans la clé que tant que les pixels en dépendent : sinon le
+                    // texte serait rastérisé à chaque image pour rien.
+                    let mut spec = spec;
+                    spec.set_time((t - a.start_sec as f32) * 1000.0, t * 1000.0);
                     let key = spec.cache_key();
                     let cached = {
                         let c = self.text_cache.borrow();
@@ -2050,11 +2156,13 @@ impl Compositor {
                         ((a.end_sec - a.start_sec) * 1000.0) as f32,
                     );
                     let anim_px = rh / crate::text_anim::ANIMATION_REFERENCE_HEIGHT;
+                    // La texture déborde de la boîte de sa marge : la lumière a sa place autour.
+                    let margin = spec.margin_px() as f32;
                     let (mut ax, mut ay, mut aw, mut ah) = (
-                        dst[0] + anim.translate_x * anim_px / rw,
-                        dst[1] + anim.translate_y * anim_px / rh,
-                        dst[2],
-                        dst[3],
+                        dst[0] + (anim.translate_x * anim_px - margin) / rw,
+                        dst[1] + (anim.translate_y * anim_px - margin) / rh,
+                        dst[2] + margin * 2.0 / rw,
+                        dst[3] + margin * 2.0 / rh,
                     );
                     if (anim.scale - 1.0).abs() > 1e-4 {
                         let (cx, cy) = (ax + aw * 0.5, ay + ah * 0.5);
@@ -2816,7 +2924,8 @@ impl Compositor {
         if cfg.shadow {
             let spread = SCREEN_SHADOW_SPREAD_FRAC * g.screen_unit_px;
             let offset = g.screen_shadow_offset();
-            let opacity = 0.45 * lp.shadow_scale;
+            let shadow_scale = g.segment_look.as_ref().map_or(lp.shadow_scale, |l| l.screen_shadow);
+            let opacity = 0.45 * shadow_scale;
             // L'ombre suit la silhouette réellement affichée : rect arrondi quand l'écran est
             // droit, quadrilatère projeté quand il est penché. Un rect droit derrière un écran
             // incliné se lit comme une seconde surface, pas comme son ombre. Avec un cadre de
@@ -3027,14 +3136,16 @@ impl Compositor {
 
         // --- caméra : ombre PiP puis vidéo ---
         let enc = self.begin_pass(cmd_buf, &self.rt, None, &self.pipeline_main)?;
-        if let (true, Some((wy, wuv))) = (lp.has_webcam, webcam_tex.as_ref()) {
+        // A scene with the screen alone leaves the camera a rect of no size: nothing to draw, shadow included.
+        if let (true, Some((wy, wuv))) = (lp.has_webcam && g.w_dst[2] > 0.0005, webcam_tex.as_ref()) {
             let [cu0, cv0, cu1, cv1] = crate::frame_geometry::webcam_source_rect(
                 [wcw, wch],
                 [wtw as f32, wth as f32],
-                scene_ref.as_ref().and_then(|scene| scene.layout.webcam_crop),
+                g.webcam_crop,
                 g.w_px[0] / g.w_px[1].max(0.0001),
             );
-            let (u0, u1) = if lp.webcam_mirror { (cu1, cu0) } else { (cu0, cu1) };
+            let mirror = g.segment_look.as_ref().map_or(lp.webcam_mirror, |l| l.webcam_mirror);
+            let (u0, u1) = if mirror { (cu1, cu0) } else { (cu0, cu1) };
             let webcam_is_block = matches!(
                 g.scene_preset.as_deref(),
                 Some("dual-frame") | Some("vertical-stack")
@@ -3048,7 +3159,11 @@ impl Compositor {
                 .as_ref()
                 .and_then(|s| s.webcam_effect.as_ref())
                 .filter(|_| mask.is_some())
-                .map(|e| (e.shader_code(), e))
+                .map(|e| {
+                    // A segment's own look decides; the scene's effect only starts the masks.
+                    let own = g.segment_look.as_ref().and_then(|l| l.webcam_effect.as_deref());
+                    (own.map_or(e.shader_code(), crate::scene::SceneWebcamEffect::code_of), e)
+                })
                 .filter(|(code, _)| *code > 0.0);
 
             // L'ombre appartient à la bulle PiP. En détourage il n'y a plus de bulle — une
@@ -3065,9 +3180,7 @@ impl Compositor {
                     g.w_radius,
                     WEBCAM_SHADOW_SPREAD_FRAC * g.frame_min_px,
                     [0.0, WEBCAM_SHADOW_OFFSET_FRAC * g.frame_min_px],
-                    scene_ref
-                        .as_ref()
-                        .and_then(|s| s.layout.webcam_shadow)
+                    g.webcam_shadow
                         .unwrap_or(WEBCAM_SHADOW_OPACITY)
                         .clamp(0.0, 1.0)
                         * g.shape_fade,
@@ -3085,7 +3198,10 @@ impl Compositor {
                     self.draw_webcam_bg(enc, e.background.as_ref(), g.w_dst, g.w_px, g.w_radius);
                     (1.0, 0.0)
                 }
-                Some((code, e)) => (code, e.blur_intensity.clamp(0.0, 1.0)),
+                Some((code, e)) => {
+                    let own = g.segment_look.as_ref().and_then(|l| l.webcam_blur);
+                    (code, own.unwrap_or(e.blur_intensity).clamp(0.0, 1.0))
+                }
                 None => (0.0, 0.0),
             };
 
@@ -3120,14 +3236,8 @@ impl Compositor {
             // « Caméra sur l'écran » : le fond de la caméra ne disparaît que là où elle chevauche
             // l'écran, c'est-à-dire au-dessus du bord bas de l'écran ; en dessous, la caméra se
             // montre telle que filmée. Deux dessins, chacun borné par un scissor.
-            let split_y = scene_ref
-                .as_ref()
-                .filter(|s| s.layout.webcam_cutout_over_screen)
-                .and_then(|s| {
-                    s.layout
-                        .webcam_cutout_line
-                        .or_else(|| s.layout.screen_rect.as_ref().map(|r| r.y + r.height))
-                })
+            let split_y = g
+                .webcam_cutout_line
                 // Full Camera: the cut line rises with the camera as it fills the frame, so by
                 // the time it is full the whole camera shows as filmed (or with the background
                 // chosen for it) instead of keeping the cutout the stack gave it over the screen.

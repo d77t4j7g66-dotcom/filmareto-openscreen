@@ -14,7 +14,7 @@ import {
 	VolumeX,
 	ZoomIn,
 } from "lucide-react";
-import { useEffect, useId, useRef, useState } from "react";
+import { type ReactNode, useEffect, useId, useRef, useState } from "react";
 import { toast } from "sonner";
 import { AudioLevelMeter } from "@/components/ui/audio-level-meter";
 import { Tooltip } from "@/components/ui/tooltip";
@@ -27,7 +27,9 @@ import { useMicrophoneDevices } from "@/hooks/useMicrophoneDevices";
 import { usePortalOwnsSource } from "@/hooks/usePortalOwnsSource";
 import { canTurnCameraOn } from "@/lib/cameraAvailability";
 import { canTurnMicrophoneOn } from "@/lib/microphoneAvailability";
+import { readCameraOnly, writeCameraOnly } from "@/lib/recordingMode";
 import { canRecordMicrophone, getPlatform } from "@/utils/platformUtils";
+import { TeleprompterFields } from "../../launch/TeleprompterWindow";
 import styles from "./EditorShellV4.module.css";
 
 interface RecordingPrefsState {
@@ -43,6 +45,7 @@ interface RecordingPrefsState {
 	shortcutCaptureEnabled: boolean;
 	micGainDb: number;
 	autoZoomEnabled: boolean;
+	camQuality?: "1080p" | "1440p" | "2160p";
 }
 
 const DEFAULT_PREFS: RecordingPrefsState = {
@@ -88,11 +91,22 @@ function normalizedRecordingPrefs(prefs: Partial<RecordingPrefsState>): Recordin
 export function RecStage({
 	onStartRecording,
 	onClose,
+	takeInProject,
+	onTakeInProjectChange,
+	scenes,
+	onWriteScript,
 }: {
 	onStartRecording: () => void;
 	onClose?: () => void;
+	/** The scene cards. Without a script, the plain start of a recording stands in their place. */
+	scenes?: ReactNode;
+	onWriteScript?: () => void;
+	/** Absent when no project is open: the take can only start one of its own. */
+	takeInProject?: boolean;
+	onTakeInProjectChange?: (value: boolean) => void;
 }) {
 	const t = useScopedT("editor");
+	const [cameraOnly, setCameraOnly] = useState(readCameraOnly);
 	const [prefs, setPrefsState] = useState<RecordingPrefsState>(DEFAULT_PREFS);
 	// Bumped by every local change and every pushed snapshot, so the re-read after a
 	// failed write can tell that something newer has landed since.
@@ -366,143 +380,215 @@ export function RecStage({
 	return (
 		<div className={styles.recStage}>
 			<div className={styles.recCols}>
-				<div className={styles.recPreviewCol}>
-					<div className={styles.recPreviewFrame}>
-						{prefs.camEnabled ? (
-							cameraStream ? (
-								<video
-									ref={cameraVideoRef}
-									autoPlay
-									muted
-									playsInline
-									className={styles.recCameraVideo}
-								/>
-							) : cameraError ? (
-								<div className={styles.recPreviewPlaceholder}>
-									<CameraOff size={28} />
-									<span>{t("rec.cameraAccessError")}</span>
-								</div>
+				<div className={styles.recLeftCol}>
+					<div className={styles.recPreviewCol}>
+						<div className={styles.recPreviewFrame}>
+							{prefs.camEnabled ? (
+								cameraStream ? (
+									<video
+										ref={cameraVideoRef}
+										autoPlay
+										muted
+										playsInline
+										className={styles.recCameraVideo}
+									/>
+								) : cameraError ? (
+									<div className={styles.recPreviewPlaceholder}>
+										<CameraOff size={28} />
+										<span>{t("rec.cameraAccessError")}</span>
+									</div>
+								) : (
+									<div className={styles.recPreviewPlaceholder}>
+										<Loader2 size={28} className="animate-spin" />
+										<span>{t("rec.startingCamera")}</span>
+									</div>
+								)
 							) : (
 								<div className={styles.recPreviewPlaceholder}>
-									<Loader2 size={28} className="animate-spin" />
-									<span>{t("rec.startingCamera")}</span>
+									<MonitorSmartphone size={28} />
+									<span>{sourceLabel}</span>
+									<span className={styles.recPreviewHint}>{t("rec.turnOnCameraHint")}</span>
 								</div>
-							)
-						) : (
-							<div className={styles.recPreviewPlaceholder}>
-								<MonitorSmartphone size={28} />
-								<span>{sourceLabel}</span>
-								<span className={styles.recPreviewHint}>{t("rec.turnOnCameraHint")}</span>
+							)}
+							<div className={styles.recBadge}>
+								<span className={styles.recDot} aria-hidden />
+								<span>{cameraOnly ? t("studio.cameraOnly") : sourceLabel}</span>
 							</div>
-						)}
-						<div className={styles.recBadge}>
-							<span className={styles.recDot} aria-hidden />
-							<span>{sourceLabel}</span>
+							{prefs.micEnabled && (
+								<div className={styles.recMicMeter}>
+									<MicOn size={13} />
+									<AudioLevelMeter level={micLevel} className={styles.recLevelMeter} />
+								</div>
+							)}
 						</div>
-						{prefs.micEnabled && (
-							<div className={styles.recMicMeter}>
-								<MicOn size={13} />
-								<AudioLevelMeter level={micLevel} className={styles.recLevelMeter} />
-							</div>
-						)}
 					</div>
-				</div>
 
-				<div className={styles.recPanel}>
-					{/* No source row on Linux: `SelectSources` has no parameter naming
+					<div className={styles.recPanel}>
+						<div className={styles.recRow}>
+							<div className={styles.recRowLabel}>
+								<MonitorSmartphone size={15} />
+								{t("studio.screen")}
+							</div>
+							<Tooltip content={t("studio.screenTip")} side="top">
+								<button
+									type="button"
+									className={`${styles.recToggleBtn}${cameraOnly ? "" : ` ${styles.on}`}`}
+									aria-pressed={!cameraOnly}
+									onClick={() => {
+										writeCameraOnly(!cameraOnly);
+										setCameraOnly(!cameraOnly);
+										// A take of someone talking with no sound is never the intent.
+										if (!cameraOnly) updatePrefs({ micEnabled: true });
+									}}
+								>
+									{cameraOnly ? t("rec.off") : t("rec.on")}
+								</button>
+							</Tooltip>
+						</div>
+						{/* No source row on Linux: `SelectSources` has no parameter naming
 					    a source, so this picker could not steer the capture — it only
 					    raised a second portal dialog, via `desktopCapturer.getSources()`,
 					    whose grant was discarded. The compositor's own picker decides,
 					    and it appears when recording starts. */}
-					{portalOwnsSource ? (
-						<div className={styles.recRow}>
-							<div className={styles.recRowLabel}>
-								<MonitorSmartphone size={15} />
-								{t("rec.source")}
-							</div>
-							{/* Muted TEXT, not a styled-down button. Keeping the button's
+						{cameraOnly ? null : portalOwnsSource ? (
+							<div className={styles.recRow}>
+								<div className={styles.recRowLabel}>
+									<MonitorSmartphone size={15} />
+									{t("rec.source")}
+								</div>
+								{/* Muted TEXT, not a styled-down button. Keeping the button's
 							    class on a span left it looking pressable — border, pill,
 							    hover state — which promises an interaction that cannot
 							    exist here. This row states what will happen; it is not a
 							    control. */}
-							<span className={styles.recRowMuted}>{sourceLabel}</span>
-						</div>
-					) : (
-						<div className={styles.recRow}>
-							<div className={styles.recRowLabel}>
-								<MonitorSmartphone size={15} />
-								{t("rec.source")}
+								<span className={styles.recRowMuted}>{sourceLabel}</span>
 							</div>
-							<button
-								type="button"
-								className={styles.recRowSourceBtn}
-								onClick={() => void openSourceModal()}
-							>
-								{sourceLabel}
-								<ChevronDown size={13} style={{ opacity: 0.6 }} />
-							</button>
-						</div>
-					)}
+						) : (
+							<div className={styles.recRow}>
+								<div className={styles.recRowLabel}>
+									<MonitorSmartphone size={15} />
+									{t("rec.source")}
+								</div>
+								<button
+									type="button"
+									className={styles.recRowSourceBtn}
+									onClick={() => void openSourceModal()}
+								>
+									{sourceLabel}
+									<ChevronDown size={13} style={{ opacity: 0.6 }} />
+								</button>
+							</div>
+						)}
 
-					<div className={styles.recRow}>
-						<div id={rowLabelId("systemAudio")} className={styles.recRowLabel}>
-							{prefs.systemAudioEnabled ? <Volume2 size={15} /> : <VolumeX size={15} />}
-							{t("rec.systemAudio")}
-						</div>
-						{/* "System audio" is jargon for what the computer plays: the one row whose label
+						{cameraOnly ? null : <div className={styles.recRow}>
+							<div id={rowLabelId("systemAudio")} className={styles.recRowLabel}>
+								{prefs.systemAudioEnabled ? <Volume2 size={15} /> : <VolumeX size={15} />}
+								{t("rec.systemAudio")}
+							</div>
+							{/* "System audio" is jargon for what the computer plays: the one row whose label
 						    alone does not say what it records. The row tooltips open above their pill: to
 						    the left they would sit on the label being read, and below the last row they
 						    would cover Start recording. */}
-						<Tooltip content={t("rec.systemAudioTip")} side="top">
-							<button
-								type="button"
-								className={`${styles.recToggleBtn}${prefs.systemAudioEnabled ? ` ${styles.on}` : ""}`}
-								aria-labelledby={rowLabelId("systemAudio")}
-								aria-pressed={prefs.systemAudioEnabled}
-								onClick={() => updatePrefs({ systemAudioEnabled: !prefs.systemAudioEnabled })}
-							>
-								{prefs.systemAudioEnabled ? t("rec.on") : t("rec.off")}
-							</button>
-						</Tooltip>
-					</div>
+							<Tooltip content={t("rec.systemAudioTip")} side="top">
+								<button
+									type="button"
+									className={`${styles.recToggleBtn}${prefs.systemAudioEnabled ? ` ${styles.on}` : ""}`}
+									aria-labelledby={rowLabelId("systemAudio")}
+									aria-pressed={prefs.systemAudioEnabled}
+									onClick={() => updatePrefs({ systemAudioEnabled: !prefs.systemAudioEnabled })}
+								>
+									{prefs.systemAudioEnabled ? t("rec.on") : t("rec.off")}
+								</button>
+							</Tooltip>
+						</div>}
 
-					{canRecordMicrophone() ? (
+						{canRecordMicrophone() ? (
+							<div className={styles.recRow}>
+								<div id={rowLabelId("microphone")} className={styles.recRowLabel}>
+									{prefs.micEnabled ? <MicOn size={15} /> : <MicOff size={15} />}
+									{t("rec.microphone")}
+								</div>
+								<div className={styles.recRowControl}>
+									{prefs.micEnabled ? (
+										micDevices.isLoading || !micDevices.isReady ? (
+											<span className={styles.recRowMuted}>
+												<Loader2 size={13} className="animate-spin" />
+												{t("rec.loading")}
+											</span>
+										) : micDevices.error ? (
+											<span className={styles.recRowMuted} title={micDevices.error}>
+												{t("rec.microphoneUnavailable")}
+											</span>
+										) : micDevices.devices.length === 0 ? (
+											<span className={styles.recRowMuted}>{t("rec.noMicrophoneFound")}</span>
+										) : (
+											<select
+												className={styles.recSelect}
+												value={micDevices.selectedDeviceId}
+												onChange={(e) => {
+													const deviceId = e.target.value;
+													micDevices.setSelectedDeviceId(deviceId);
+													// The label travels with the id: the native Windows
+													// helper selects a microphone by NAME, and records the
+													// Windows default endpoint when it is missing.
+													updatePrefs({
+														micDeviceId: deviceId,
+														micDeviceName:
+															micDevices.devices.find((d) => d.deviceId === deviceId)?.label ??
+															null,
+													});
+												}}
+											>
+												{micDevices.devices.map((d) => (
+													<option key={d.deviceId} value={d.deviceId}>
+														{d.label}
+													</option>
+												))}
+											</select>
+										)
+									) : null}
+									<button
+										type="button"
+										className={`${styles.recToggleBtn}${prefs.micEnabled ? ` ${styles.on}` : ""}`}
+										aria-labelledby={rowLabelId("microphone")}
+										aria-pressed={prefs.micEnabled}
+										onClick={toggleMicrophone}
+									>
+										{prefs.micEnabled ? t("rec.on") : t("rec.off")}
+									</button>
+								</div>
+							</div>
+						) : null}
+
 						<div className={styles.recRow}>
-							<div id={rowLabelId("microphone")} className={styles.recRowLabel}>
-								{prefs.micEnabled ? <MicOn size={15} /> : <MicOff size={15} />}
-								{t("rec.microphone")}
+							<div id={rowLabelId("camera")} className={styles.recRowLabel}>
+								{prefs.camEnabled ? <Camera size={15} /> : <CameraOff size={15} />}
+								{t("rec.camera")}
 							</div>
 							<div className={styles.recRowControl}>
-								{prefs.micEnabled ? (
-									micDevices.isLoading || !micDevices.isReady ? (
+								{prefs.camEnabled ? (
+									camDevices.isLoading ? (
 										<span className={styles.recRowMuted}>
 											<Loader2 size={13} className="animate-spin" />
 											{t("rec.loading")}
 										</span>
-									) : micDevices.error ? (
-										<span className={styles.recRowMuted} title={micDevices.error}>
-											{t("rec.microphoneUnavailable")}
-										</span>
-									) : micDevices.devices.length === 0 ? (
-										<span className={styles.recRowMuted}>{t("rec.noMicrophoneFound")}</span>
+									) : camDevices.devices.length === 0 ? (
+										<span className={styles.recRowMuted}>{t("rec.noCameraFound")}</span>
 									) : (
 										<select
 											className={styles.recSelect}
-											value={micDevices.selectedDeviceId}
+											value={camDevices.selectedDeviceId}
 											onChange={(e) => {
 												const deviceId = e.target.value;
-												micDevices.setSelectedDeviceId(deviceId);
-												// The label travels with the id: the native Windows
-												// helper selects a microphone by NAME, and records the
-												// Windows default endpoint when it is missing.
+												camDevices.setSelectedDeviceId(deviceId);
 												updatePrefs({
-													micDeviceId: deviceId,
-													micDeviceName:
-														micDevices.devices.find((d) => d.deviceId === deviceId)?.label ?? null,
+													camDeviceId: deviceId,
+													camDeviceName:
+														camDevices.devices.find((d) => d.deviceId === deviceId)?.label ?? null,
 												});
 											}}
 										>
-											{micDevices.devices.map((d) => (
+											{camDevices.devices.map((d) => (
 												<option key={d.deviceId} value={d.deviceId}>
 													{d.label}
 												</option>
@@ -512,244 +598,272 @@ export function RecStage({
 								) : null}
 								<button
 									type="button"
-									className={`${styles.recToggleBtn}${prefs.micEnabled ? ` ${styles.on}` : ""}`}
-									aria-labelledby={rowLabelId("microphone")}
-									aria-pressed={prefs.micEnabled}
-									onClick={toggleMicrophone}
+									className={`${styles.recToggleBtn}${prefs.camEnabled ? ` ${styles.on}` : ""}`}
+									aria-labelledby={rowLabelId("camera")}
+									aria-pressed={prefs.camEnabled}
+									onClick={toggleCamera}
 								>
-									{prefs.micEnabled ? t("rec.on") : t("rec.off")}
+									{prefs.camEnabled ? t("rec.on") : t("rec.off")}
 								</button>
 							</div>
 						</div>
-					) : null}
 
-					<div className={styles.recRow}>
-						<div id={rowLabelId("camera")} className={styles.recRowLabel}>
-							{prefs.camEnabled ? <Camera size={15} /> : <CameraOff size={15} />}
-							{t("rec.camera")}
-						</div>
-						<div className={styles.recRowControl}>
-							{prefs.camEnabled ? (
-								camDevices.isLoading ? (
-									<span className={styles.recRowMuted}>
-										<Loader2 size={13} className="animate-spin" />
-										{t("rec.loading")}
-									</span>
-								) : camDevices.devices.length === 0 ? (
-									<span className={styles.recRowMuted}>{t("rec.noCameraFound")}</span>
-								) : (
-									<select
-										className={styles.recSelect}
-										value={camDevices.selectedDeviceId}
-										onChange={(e) => {
-											const deviceId = e.target.value;
-											camDevices.setSelectedDeviceId(deviceId);
-											updatePrefs({
-												camDeviceId: deviceId,
-												camDeviceName:
-													camDevices.devices.find((d) => d.deviceId === deviceId)?.label ?? null,
-											});
-										}}
-									>
-										{camDevices.devices.map((d) => (
-											<option key={d.deviceId} value={d.deviceId}>
-												{d.label}
-											</option>
-										))}
-									</select>
-								)
-							) : null}
-							<button
-								type="button"
-								className={`${styles.recToggleBtn}${prefs.camEnabled ? ` ${styles.on}` : ""}`}
-								aria-labelledby={rowLabelId("camera")}
-								aria-pressed={prefs.camEnabled}
-								onClick={toggleCamera}
-							>
-								{prefs.camEnabled ? t("rec.on") : t("rec.off")}
-							</button>
-						</div>
-					</div>
+						{prefs.camEnabled ? (
+							<div className={styles.recRow}>
+								<div className={styles.recRowLabel}>{t("studio.cameraQuality")}</div>
+								<div className={styles.recQuality} role="group" aria-label={t("studio.cameraQuality")}>
+									{(["1080p", "1440p", "2160p"] as const).map((quality) => (
+										<button
+											type="button"
+											key={quality}
+											aria-pressed={(prefs.camQuality ?? "2160p") === quality}
+											onClick={() => updatePrefs({ camQuality: quality })}
+										>
+											{quality === "2160p" ? "4K" : quality}
+										</button>
+									))}
+								</div>
+							</div>
+						) : null}
 
-					{/* Without its native helper the browser records, and it always draws the system cursor
+						{/* Without its native helper the browser records, and it always draws the system cursor
 					    into the video: there is nothing to switch, so neither this row nor Auto-zoom, which
 					    reads what the editable cursor records, is shown. Same rule as the HUD's button. */}
-					{editableCursorAvailable ? (
-						<div className={styles.recRow}>
-							<div id={rowLabelId("cursor")} className={styles.recRowLabel}>
-								<MousePointer2 size={15} />
-								{t("rec.editableCursor")}
-							</div>
-							<Tooltip content={t("rec.editableCursorTip")} side="top">
-								<button
-									type="button"
-									className={`${styles.recToggleBtn}${editableCursor ? ` ${styles.on}` : ""}`}
-									aria-labelledby={rowLabelId("cursor")}
-									aria-pressed={editableCursor}
-									onClick={() =>
-										updatePrefs({
-											cursorCaptureMode: editableCursor ? "system" : "editable-overlay",
-										})
-									}
-								>
-									{editableCursor ? t("rec.on") : t("rec.off")}
-								</button>
-							</Tooltip>
-						</div>
-					) : null}
-
-					{/* Auto-zoom places zooms from the cursor telemetry the editable-overlay mode
-					    writes. The system cursor writes none, so the row is not offered there. */}
-					{editableCursorAvailable && editableCursor ? (
-						<div className={styles.recRow}>
-							<div id={rowLabelId("autoZoom")} className={styles.recRowLabel}>
-								<ZoomIn size={15} />
-								{t("rec.autoZoom")}
-							</div>
-							<button
-								type="button"
-								data-testid="rec-auto-zoom-button"
-								className={`${styles.recToggleBtn}${prefs.autoZoomEnabled ? ` ${styles.on}` : ""}`}
-								aria-labelledby={rowLabelId("autoZoom")}
-								aria-pressed={prefs.autoZoomEnabled}
-								onClick={() => updatePrefs({ autoZoomEnabled: !prefs.autoZoomEnabled })}
-							>
-								{prefs.autoZoomEnabled ? t("rec.on") : t("rec.off")}
-							</button>
-						</div>
-					) : null}
-
-					{desktopIconsHint ? (
-						<div className={styles.recRow}>
-							<div id={rowLabelId("hideDesktopIcons")} className={styles.recRowLabel}>
-								<LayoutGrid size={15} />
-								{t("rec.hideDesktopIcons")}
-							</div>
-							<Tooltip content={desktopIconsHint} side="top">
-								<button
-									type="button"
-									className={`${styles.recToggleBtn}${prefs.hideDesktopIcons ? ` ${styles.on}` : ""}`}
-									aria-labelledby={rowLabelId("hideDesktopIcons")}
-									aria-pressed={prefs.hideDesktopIcons}
-									onClick={() => updatePrefs({ hideDesktopIcons: !prefs.hideDesktopIcons })}
-								>
-									{prefs.hideDesktopIcons ? t("rec.on") : t("rec.off")}
-								</button>
-							</Tooltip>
-						</div>
-					) : null}
-
-					{/* The microphone's level on top of the device's: lower it when the voice clips. */}
-					{prefs.micEnabled ? (
-						<div className={styles.recRow}>
-							<div id={rowLabelId("micGain")} className={styles.recRowLabel}>
-								<MicOn size={15} />
-								{t("rec.micGain")}
-							</div>
-							<Tooltip content={t("rec.micGainHint")} side="top">
-								<div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-									<input
-										type="range"
-										min={-18}
-										max={6}
-										step={1}
-										value={prefs.micGainDb}
-										aria-labelledby={rowLabelId("micGain")}
-										data-testid="rec-mic-gain"
-										onChange={(event) => updatePrefs({ micGainDb: Number(event.target.value) })}
-									/>
-									<span style={{ minWidth: 44, textAlign: "right", fontSize: 12 }}>
-										{prefs.micGainDb > 0 ? "+" : ""}
-										{prefs.micGainDb} dB
-									</span>
+						{editableCursorAvailable && !cameraOnly ? (
+							<div className={styles.recRow}>
+								<div id={rowLabelId("cursor")} className={styles.recRowLabel}>
+									<MousePointer2 size={15} />
+									{t("rec.editableCursor")}
 								</div>
-							</Tooltip>
-						</div>
-					) : null}
-
-					{/* Keyboard shortcuts need a macOS event tap, so the row exists only there. */}
-					{platform === "darwin" ? (
-						<div className={styles.recRow}>
-							<div id={rowLabelId("shortcutCapture")} className={styles.recRowLabel}>
-								<Keyboard size={15} />
-								{t("rec.shortcutCapture")}
-							</div>
-							<Tooltip content={t("rec.shortcutCaptureHint")} side="top">
-								<button
-									type="button"
-									data-testid="rec-shortcut-capture-button"
-									className={`${styles.recToggleBtn}${prefs.shortcutCaptureEnabled ? ` ${styles.on}` : ""}`}
-									aria-labelledby={rowLabelId("shortcutCapture")}
-									aria-pressed={prefs.shortcutCaptureEnabled}
-									onClick={() =>
-										updatePrefs({ shortcutCaptureEnabled: !prefs.shortcutCaptureEnabled })
-									}
-								>
-									{prefs.shortcutCaptureEnabled ? t("rec.on") : t("rec.off")}
-								</button>
-							</Tooltip>
-						</div>
-					) : null}
-
-					{recordingsDir ? (
-						<div className={styles.recRow}>
-							<div className={styles.recRowLabel}>
-								<FolderOpen size={15} />
-								{t("rec.recordingsFolder")}
-							</div>
-							<div className={styles.recRowControl}>
-								{/* The folder's own name, which is what tells two folders apart; the
-								    full path is one hover away. */}
-								<button
-									type="button"
-									className={styles.recRowSourceBtn}
-									title={recordingsDir.path}
-									disabled={changingRecordingsDir}
-									onClick={() =>
-										void changeRecordingsDir(() => window.electronAPI.chooseRecordingsDir())
-									}
-								>
-									<span>{folderName(recordingsDir.path)}</span>
-									<ChevronDown size={13} style={{ opacity: 0.6 }} />
-								</button>
-								{recordingsDir.isDefault ? null : (
+								<Tooltip content={t("rec.editableCursorTip")} side="top">
 									<button
 										type="button"
-										className={styles.recToggleBtn}
-										disabled={changingRecordingsDir}
+										className={`${styles.recToggleBtn}${editableCursor ? ` ${styles.on}` : ""}`}
+										aria-labelledby={rowLabelId("cursor")}
+										aria-pressed={editableCursor}
 										onClick={() =>
-											void changeRecordingsDir(() => window.electronAPI.resetRecordingsDir())
+											updatePrefs({
+												cursorCaptureMode: editableCursor ? "system" : "editable-overlay",
+											})
 										}
 									>
-										{t("rec.resetRecordingsFolder")}
+										{editableCursor ? t("rec.on") : t("rec.off")}
 									</button>
-								)}
+								</Tooltip>
 							</div>
+						) : null}
+
+						{/* Auto-zoom places zooms from the cursor telemetry the editable-overlay mode
+					    writes. The system cursor writes none, so the row is not offered there. */}
+						{editableCursorAvailable && editableCursor && !cameraOnly ? (
+							<div className={styles.recRow}>
+								<div id={rowLabelId("autoZoom")} className={styles.recRowLabel}>
+									<ZoomIn size={15} />
+									{t("rec.autoZoom")}
+								</div>
+								<button
+									type="button"
+									data-testid="rec-auto-zoom-button"
+									className={`${styles.recToggleBtn}${prefs.autoZoomEnabled ? ` ${styles.on}` : ""}`}
+									aria-labelledby={rowLabelId("autoZoom")}
+									aria-pressed={prefs.autoZoomEnabled}
+									onClick={() => updatePrefs({ autoZoomEnabled: !prefs.autoZoomEnabled })}
+								>
+									{prefs.autoZoomEnabled ? t("rec.on") : t("rec.off")}
+								</button>
+							</div>
+						) : null}
+
+						{desktopIconsHint && !cameraOnly ? (
+							<div className={styles.recRow}>
+								<div id={rowLabelId("hideDesktopIcons")} className={styles.recRowLabel}>
+									<LayoutGrid size={15} />
+									{t("rec.hideDesktopIcons")}
+								</div>
+								<Tooltip content={desktopIconsHint} side="top">
+									<button
+										type="button"
+										className={`${styles.recToggleBtn}${prefs.hideDesktopIcons ? ` ${styles.on}` : ""}`}
+										aria-labelledby={rowLabelId("hideDesktopIcons")}
+										aria-pressed={prefs.hideDesktopIcons}
+										onClick={() => updatePrefs({ hideDesktopIcons: !prefs.hideDesktopIcons })}
+									>
+										{prefs.hideDesktopIcons ? t("rec.on") : t("rec.off")}
+									</button>
+								</Tooltip>
+							</div>
+						) : null}
+
+						{/* The microphone's level on top of the device's: lower it when the voice clips. */}
+						{prefs.micEnabled ? (
+							<div className={styles.recRow}>
+								<div id={rowLabelId("micGain")} className={styles.recRowLabel}>
+									<MicOn size={15} />
+									{t("rec.micGain")}
+								</div>
+								<Tooltip content={t("rec.micGainHint")} side="top">
+									<div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+										<input
+											type="range"
+											min={-18}
+											max={6}
+											step={1}
+											value={prefs.micGainDb}
+											aria-labelledby={rowLabelId("micGain")}
+											data-testid="rec-mic-gain"
+											onChange={(event) => updatePrefs({ micGainDb: Number(event.target.value) })}
+										/>
+										<span style={{ minWidth: 44, textAlign: "right", fontSize: 12 }}>
+											{prefs.micGainDb > 0 ? "+" : ""}
+											{prefs.micGainDb} dB
+										</span>
+									</div>
+								</Tooltip>
+							</div>
+						) : null}
+
+						{/* Keyboard shortcuts need a macOS event tap, so the row exists only there. */}
+						{platform === "darwin" && !cameraOnly ? (
+							<div className={styles.recRow}>
+								<div id={rowLabelId("shortcutCapture")} className={styles.recRowLabel}>
+									<Keyboard size={15} />
+									{t("rec.shortcutCapture")}
+								</div>
+								<Tooltip content={t("rec.shortcutCaptureHint")} side="top">
+									<button
+										type="button"
+										data-testid="rec-shortcut-capture-button"
+										className={`${styles.recToggleBtn}${prefs.shortcutCaptureEnabled ? ` ${styles.on}` : ""}`}
+										aria-labelledby={rowLabelId("shortcutCapture")}
+										aria-pressed={prefs.shortcutCaptureEnabled}
+										onClick={() =>
+											updatePrefs({ shortcutCaptureEnabled: !prefs.shortcutCaptureEnabled })
+										}
+									>
+										{prefs.shortcutCaptureEnabled ? t("rec.on") : t("rec.off")}
+									</button>
+								</Tooltip>
+							</div>
+						) : null}
+
+						{recordingsDir ? (
+							<div className={styles.recRow}>
+								<div className={styles.recRowLabel}>
+									<FolderOpen size={15} />
+									{t("rec.recordingsFolder")}
+								</div>
+								<div className={styles.recRowControl}>
+									{/* The folder's own name, which is what tells two folders apart; the
+								    full path is one hover away. */}
+									<button
+										type="button"
+										className={styles.recRowSourceBtn}
+										title={recordingsDir.path}
+										disabled={changingRecordingsDir}
+										onClick={() =>
+											void changeRecordingsDir(() => window.electronAPI.chooseRecordingsDir())
+										}
+									>
+										<span>{folderName(recordingsDir.path)}</span>
+										<ChevronDown size={13} style={{ opacity: 0.6 }} />
+									</button>
+									{recordingsDir.isDefault ? null : (
+										<button
+											type="button"
+											className={styles.recToggleBtn}
+											disabled={changingRecordingsDir}
+											onClick={() =>
+												void changeRecordingsDir(() => window.electronAPI.resetRecordingsDir())
+											}
+										>
+											{t("rec.resetRecordingsFolder")}
+										</button>
+									)}
+								</div>
+							</div>
+						) : null}
+					</div>
+					<div className={styles.recPanel}>
+						<div className={styles.recPromptFields}>
+							<h3>Teleprompter</h3>
+							<TeleprompterFields />
 						</div>
-					) : null}
+					</div>
 				</div>
+				{scenes ?? (
+					<div className={styles.recNoScript}>
+						<span>{t("studio.noScript")}</span>
+						{onWriteScript ? (
+							<button
+								type="button"
+								className={styles.stageBack}
+								style={{ margin: 0 }}
+								onClick={onWriteScript}
+							>
+								{t("studio.writeScript")}
+							</button>
+						) : null}
+					</div>
+				)}
 			</div>
 
-			<div className={styles.recActions}>
-				{onClose ? (
-					<button type="button" className={styles.recCancelBtn} onClick={onClose}>
-						{t("rec.cancel")}
-					</button>
-				) : null}
-				<button
-					type="button"
-					className={styles.bigRecBtn}
-					onClick={() => {
-						// The take is decided now: a microphone check still running must not turn it on.
-						micTurningOn.current = false;
-						onStartRecording();
+			{!scenes && takeInProject !== undefined ? (
+				<label
+					style={{
+						display: "flex",
+						alignItems: "center",
+						justifyContent: "center",
+						gap: 8,
+						fontSize: 13,
+						marginBottom: 12,
+						cursor: "pointer",
 					}}
 				>
-					<span className={styles.bigRecDot} aria-hidden />
-					{t("rec.startRecording")}
-				</button>
-			</div>
-			<p className={styles.recActionsHint}>{t("rec.startRecordingHint")}</p>
+					<input
+						type="checkbox"
+						checked={takeInProject}
+						onChange={(event) => onTakeInProjectChange?.(event.target.checked)}
+					/>
+					{t("studio.newTake")}
+				</label>
+			) : null}
+			{scenes ? (
+				<div className={styles.stageFooter} style={{ padding: "4px 0 0", border: "none" }}>
+					{onWriteScript ? (
+						<button type="button" className={styles.stageBack} onClick={onWriteScript}>
+							{t("studio.toScript")}
+						</button>
+					) : null}
+					{onClose ? (
+						<button type="button" className={styles.stageContinue} onClick={onClose}>
+							{t("studio.continueToEdit")}
+						</button>
+					) : null}
+				</div>
+			) : (
+				<>
+					<div className={styles.recActions}>
+						{onClose ? (
+							<button type="button" className={styles.recCancelBtn} onClick={onClose}>
+								{t("rec.cancel")}
+							</button>
+						) : null}
+						<button
+							type="button"
+							className={styles.bigRecBtn}
+							onClick={() => {
+								// The take is decided now: a microphone check still running must not turn it on.
+								micTurningOn.current = false;
+								onStartRecording();
+							}}
+						>
+							<span className={styles.bigRecDot} aria-hidden />
+							{t("rec.startRecording")}
+						</button>
+					</div>
+					<p className={styles.recActionsHint}>{t("rec.startRecordingHint")}</p>
+				</>
+			)}
 
 			{sourceModalOpen ? (
 				<SourceModal

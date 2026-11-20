@@ -150,6 +150,9 @@ export function rotation3DPerspective(width: number, height: number): number {
  */
 export type ZoomRegionSource = "auto" | "manual";
 
+/** "hold" stays at its level, "in" and "out" drift from or to full frame, "emphasis" goes up and back. */
+export type ZoomMotion = "hold" | "in" | "out" | "emphasis";
+
 export interface ZoomRegion {
 	id: string;
 	startMs: number;
@@ -163,6 +166,8 @@ export interface ZoomRegion {
 	source?: ZoomRegionSource;
 	/** When true, cursor is hidden during this zoom region. */
 	hideCursor?: boolean;
+	/** Plays dry on its own span. Absent: the usual zoom, easing in and out around it. */
+	motion?: ZoomMotion;
 }
 
 export function getRotation3D(region: Pick<ZoomRegion, "rotationPreset">): Rotation3D {
@@ -326,10 +331,22 @@ export interface TrimRegion {
  * No focus/depth/rotation needed: unlike ZoomRegion, the destination is always "fill the
  * canvas", so the shape stays intentionally simpler.
  */
+/** What a region of the scene lane shows: the camera alone, a layout, or the screen alone. */
+export type SceneChoice =
+	| "camera"
+	| "picture-in-picture"
+	| "vertical-stack"
+	| "dual-frame"
+	| "cutout-stack"
+	| "free-layout"
+	| "screen";
+
 export interface CameraFullscreenRegion {
 	id: string;
 	startMs: number;
 	endMs: number;
+	/** Absent: "camera", which is what every region was before scenes existed. */
+	scene?: SceneChoice;
 	/** false: the camera is full frame from the first moment, with no easing in. Absent: eases in. */
 	animateIn?: boolean;
 	/** false: the camera leaves the full frame in one cut, with no easing out. Absent: eases out. */
@@ -448,6 +465,25 @@ export interface AnnotationTextStyle {
 	textDecoration: "none" | "underline";
 	textAlign: "left" | "center" | "right";
 	textAnimation?: AnnotationTextAnimation;
+	/** A title's light and colour: `CaptionFx` in `captions/settings.ts`. */
+	fx?: Record<string, unknown>;
+	strokeEm?: number;
+	strokeColor?: string;
+	shadow?: boolean;
+}
+
+/** A motion graphic: a HyperFrames composition rendered to frames with alpha. */
+export interface GraphicData {
+	/** One graphic, however many pieces clip boundaries cut its region into. */
+	graphicId: string;
+	templateId: string;
+	name: string;
+	fields: { id: string; label: string; value: string }[];
+	/** Only the frames that differ from the one before, each from its time in the composition. */
+	frames: { path: string; atMs: number }[];
+	durationMs: number;
+	/** Past this point in the composition is the way out, which keeps its time from the end. */
+	holdMs: number;
 }
 
 export interface AnnotationRegion {
@@ -471,6 +507,7 @@ export interface AnnotationRegion {
 	figureData?: FigureData;
 	blurData?: BlurData;
 	pipData?: PipData;
+	graphicData?: GraphicData;
 }
 
 export const DEFAULT_ANNOTATION_POSITION: AnnotationPosition = {

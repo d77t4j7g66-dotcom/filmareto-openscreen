@@ -207,10 +207,20 @@ export interface CaptionSegmentLayoutOptions {
 	timestampGranularity?: "word" | "phrase";
 }
 
+/** "The", "και", "3": a line reads badly ending on one, and one alone on screen says nothing. */
+export function isLittleCaptionWord(word: string): boolean {
+	const text = word.trim();
+	return !/\p{P}$/u.test(text) && text.replace(/\P{L}/gu, "").length <= 3;
+}
+
+/** A sentence's last word: a line stops here, however much room it has left. */
+const ENDS_SENTENCE = /[.!?;\u037e\u2026]["'»”)]*$/;
+
 function computeCaptionLineIndexRanges(
 	wordCount: number,
 	minWords: number,
 	maxWords: number,
+	isLittle?: (index: number) => boolean,
 ): Array<{ from: number; to: number }> {
 	const minW = Math.max(1, Math.min(Math.floor(minWords), Math.floor(maxWords)));
 	const maxW = Math.max(minW, Math.floor(maxWords));
@@ -227,6 +237,12 @@ function computeCaptionLineIndexRanges(
 			break;
 		}
 
+		// "με 3 μόνο κλικ": one word over the limit, and the first weighs nothing. It stays whole.
+		if (isLittle?.(i) && remaining === maxW + 1) {
+			sliceRanges.push({ from: i, to: wordCount });
+			break;
+		}
+
 		let take = maxW;
 		const after = remaining - take;
 		if (after > 0 && after < minW) {
@@ -238,6 +254,10 @@ function computeCaptionLineIndexRanges(
 			if (take > maxW) {
 				take = maxW;
 			}
+		}
+		if (isLittle) {
+			while (take > 1 && isLittle(i + take - 1)) take--;
+			if (take === 1 && isLittle(i)) take = 2;
 		}
 		sliceRanges.push({ from: i, to: i + take });
 		i += take;
@@ -267,7 +287,9 @@ export function groupTimedCaptionWordsIntoLines(
 	const flushRun = (runEndExclusive: number) => {
 		const run = words.slice(runStart, runEndExclusive);
 		if (run.length === 0) return;
-		const ranges = computeCaptionLineIndexRanges(run.length, minW, maxW);
+		const ranges = computeCaptionLineIndexRanges(run.length, minW, maxW, (index) =>
+			isLittleCaptionWord(run[index]!.text),
+		);
 		for (const { from, to } of ranges) {
 			const slice = run.slice(from, to);
 			const s = slice[0]!.startSec;
@@ -285,7 +307,7 @@ export function groupTimedCaptionWordsIntoLines(
 		const prev = words[i - 1]!;
 		const cur = words[i]!;
 		const gap = cur.startSec - prev.endSec;
-		if (gap >= WORD_RUN_BREAK_GAP_SEC) {
+		if (gap >= WORD_RUN_BREAK_GAP_SEC || ENDS_SENTENCE.test(prev.text.trim())) {
 			flushRun(i);
 			runStart = i;
 		}

@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import {
 	DEFAULT_TEXT_FONT_FAMILY,
 	resolveTextFontFamily,
+	SINGLE_FACE_FILES,
 	TEXT_FONT_FAMILIES,
 	textFontFile,
 } from "./textFonts";
@@ -46,7 +47,8 @@ describe("the text font files", () => {
 			] as const) {
 				const names = fontNames(path.join(PUBLIC_DIR, textFontFile(family, weight)));
 				expect(names.get(1)).toBe(family);
-				expect(names.get(2)).toBe(style);
+				// A title font has one file, which answers for both weights.
+				expect(names.get(2)).toBe(SINGLE_FACE_FILES[family] ? "Regular" : style);
 			}
 		}
 	});
@@ -54,9 +56,13 @@ describe("the text font files", () => {
 	it("ship nothing the picker does not offer, and each family's licence beside it", () => {
 		const dir = path.join(PUBLIC_DIR, "fonts");
 		const shipped = fs.readdirSync(dir).filter((file) => /\.(ttf|otf)$/i.test(file));
-		const offered = TEXT_FONT_FAMILIES.flatMap((family) =>
-			(["normal", "bold"] as const).map((weight) => path.basename(textFontFile(family, weight))),
-		);
+		const offered = [
+			...new Set(
+				TEXT_FONT_FAMILIES.flatMap((family) =>
+					(["normal", "bold"] as const).map((weight) => path.basename(textFontFile(family, weight))),
+				),
+			),
+		];
 		expect(shipped.sort()).toEqual(offered.sort());
 		for (const family of TEXT_FONT_FAMILIES) {
 			const licence = fs.readFileSync(

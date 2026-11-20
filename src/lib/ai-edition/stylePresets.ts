@@ -98,6 +98,8 @@ export interface StylePresetAppearance {
 	webcamPadLinkSides: boolean;
 	webcamPadLinkAll: boolean;
 	webcamPadMatchScreen: boolean;
+	/** Everything a segment can have of its own, saved from the layout menu. Absent on older presets. */
+	look?: Record<string, unknown>;
 }
 
 export interface StylePreset {
@@ -411,6 +413,7 @@ export function parseStylePresetAppearance(value: unknown): StylePresetAppearanc
 		webcamPadLinkSides: readBooleanOr(value, "webcamPadLinkSides", true),
 		webcamPadLinkAll: readBooleanOr(value, "webcamPadLinkAll", false),
 		webcamPadMatchScreen: readBooleanOr(value, "webcamPadMatchScreen", false),
+		...(isRecord(value.look) ? { look: value.look } : {}),
 	};
 }
 

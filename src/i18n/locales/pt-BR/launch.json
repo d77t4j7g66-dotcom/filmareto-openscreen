@@ -14,7 +14,7 @@
 		"microphone": "Microfone: grava sua voz",
 		"camera": "Câmera: grava você em uma camada separada que pode ser movida no editor",
 		"openStudio": "Abrir Studio: o editor das suas gravações",
-		"openNotes": "Abrir notas: texto para ler durante a gravação",
+		"openNotes": "Teleprompter",
 		"openNotesPlaceholder": "Escreva suas notas aqui...",
 		"notesToolbar": {
 			"bold": "Negrito",
@@ -70,8 +70,8 @@
 		"screens": "Telas ({{count}})",
 		"windows": "Janelas ({{count}})",
 		"emptyTitle": "Nenhuma tela ou janela encontrada",
-		"emptyDescription": "Se você acabou de conceder a permissão de gravação de tela, recarregue este seletor. No macOS, pode ser necessário reabrir o OpenScreen.",
-		"loadFailedDescription": "O OpenScreen não conseguiu carregar as fontes de captura. Recarregue este seletor e tente novamente.",
+		"emptyDescription": "Se você acabou de conceder a permissão de gravação de tela, recarregue este seletor. No macOS, pode ser necessário reabrir o Filmareto.",
+		"loadFailedDescription": "O Filmareto não conseguiu carregar as fontes de captura. Recarregue este seletor e tente novamente.",
 		"defaultSourceName": "Tela"
 	},
 	"recording": {
@@ -79,19 +79,20 @@
 		"systemPicker": "O sistema perguntará o que compartilhar",
 		"start": "Iniciar gravação",
 		"stop": "Parar e salvar a gravação",
-		"saving": "Salvando..."
+		"saving": "Salvando...",
+		"noMicrophone": "The microphone is off: this take will have no sound."
 	},
 	"language": "Idioma",
 	"languageWithName": "Idioma: {{language}}",
 	"systemLanguagePrompt": {
 		"title": "Usar o idioma do seu sistema?",
-		"description": "Detectamos {{language}} como o idioma do seu sistema. Deseja mudar o OpenScreen para {{language}}?",
+		"description": "Detectamos {{language}} como o idioma do seu sistema. Deseja mudar o Filmareto para {{language}}?",
 		"switch": "Mudar para {{language}}",
 		"keepDefault": "Manter idioma atual"
 	},
 	"softwareEncoderFallback": {
 		"title": "Mudou para codificação por software",
-		"description": "O codificador de GPU padrão não pôde ser iniciado, então o OpenScreen passou a usar a codificação H.264 por software. A gravação deve continuar normalmente, mas o uso da CPU pode ser maior.",
+		"description": "O codificador de GPU padrão não pôde ser iniciado, então o Filmareto passou a usar a codificação H.264 por software. A gravação deve continuar normalmente, mas o uso da CPU pode ser maior.",
 		"dismiss": "Entendi",
 		"dontShowAgain": "Não mostrar novamente"
 	},
@@ -108,7 +109,7 @@
 		"checkingForUpdates": "Verificando…"
 	},
 	"permissions": {
-		"title": "O OpenScreen precisa de algumas permissões",
+		"title": "O Filmareto precisa de algumas permissões",
 		"subtitle": "O macOS pede que você conceda cada uma apenas uma vez. Você pode alterá-las a qualquer momento nos Ajustes do Sistema.",
 		"level": {
 			"required": "Obrigatória",
@@ -145,21 +146,71 @@
 			"continue": "Continuar",
 			"allow": "Permitir",
 			"openSettings": "Abrir Ajustes",
-			"restart": "Reiniciar o OpenScreen",
+			"restart": "Reiniciar o Filmareto",
 			"start": "Começar"
 		},
 		"help": {
-			"screenPrompt": "Em seguida, o macOS pedirá que você ative o OpenScreen nos Ajustes do Sistema.",
-			"screenSettings": "Nos Ajustes do Sistema, ative o OpenScreen. Se o macOS oferecer encerrar e reabrir o app, aceite: esta janela voltará.",
-			"screenNotListed": "O OpenScreen não está na lista? Clique em + e escolha o OpenScreen em Aplicativos.",
-			"screenRestart": "Permitido. O OpenScreen precisa reiniciar para usá-la.",
-			"screenRecurring": "Na sua primeira gravação, o macOS perguntará se o OpenScreen pode acessar sua tela diretamente, sem o seletor do sistema. Clique em Permitir. O macOS pergunta de novo de vez em quando; isso é normal.",
-			"systemAudioPrompt": "O macOS pedirá que você permita ao OpenScreen gravar o som do seu Mac.",
-			"systemAudioRequested": "Se você recusou, ative o OpenScreen em “Apenas Gravação do Áudio do Sistema” nos Ajustes do Sistema."
+			"screenPrompt": "Em seguida, o macOS pedirá que você ative o Filmareto nos Ajustes do Sistema.",
+			"screenSettings": "Nos Ajustes do Sistema, ative o Filmareto. Se o macOS oferecer encerrar e reabrir o app, aceite: esta janela voltará.",
+			"screenNotListed": "O Filmareto não está na lista? Clique em + e escolha o Filmareto em Aplicativos.",
+			"screenRestart": "Permitido. O Filmareto precisa reiniciar para usá-la.",
+			"screenRecurring": "Na sua primeira gravação, o macOS perguntará se o Filmareto pode acessar sua tela diretamente, sem o seletor do sistema. Clique em Permitir. O macOS pergunta de novo de vez em quando; isso é normal.",
+			"systemAudioPrompt": "O macOS pedirá que você permita ao Filmareto gravar o som do seu Mac.",
+			"systemAudioRequested": "Se você recusou, ative o Filmareto em “Apenas Gravação do Áudio do Sistema” nos Ajustes do Sistema."
 		},
 		"footer": {
 			"screenRequired": "A gravação de tela é necessária para gravar.",
 			"ready": "Tudo pronto."
 		}
+	},
+	"scene": {
+		"startCameraOnly": "Start recording, camera only",
+		"cameraOnly": "Camera only",
+		"cameraOnlyOn": "Records only the camera and the microphone",
+		"cameraOnlyOff": "Record only the camera, no screen",
+		"nextOf": "Next {{number}}/{{count}}: {{name}}",
+		"allDone": "All scenes recorded",
+		"again": "Again",
+		"againNamed": "Again: {{name}}",
+		"end": "End",
+		"toEdit": "To Edit",
+		"retrySegment": "This segment again from the start",
+		"lastSegment": "Last segment",
+		"nextSegment": "Next segment",
+		"modeVoice": "Voice",
+		"modeManual": "Constant speed",
+		"modeBullets": "Bullets",
+		"posTop": "Top",
+		"posWindow": "Window",
+		"posScreen": "Over the screen",
+		"posFull": "Full screen",
+		"scrolling": "Scrolling",
+		"speed": "Speed",
+		"listensTo": "Listens to: {{mic}}. Change it in System Settings → Sound → Input.",
+		"macInput": "the Mac's input",
+		"bulletsHint": "Each line of the text is a bullet. Move on with ↓ Line or ⌃⌥↓.",
+		"position": "Position",
+		"display": "Display",
+		"automatic": "Automatic",
+		"activeLine": "Active line",
+		"guideLine": "Guide line",
+		"width": "Width",
+		"lines": "Lines",
+		"look": "Look",
+		"letters": "Text size",
+		"lineSpacing": "Line spacing",
+		"paddingSides": "Side padding",
+		"paddingTop": "Top and bottom padding",
+		"background": "Background",
+		"hide": "Hide",
+		"pause": "Pause",
+		"start": "Start",
+		"fromSegmentStart": "From the start of the segment",
+		"prevLine": "↑ Line",
+		"nextLine": "↓ Line",
+		"text": "Text",
+		"textPlaceholder": "Write or paste the text. A line with only a / starts a new segment.",
+		"newSegment": "New segment ( / )",
+		"recHides": "Rec hides this window and starts the teleprompter."
 	}
 }

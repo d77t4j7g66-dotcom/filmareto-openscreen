@@ -10,7 +10,7 @@ import { LOCALE_STORAGE_KEY } from "@/i18n/config";
 import type { AxcutDocument } from "@/lib/ai-edition/schema";
 import { createEmptyDocument } from "@/lib/ai-edition/schema";
 import { useProjectStore } from "@/lib/ai-edition/store/projectStore";
-import { VideoEffectsPane } from "./RightPanes";
+import { FormatField, VideoEffectsPane } from "./RightPanes";
 
 vi.mock("sonner", () => ({ toast: { error: vi.fn(), success: vi.fn(), info: vi.fn() } }));
 
@@ -58,6 +58,7 @@ function mount(doc: AxcutDocument, locale?: string) {
 	useProjectStore.setState({ document: doc });
 	return render(
 		<I18nProvider>
+			<FormatField />
 			<VideoEffectsPane />
 		</I18nProvider>,
 	);

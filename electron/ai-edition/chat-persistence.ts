@@ -23,6 +23,7 @@ const sessionSchema = z.object({
 	title: z.string().min(1),
 	createdAt: z.string().min(1),
 	messages: z.array(messageSchema),
+	claudeSessionId: z.string().optional(),
 	compaction: z
 		.object({
 			summary: messageSchema,

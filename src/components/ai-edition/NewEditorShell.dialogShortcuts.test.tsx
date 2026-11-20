@@ -50,15 +50,12 @@ vi.mock("@/contexts/I18nContext", () => ({
 }));
 
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { EditorDialogsProvider } from "@/contexts/EditorDialogsContext";
 import { NewEditorShell } from "./NewEditorShell";
 
 function renderShell() {
 	return render(
 		<TooltipProvider>
-			<EditorDialogsProvider>
 				<NewEditorShell />
-			</EditorDialogsProvider>
 		</TooltipProvider>,
 	);
 }

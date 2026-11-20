@@ -152,14 +152,11 @@ afterEach(() => {
 async function renderPanelWithAssistantMessage() {
 	const { useProjectStore } = await import("@/lib/ai-edition/store/projectStore");
 	useProjectStore.setState({ projectId: "project-1" });
-	const { EditorDialogsProvider } = await import("@/contexts/EditorDialogsContext");
 	const { ChatStripPanel } = await import("./LeftPanel");
 	const { TooltipProvider } = await import("@/components/ui/tooltip");
 	const view = render(
 		<TooltipProvider>
-			<EditorDialogsProvider>
 				<ChatStripPanel />
-			</EditorDialogsProvider>
 		</TooltipProvider>,
 	);
 	// Flush the session load so the assistant bubble (and its copy button) is on screen.

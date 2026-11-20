@@ -15,8 +15,11 @@ pkill -x "Filmareto OpenScreen" 2>/dev/null || true
 sleep 1
 if [ -e "$DEST" ]; then
   # Renaming needs only write access to /Applications, which admins have; deleting an app the
-  # installer made as root would not work.
-  mv "$DEST" "$HOME/.Trash/Filmareto OpenScreen $(date +%H%M%S).app"
+  # installer made as root would not work. Not to the Trash: a cleaner that sees this app binned
+  # takes its data folder with it, and the projects in it.
+  rm -rf release/replaced 2>/dev/null || true
+  mkdir -p release/replaced
+  mv "$DEST" "release/replaced/Filmareto OpenScreen $(date +%H%M%S).app"
 fi
 ditto "$APP" "$DEST"
 xattr -dr com.apple.quarantine "$DEST" 2>/dev/null || true

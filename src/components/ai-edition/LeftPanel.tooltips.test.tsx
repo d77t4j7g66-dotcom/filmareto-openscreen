@@ -9,21 +9,12 @@ import "@testing-library/jest-dom";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const snapshot = vi.hoisted(() => ({
-	value: {
-		config: null as { provider: string; model: string } | null,
-		connectedProviders: [] as string[],
-		availableProviders: [] as unknown[],
-		credentialSummary: [] as unknown[],
-	},
-}));
+const claude = vi.hoisted(() => ({ signedIn: true }));
 const sessions = vi.hoisted(() => ({ list: [] as unknown[] }));
-const chatCompact = vi.hoisted(() => vi.fn());
 
 vi.mock("@/native/client", () => ({
 	nativeBridgeClient: {
 		aiEdition: {
-			llmGetSnapshot: () => Promise.resolve(snapshot.value),
 			chatListSessions: () => Promise.resolve(sessions.list),
 			chatSelectSession: () =>
 				Promise.resolve({
@@ -49,7 +40,6 @@ vi.mock("@/native/client", () => ({
 					],
 				}),
 			chatBudget: () => Promise.resolve(null),
-			chatCompact,
 			llmListProviderModels: () => Promise.resolve({ models: [] }),
 		},
 	},
@@ -64,7 +54,6 @@ vi.mock("@/contexts/I18nContext", () => ({
 }));
 
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { EditorDialogsProvider } from "@/contexts/EditorDialogsContext";
 import { useProjectStore } from "@/lib/ai-edition/store/projectStore";
 import { ChatStripPanel } from "./LeftPanel";
 
@@ -84,16 +73,12 @@ beforeEach(() => {
 	Element.prototype.scrollTo = vi.fn();
 	(window as unknown as { electronAPI?: unknown }).electronAPI = {
 		onAiEditionChatEvent: () => vi.fn(),
+		claudeStatus: () =>
+			Promise.resolve({ installed: true, signedIn: claude.signedIn, plan: "pro" }),
 	};
 	useProjectStore.setState({ projectId: "project-1" });
-	snapshot.value = {
-		config: null,
-		connectedProviders: [],
-		availableProviders: [],
-		credentialSummary: [],
-	};
+	claude.signedIn = true;
 	sessions.list = [];
-	chatCompact.mockClear();
 });
 
 afterEach(() => {
@@ -105,9 +90,7 @@ afterEach(() => {
 function renderPanel() {
 	return render(
 		<TooltipProvider>
-			<EditorDialogsProvider>
 				<ChatStripPanel />
-			</EditorDialogsProvider>
 		</TooltipProvider>,
 	);
 }
@@ -132,8 +115,6 @@ describe("ChatStripPanel tooltips", () => {
 		await screen.findByRole("button", { name: "chat.deleteConversation" });
 
 		for (const name of [
-			"chat.compactContext",
-			"chat.aiSettings",
 			"chat.history",
 			"chat.newConversation",
 			"chat.renameConversation",
@@ -169,24 +150,19 @@ describe("ChatStripPanel tooltips", () => {
 	});
 
 	// Nothing to talk to yet: Send is greyed, but it is where the reason is said.
-	it("says why Send is off when no provider is set up, and shows no chip then", async () => {
+	it("says why Send is off when Claude is not signed in, and shows no chip then", async () => {
+		claude.signedIn = false;
 		renderPanel();
 		const send = await screen.findByRole("button", { name: "chat.send" });
 		await waitFor(() => expect(send).toHaveAttribute("aria-disabled", "true"));
 		expect(send).not.toBeDisabled();
 		expect(send).not.toHaveAttribute("title");
 		const tip = await tooltipOn(send);
-		expect(tip.text).toBe("chat.composerDisabledNoProvider");
+		expect(tip.text).toBe("chat.signInFirst");
 		expect(tip.chip).toBeNull();
 	});
 
 	it("shows Enter as a chip on Send once it can send, never inside the string", async () => {
-		snapshot.value = {
-			config: { provider: "openai", model: "gpt-x" },
-			connectedProviders: ["openai"],
-			availableProviders: [],
-			credentialSummary: [],
-		};
 		renderPanel();
 		fireEvent.change(await screen.findByPlaceholderText("chat.composerPlaceholder"), {
 			target: { value: "Cut the silences" },
@@ -208,71 +184,5 @@ describe("ChatStripPanel tooltips", () => {
 		expect(rename).toHaveAttribute("aria-disabled", "true");
 		expect(rename).not.toBeDisabled();
 		expect((await tooltipOn(rename)).text).toBe("chat.renameConversation");
-	});
-
-	it("keeps Compact tooltip-able while there is no conversation, and does nothing", async () => {
-		renderPanel();
-		const compact = await screen.findByRole("button", { name: "chat.compactContext" });
-		expect(compact).toHaveAttribute("aria-disabled", "true");
-		expect(compact).not.toBeDisabled();
-		expect((await tooltipOn(compact)).text).toBe("chat.compactContext");
-		fireEvent.click(compact);
-		expect(chatCompact).not.toHaveBeenCalled();
-	});
-});
-
-// Issue #1039: the reasoning menu closed neither on Escape nor on a click outside, and the model
-// quick-pick not on Escape. Escape gives the focus back to the button, and goes no further.
-describe("ChatStripPanel composer menus", () => {
-	beforeEach(() => {
-		snapshot.value = {
-			config: { provider: "openai", model: "gpt-x" },
-			connectedProviders: ["openai"],
-			availableProviders: [],
-			credentialSummary: [],
-		};
-	});
-
-	/** Presses Escape on `target` and says whether a window-level shortcut handler heard it. */
-	function pressEscape(target: Element) {
-		const shortcut = vi.fn();
-		window.addEventListener("keydown", shortcut);
-		fireEvent.keyDown(target, { key: "Escape" });
-		window.removeEventListener("keydown", shortcut);
-		return shortcut.mock.calls.length > 0;
-	}
-
-	it("closes the reasoning menu on Escape, back on its button", async () => {
-		renderPanel();
-		const chip = await screen.findByRole("button", { name: "chat.reasoningEffortLabel" });
-		fireEvent.click(chip);
-		const menu = await screen.findByRole("menu");
-		expect(chip).toHaveAttribute("aria-expanded", "true");
-
-		expect(pressEscape(menu)).toBe(false);
-		await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
-		await waitFor(() => expect(chip).toHaveFocus());
-	});
-
-	it("closes the reasoning menu on a click outside", async () => {
-		renderPanel();
-		fireEvent.click(await screen.findByRole("button", { name: "chat.reasoningEffortLabel" }));
-		await screen.findByRole("menu");
-		// The outside-click listener is armed a tick after the menu opens.
-		await act(() => new Promise((resolve) => setTimeout(resolve, 0)));
-		fireEvent.pointerDown(document.body);
-		await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
-	});
-
-	it("closes the model quick-pick on Escape, back on its pill", async () => {
-		renderPanel();
-		const pill = await screen.findByRole("button", { name: "chat.modelLabel" });
-		await waitFor(() => expect(pill).toHaveTextContent("gpt-x"));
-		fireEvent.click(pill);
-		const search = await screen.findByPlaceholderText("chat.searchModels");
-
-		expect(pressEscape(search)).toBe(false);
-		expect(screen.queryByRole("dialog")).toBeNull();
-		expect(pill).toHaveFocus();
 	});
 });

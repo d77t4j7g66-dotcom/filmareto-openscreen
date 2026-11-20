@@ -6,6 +6,7 @@
 import { describe, expect, it } from "vitest";
 import { getZoomScale, ZOOM_DEPTH_SCALES } from "@/components/video-editor/types";
 import {
+	ALWAYS_AVAILABLE_ZOOM,
 	effectiveZoomScale,
 	MAX_ZOOM_SCALE,
 	MIN_ZOOM_SCALE,
@@ -66,15 +67,15 @@ describe("ZOOM_DEPTH_LEGEND", () => {
 });
 
 describe("maxZoomScaleFor", () => {
-	it("keeps rest magnification × zoom at or under 2", () => {
+	it("keeps rest magnification × zoom at or under 2 where that leaves room to zoom", () => {
 		expect(maxZoomScaleFor(0.8)).toBe(2.5); // 1080p take, 50 % padding
 		expect(maxZoomScaleFor(0.4)).toBe(MAX_ZOOM_SCALE); // 2160p take
-		expect(maxZoomScaleFor(1.6)).toBe(1.25); // half of a 1080p take
 		expect(maxZoomScaleFor(0.9) * 0.9).toBeLessThanOrEqual(2);
 	});
 
-	it("never goes below 1 and ignores a missing magnification", () => {
-		expect(maxZoomScaleFor(3)).toBe(MIN_ZOOM_SCALE);
+	it("always leaves a usable zoom, and ignores a missing magnification", () => {
+		expect(maxZoomScaleFor(1.78)).toBe(ALWAYS_AVAILABLE_ZOOM); // 1080p camera filling a vertical frame
+		expect(maxZoomScaleFor(3)).toBe(ALWAYS_AVAILABLE_ZOOM);
 		expect(maxZoomScaleFor(0)).toBe(MAX_ZOOM_SCALE);
 		expect(maxZoomScaleFor(Number.NaN)).toBe(MAX_ZOOM_SCALE);
 	});

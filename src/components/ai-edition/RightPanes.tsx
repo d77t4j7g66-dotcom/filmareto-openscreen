@@ -88,6 +88,7 @@ import {
 	DUCK_DEPTH_MAX_DB,
 	DUCK_DEPTH_MIN_DB,
 	STEM_GAIN_FLOOR_DB,
+	webcamPresetForFormat,
 } from "@/lib/ai-edition/store/editorSettings";
 import { useProjectStore } from "@/lib/ai-edition/store/projectStore";
 import { useCaptions } from "@/lib/ai-edition/store/useCaptions";
@@ -167,7 +168,7 @@ import { CaptionsPane } from "./CaptionsPane";
 import { ColorField } from "./ColorField";
 import { insertionsEnabled } from "./insertionsEnabled";
 import styles from "./NewEditorShell.module.css";
-import { useRecordedCursorTypes } from "./recordedCursorTypes";
+import { useHasRecordedCursor, useRecordedCursorTypes } from "./recordedCursorTypes";
 import { useTranscriptionLabel } from "./TranscriptionStatus";
 import { transcriptionBusyLabel } from "./transcriptionBusyLabel";
 
@@ -276,15 +277,15 @@ const GRAD_PRESETS: readonly string[] = [
 	"linear-gradient(135deg, #8b5cf6, #ec4899)",
 	"linear-gradient(135deg, #f97316, #ec4899)",
 	"linear-gradient(135deg, #f59e0b, #f97316)",
-	"linear-gradient(135deg, #10b981, #3b82f6)",
-	"linear-gradient(135deg, #22c55e, #10b981)",
+	"linear-gradient(135deg, #ee6c0e, #3b82f6)",
+	"linear-gradient(135deg, #22c55e, #ee6c0e)",
 	"linear-gradient(135deg, #6b7280, #16171d)",
 	"linear-gradient(135deg, #ec4899, #ef4444)",
 	"linear-gradient(135deg, #3b82f6, #22c55e)",
 	"linear-gradient(135deg, #8b5cf6, #3b82f6)",
 	"linear-gradient(135deg, #f59e0b, #ef4444)",
 	"linear-gradient(135deg, #16171d, #1e293b)",
-	"linear-gradient(135deg, #34d399, #3b82f6)",
+	"linear-gradient(135deg, #f59e4a, #3b82f6)",
 	"linear-gradient(135deg, #ef4444, #8b5cf6)",
 	"linear-gradient(135deg, #bcc0c6, #eaebed)",
 ];
@@ -295,9 +296,9 @@ const COLOR_PALETTE: readonly string[] = [
 	"#bcc0c6",
 	"#eaebed",
 	"#ffffff",
-	"#10b981",
-	"#0ea371",
-	"#34d399",
+	"#ee6c0e",
+	"#d9620f",
+	"#f59e4a",
 	"#f59e0b",
 	"#ef4444",
 	"#3b82f6",
@@ -404,6 +405,7 @@ const WALLPAPER_MOTION_LABEL_KEYS: Record<WallpaperMotion, string> = {
 // paths are restricted to `/wallpapers/...` or the user's own data: URLs from
 // the upload custom flow.
 function BackgroundSection() {
+	const te = useScopedT("editor");
 	const ts = useScopedT("settings");
 	const { settings, set, setLive, commit, hasDocument } = useEditorSettings();
 	const { pick: handlePickFile, input: fileInput } = useWallpaperFileInput((dataUrl) =>
@@ -412,7 +414,10 @@ function BackgroundSection() {
 
 	return (
 		<>
-			<div className={styles.sectionLabel}>{ts("background.title")}</div>
+			<div className={styles.sectionLabel}>
+				{ts("background.title")}
+				<span style={{ fontWeight: 400, color: "var(--muted)" }}> · {te("studio.wholeProject")}</span>
+			</div>
 			{/* Inline, the way Screen Studio sets it: the choice sits on the pane at a glance
 			    instead of behind a trigger. Small swatches, eight to a row, are what keep it
 			    from pushing the rest of the pane below the fold. */}
@@ -2359,21 +2364,14 @@ const FRAME_THEME_LABEL_KEYS: Record<FrameTheme, string> = {
 };
 
 /**
- * One pane for everything that shapes the composition.
- *
- * Background and Effects used to be two facets, and four of Effects' five controls were
- * background controls in disguise: the blur blurs the background, the shadow falls ON the
- * background, and roundness and padding exist only to let it show through. So a user who
- * wanted no background at all opened "Background", found nothing but wallpapers, and filed
- * #84. The split had no seam to sit on — it just hid the answer in the tab that doesn't say
- * "background".
- *
- * Merged, the sections read as what they are: pick a background, decide how the recording
- * sits on it, then the one control that is about neither.
+ * The output shape: one for the whole project, chosen in the layout menu beside the program window,
+ * since the layouts offered depend on it.
  */
-export function VideoEffectsPane() {
+export function FormatField() {
 	const ts = useScopedT("settings");
-	const { settings, set, setLive, commit, hasDocument } = useEditorSettings();
+	// With no pointer to follow the window sits on the face, or in the middle.
+	const hasCursor = useHasRecordedCursor() === true;
+	const { settings, set, hasDocument } = useEditorSettings();
 	const document = useProjectStore((s) => s.document);
 
 	// The footage's own shapes for the Original row, the one most clips are in first.
@@ -2395,7 +2393,6 @@ export function VideoEffectsPane() {
 			? `${autoDims.width}×${autoDims.height}`
 			: null;
 	const autoStateId = useId();
-	const hasTiltedZoom = (document?.zoomRanges ?? []).some((z) => z.rotationPreset != null);
 	const fillAvailability = useMemo(
 		() => (document ? formatFillAvailability(document) : "none"),
 		[document],
@@ -2404,55 +2401,23 @@ export function VideoEffectsPane() {
 	// Filling is the default for a format picked from now on; a project that already had one
 	// keeps showing its recording whole until the user says otherwise.
 	const fillDefault = settings.formatFollowCursor === null ? { formatFollowCursor: true } : {};
-	// The padding a drag started from, held until its release: the Roundness row follows it and
-	// not the live value. Added or dropped mid-drag, the row reflowed the pane under the pointer
-	// dragging the slider: a clamped scroll on the way to 0, a scrollbar appearing on the way
-	// out of it.
-	const [scrubStartPadding, setScrubStartPadding] = useState<number | null>(null);
 	const { locale } = useI18n();
 	const clipCountLabel = (count: number) => ts(pluralKey(locale, count), { count });
-
-	// Le rayon natif = rayon de base de la fixture (~24px @1920) × cette échelle. Diviser la
-	// valeur px de l'UI par ce même rayon de base fait que le coin natif ≈ les px affichés
-	// (au lieu de plafonner à ~24px comme avec /64).
-	const NATIVE_SCREEN_BASE_RADIUS_PX = 24;
-	// Sous un cadre, Roundness se lit en % de la course propre au cadre (cf. le slider).
-	const framed = settings.frame !== "none";
-	const roundnessScale = framed ? 100 / ROUNDNESS_SLIDER_MAX_PX : 1;
-	// La synchro initiale de ces params vit dans NativeCompositorOverlay
-	// (`pushAllNativeParams`) : l'inspecteur n'affiche qu'un panneau a la fois, donc
-	// un effet de montage ici ne poussait rien tant que ce panneau precis n'avait pas
-	// ete ouvert. Les handlers par controle ci-dessous poussent toujours leurs diffs.
-
 	return (
-		<Pane
-			title={ts("effects.title")}
-			icon={<Sliders size={16} />}
-			// Two complete sentences, one per merged half, rather than a third string to
-			// translate 13 times — both already exist in every locale and neither is a
-			// fragment of the other, so joining them survives translation and RTL alike.
-			helpText={`${ts("background.help")} ${ts("effects.help")}`}
-		>
-			<BackgroundSection />
-			{/* #84, "how do I turn the background off", has no button of its own: Padding at 0
-			    under Auto or an Original format frames the recording alone, and without a frame
-			    the corners go square with it (see `roundnessFrac`). A "Fit" action did the same
-			    in one click, but it rewrote four settings while naming none, and its menu
-			    repeated the Original row. */}
-			<div className={styles.sectionLabel}>{ts("effects.frame")}</div>
+		<>
 			{/* The output shape moved here from the timeline toolbar. It is the one setting the
-			    other three depend on — padding, roundness and shadow only mean anything against
-			    a known frame — and among Trim / Speed / Zoom / transport it read as a playback
-			    control rather than as the shape of what gets exported. Its old placement was
-			    incidental: it arrived inside 1f25410b, a commit about per-clip crop export and
-			    a HUD redesign, and no decision record ever argued for it. */}
+		    other three depend on — padding, roundness and shadow only mean anything against
+		    a known frame — and among Trim / Speed / Zoom / transport it read as a playback
+		    control rather than as the shape of what gets exported. Its old placement was
+		    incidental: it arrived inside 1f25410b, a commit about per-clip crop export and
+		    a HUD redesign, and no decision record ever argued for it. */}
 			<div className={`${styles.field} ${styles.fieldStack}`}>
 				<span className={styles.fieldLabel}>
 					{ts("effects.format")}
 					{/* Auto is the one entry whose shape moves with the project (padding, camera
-					    layout, crop), so while it is the format the label says where it stands. The
-					    legacy `"native"` value presses no button: it only survives until the clip
-					    dimensions are known, and until then there is no Original row either. */}
+				    layout, crop), so while it is the format the label says where it stands. The
+				    legacy `"native"` value presses no button: it only survives until the clip
+				    dimensions are known, and until then there is no Original row either. */}
 					{settings.aspectRatio === "auto" && autoState ? (
 						<span id={autoStateId} className={styles.sectionLabelValue}>
 							{autoState}
@@ -2484,7 +2449,7 @@ export function VideoEffectsPane() {
 					}
 				/>
 				{/* The timeline's own shapes. Token first, then the pixel size: here a button names
-				    an output FORMAT, so the ratio is the identity. */}
+			    an output FORMAT, so the ratio is the identity. */}
 				{nativeFormats.length > 0 ? (
 					<>
 						<span className={styles.fieldLabel}>{ts("effects.formatOriginal")}</span>
@@ -2510,8 +2475,8 @@ export function VideoEffectsPane() {
 				) : null}
 			</div>
 			{/* How a recording of another shape sits in a fixed format: whole, or filling it with a
-			    window that follows the cursor. Only listed when the two shapes differ and the timeline
-			    has a single rule it could follow. */}
+		    window that follows the cursor. Only listed when the two shapes differ and the timeline
+		    has a single rule it could follow. */}
 			{fillAvailability === "available" ? (
 				<div className={`${styles.field} ${styles.fieldStack}`}>
 					<span className={styles.fieldLabel}>{ts("effects.formatFill")}</span>
@@ -2519,7 +2484,10 @@ export function VideoEffectsPane() {
 						label={ts("effects.formatFill")}
 						options={[
 							{ value: "fit", label: ts("effects.formatFillFit") },
-							{ value: "follow", label: ts("effects.formatFillFollow") },
+							{
+								value: "follow",
+								label: hasCursor ? ts("effects.formatFillFollow") : ts("effects.formatFillCover"),
+							},
 						]}
 						value={fillActive ? "follow" : "fit"}
 						disabled={!hasDocument}
@@ -2527,6 +2495,63 @@ export function VideoEffectsPane() {
 					/>
 				</div>
 			) : null}
+		</>
+	);
+}
+
+/**
+ * One pane for everything that shapes the composition.
+ *
+ * Background and Effects used to be two facets, and four of Effects' five controls were
+ * background controls in disguise: the blur blurs the background, the shadow falls ON the
+ * background, and roundness and padding exist only to let it show through. So a user who
+ * wanted no background at all opened "Background", found nothing but wallpapers, and filed
+ * #84. The split had no seam to sit on — it just hid the answer in the tab that doesn't say
+ * "background".
+ *
+ * Merged, the sections read as what they are: pick a background, decide how the recording
+ * sits on it, then the one control that is about neither.
+ */
+export function VideoEffectsPane() {
+	const ts = useScopedT("settings");
+	const { settings, set, setLive, commit, hasDocument } = useEditorSettings();
+	const document = useProjectStore((s) => s.document);
+
+	const hasTiltedZoom = (document?.zoomRanges ?? []).some((z) => z.rotationPreset != null);
+	// The padding a drag started from, held until its release: the Roundness row follows it and
+	// not the live value. Added or dropped mid-drag, the row reflowed the pane under the pointer
+	// dragging the slider: a clamped scroll on the way to 0, a scrollbar appearing on the way
+	// out of it.
+	const [scrubStartPadding, setScrubStartPadding] = useState<number | null>(null);
+
+	// Le rayon natif = rayon de base de la fixture (~24px @1920) × cette échelle. Diviser la
+	// valeur px de l'UI par ce même rayon de base fait que le coin natif ≈ les px affichés
+	// (au lieu de plafonner à ~24px comme avec /64).
+	const NATIVE_SCREEN_BASE_RADIUS_PX = 24;
+	// Sous un cadre, Roundness se lit en % de la course propre au cadre (cf. le slider).
+	const framed = settings.frame !== "none";
+	const roundnessScale = framed ? 100 / ROUNDNESS_SLIDER_MAX_PX : 1;
+	// La synchro initiale de ces params vit dans NativeCompositorOverlay
+	// (`pushAllNativeParams`) : l'inspecteur n'affiche qu'un panneau a la fois, donc
+	// un effet de montage ici ne poussait rien tant que ce panneau precis n'avait pas
+	// ete ouvert. Les handlers par controle ci-dessous poussent toujours leurs diffs.
+
+	return (
+		<Pane
+			title={ts("effects.title")}
+			icon={<Sliders size={16} />}
+			// Two complete sentences, one per merged half, rather than a third string to
+			// translate 13 times — both already exist in every locale and neither is a
+			// fragment of the other, so joining them survives translation and RTL alike.
+			helpText={`${ts("background.help")} ${ts("effects.help")}`}
+		>
+			<BackgroundSection />
+			{/* #84, "how do I turn the background off", has no button of its own: Padding at 0
+			    under Auto or an Original format frames the recording alone, and without a frame
+			    the corners go square with it (see `roundnessFrac`). A "Fit" action did the same
+			    in one click, but it rewrote four settings while naming none, and its menu
+			    repeated the Original row. */}
+			<div className={styles.sectionLabel}>{ts("effects.frame")}</div>
 			{/* The shape of the screen inside the frame, apart from the frame's own format: a 4:5 or
 			    square screen in a 9:16 frame, with the camera and the background around it. Not for the
 			    block layouts, which size their screen themselves. */}
@@ -2948,7 +2973,10 @@ export function LayoutPane() {
 				<ChoiceRow<(typeof WEBCAM_PRESETS)[number]["value"]>
 					label={ts("layout.preset")}
 					tiles
-					options={WEBCAM_PRESETS.map((p) => ({
+					options={WEBCAM_PRESETS.filter(
+						// What this format turns it into anyway is not a choice here.
+						(p) => webcamPresetForFormat(p.value, settings.aspectRatio) === p.value,
+					).map((p) => ({
 						value: p.value,
 						label: ts(p.labelKey),
 						icon: (
@@ -3757,6 +3785,9 @@ export function AudioPane() {
 	const hasStems = useRecordingHasStems();
 	return (
 		<Pane title={ts("audio.title")} icon={<AudioLines size={16} />} helpText={ts("audio.help")}>
+			{/* Only a take with a voice and a system sound of its own has anything to balance. */}
+			{hasStems ? (
+				<>
 			<div className={styles.sliderGrid}>
 				{(
 					[
@@ -3780,7 +3811,6 @@ export function AudioPane() {
 						onCommit={() => void commit()}
 					/>
 				))}
-				{hasStems ? null : <p className={styles.framingHint}>{ts("audio.stemsHint")}</p>}
 			</div>
 			<div className={styles.paneRow}>
 				<span className={styles.label}>{ts("audio.duck")}</span>
@@ -3814,6 +3844,8 @@ export function AudioPane() {
 			>
 				{ts("audio.duckAgain")}
 			</button>
+				</>
+			) : null}
 			<div className={styles.sliderGrid}>
 				<SliderCell
 					label={ts("audio.outputGain")}
