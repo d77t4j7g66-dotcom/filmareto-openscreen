@@ -44,7 +44,7 @@ describe("OpenProjectModal delete", () => {
 		fireEvent.click(screen.getAllByRole("button", { name: /delete project/i })[0]);
 
 		expect(onDelete).not.toHaveBeenCalled();
-		expect(screen.getByText(/recordings are kept/i)).toBeInTheDocument();
+		expect(screen.getByText(/goes to the Trash with its recordings/i)).toBeInTheDocument();
 	});
 
 	it("deletes the project the confirm was armed on", () => {
@@ -64,7 +64,7 @@ describe("OpenProjectModal delete", () => {
 
 		expect(onDelete).not.toHaveBeenCalled();
 		expect(screen.getByText("First project")).toBeInTheDocument();
-		expect(screen.queryByText(/recordings are kept/i)).not.toBeInTheDocument();
+		expect(screen.queryByText(/goes to the Trash with its recordings/i)).not.toBeInTheDocument();
 	});
 
 	// The delete button sits next to the row's own button, not inside it — a

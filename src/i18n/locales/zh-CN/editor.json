@@ -91,6 +91,8 @@
 		"toggleChatPanel": "聊天面板",
 		"openProject": "打开项目",
 		"newProject": "新建项目",
+		"packageForEditing": "打包给剪辑师",
+		"openPackage": "打开包",
 		"saveProject": "保存项目",
 		"unsaved": "未保存",
 		"saved": "已保存",
@@ -354,7 +356,7 @@
 		"openHint": "打开",
 		"browseFiles": "浏览文件…",
 		"deleteProject": "删除项目",
-		"confirmDelete": "删除此项目？您的录制文件会保留。"
+		"confirmDelete": "删除此项目？它会连同录制内容一起移到废纸篓。"
 	},
 	"editClipDialog": {
 		"title": "编辑片段",
@@ -514,5 +516,27 @@
 		"layoutCutout": "Cutout",
 		"layoutFree": "Free",
 		"layoutScreen": "Screen"
+	},
+	"editorPackage": {
+		"packingTitle": "正在打包项目",
+		"packingBody": "正在将项目及其媒体复制到包中…",
+		"packedTitle": "包已就绪",
+		"packedBody": "包已保存为 {{path}}。请把 zip 发给你的剪辑师。",
+		"reveal": "在文件夹中显示",
+		"missingTitle": "缺少部分媒体文件",
+		"missingBody": "由于找不到以下文件，未能创建包：",
+		"conflictTitle": "项目已存在",
+		"conflictBody": "此电脑上已有名为“{{title}}”的项目。要用包替换它，还是将包作为单独的副本打开？",
+		"replace": "替换现有项目",
+		"openAsCopy": "作为副本打开",
+		"openedTitle": "包已打开",
+		"openedBody": "“{{title}}”可以开始编辑了。",
+		"errorTitle": "出了点问题",
+		"notAPackage": "这不是编辑器包。",
+		"damaged": "此包已损坏，无法打开。",
+		"missingNoDetail": "包中缺少部分媒体文件。",
+		"unsafePath": "项目中有些路径指向其文件夹之外，因此未打包。",
+		"notFound": "找不到该项目。请先保存后重试。",
+		"reloadFailed": "打开包后无法重新加载项目。"
 	}
 }

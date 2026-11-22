@@ -1,14 +1,14 @@
-import { useSceneLabels } from "@/lib/ai-edition/timeline/useSceneLabels";
-import { useScopedT } from "@/contexts/I18nContext";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { toFileUrl } from "@/components/video-editor/projectPersistence";
 import type { SceneChoice } from "@/components/video-editor/types";
+import { useScopedT } from "@/contexts/I18nContext";
 import type { GraphicTemplate } from "@/lib/ai-edition/annotations/graphics";
 import {
 	formatFillAvailability,
 	resolveAspectRatioValue,
 } from "@/lib/ai-edition/document/outputFormat";
+import { clipLabel } from "@/lib/ai-edition/document/script";
 import {
 	type EditorSettingsPatch,
 	type EditorSettingsSnapshot,
@@ -23,10 +23,10 @@ import {
 	stylePresetAppearanceFromSettings,
 	stylePresetPatch,
 } from "@/lib/ai-edition/stylePresetsEditor";
-import { clipLabel } from "@/lib/ai-edition/document/script";
 import { assetCameraSource, hasAnyClipWithCamera } from "@/lib/ai-edition/timeline/camera";
 import { sceneForFormat, scenesForFormat } from "@/lib/ai-edition/timeline/scenes";
 import { clipTakes } from "@/lib/ai-edition/timeline/takeSegments";
+import { useSceneLabels } from "@/lib/ai-edition/timeline/useSceneLabels";
 import { nativeBridgeClient } from "@/native";
 import { FormatField } from "../RightPanes";
 import styles from "./EditorShellV4.module.css";
@@ -85,11 +85,13 @@ function presetLook(preset: StylePreset): EditorSettingsPatch {
 }
 
 /** The attempts at a segment that was said again. Any of them can be the one on the timeline. */
-function TakeRow({ tl }: { tl: Timeline }) {
+export function TakeRow({ tl, onSeek }: { tl: Timeline; onSeek: (sec: number) => void }) {
 	const t = useScopedT("editor");
 	const { target } = useTargetClip(tl);
-	if (!target?.alternates?.length) return null;
+	// Every hook before the early return: the clip under the playhead gains its attempts after the
+	// editor opens on a fresh take, and a hook skipped on the first render throws and blanks it.
 	const assetIds = useProjectStore((s) => s.document?.assets.map((a) => a.id).join("|") ?? "");
+	if (!target?.alternates?.length) return null;
 	const { takes, current } = clipTakes(target, assetIds.split("|"));
 	return (
 		<div className={styles.takeRow} role="group" aria-label={t("studio.takes")}>
@@ -100,7 +102,11 @@ function TakeRow({ tl }: { tl: Timeline }) {
 					key={`${take.assetId ?? ""}:${take.sourceStartSec}`}
 					aria-pressed={current === number}
 					onClick={() => {
-						if (current !== number) void tl.showClipTake(target.id, take);
+						if (current === number) return;
+						// The take changes how long the clip is, so the playhead stays put no longer: it
+						// could land in another clip or past them all. The picked take plays from its start.
+						const startSec = target.timelineStartSec;
+						void tl.showClipTake(target.id, take).then(() => onSeek(startSec));
 					}}
 				>
 					{number + 1}
@@ -413,7 +419,7 @@ export function LayoutPanel({ tl, onSeek }: { tl: Timeline; onSeek: (sec: number
 			{tab === "layout" ? (
 				<>
 					<FormatField />
-					<TakeRow tl={tl} />
+					<TakeRow tl={tl} onSeek={onSeek} />
 					{/* Absent, not greyed out, in a project with no camera: there is only one way to show it. */}
 					{hasAnyCamera ? <LayoutGrid tl={tl} onSeek={onSeek} /> : null}
 				</>

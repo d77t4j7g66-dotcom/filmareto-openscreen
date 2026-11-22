@@ -27,8 +27,8 @@ export type WallpaperClassification =
 	| { kind: "gradient"; value: string }
 	| { kind: "image"; path: string };
 
-const GRADIENT_RE = /^(repeating-)?(linear|radial|conic)-gradient\(/;
-const COLOR_FUNC_RE = /^(rgb|rgba|hsl|hsla|hwb|lab|lch|oklab|oklch|color)\(/;
+export const GRADIENT_RE = /^(repeating-)?(linear|radial|conic)-gradient\(/;
+export const COLOR_FUNC_RE = /^(rgb|rgba|hsl|hsla|hwb|lab|lch|oklab|oklch|color)\(/;
 const IMAGE_URL_RE = /^(\/|https?:\/\/|file:\/\/|data:)/;
 
 export function classifyWallpaper(value: string): WallpaperClassification {

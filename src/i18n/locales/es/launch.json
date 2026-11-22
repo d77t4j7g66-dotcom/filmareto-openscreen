@@ -175,6 +175,7 @@
 		"end": "End",
 		"toEdit": "To Edit",
 		"retrySegment": "This segment again from the start",
+		"take": "Take {{number}}",
 		"lastSegment": "Last segment",
 		"nextSegment": "Next segment",
 		"modeVoice": "Voice",

@@ -173,3 +173,17 @@ export function formatHotkey(bindings: HotkeyBinding[], action: HotkeyAction): s
 	const b = bindings.find((x) => x.action === action);
 	return b ? formatBinding(b) : "";
 }
+
+/**
+ * Whether the teleprompter's settings window has to float. Only a full-screen prompter on the
+ * window's own display can bury it; on any other display (a prompter's glass, say) floating
+ * would only pin the settings over the screen being recorded. With no display picked, the
+ * prompter opens where the pointer is, so it is taken to share the window's display.
+ */
+export function settingsWindowOnTop(
+	prompter: Pick<PrompterSettings, "position" | "displayId">,
+	windowDisplayId: number,
+): boolean {
+	if (prompter.position !== "fullscreen") return false;
+	return prompter.displayId === null || prompter.displayId === windowDisplayId;
+}

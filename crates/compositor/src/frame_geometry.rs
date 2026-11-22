@@ -347,6 +347,25 @@ pub(crate) fn webcam_source_rect(
         box_ar,
     )
 }
+/// Where a zoom on the camera closes in, in the camera's own frame: centred across and a little
+/// above the middle, where a face sits in a talking-head shot. The zoom's own focus is a point
+/// of the SCREEN (the pointer, or a spot picked on it) and means nothing on the camera.
+pub(crate) const CAMERA_ZOOM_FOCUS: [f32; 2] = [0.5, 0.4];
+
+/// `webcam_source_rect` under a zoom: the authored crop, closed in by `zoom` on
+/// `CAMERA_ZOOM_FOCUS`, then cover-cropped to the box. At 1x it is `webcam_source_rect` exactly.
+pub(crate) fn webcam_source_rect_zoomed(
+    visible: [f32; 2],
+    tex: [f32; 2],
+    crop: Option<SceneCrop>,
+    box_ar: f32,
+    zoom: f32,
+) -> [f32; 4] {
+    let u_max = visible[0].max(1.0) / tex[0].max(1.0);
+    let v_max = visible[1].max(1.0) / tex[1].max(1.0);
+    let focus = if zoom > 1.0 { CAMERA_ZOOM_FOCUS } else { [0.5, 0.5] };
+    cover_uv_rect(screen_source_rect(u_max, v_max, crop, zoom, focus), tex, box_ar)
+}
 /// Rétrécit un rect SOURCE déjà exprimé en UV (`[u0, v0, u1, v1]`) autour de son
 /// centre pour qu'il porte le ratio `box_ar` une fois rapporté aux pixels de la
 /// texture. C'est la forme générale de `object-fit: cover`, et LA primitive qui
@@ -1918,6 +1937,9 @@ pub struct FrameGeometry {
     /// 0..1: how far the camera has taken the whole frame (Full Camera). The cutout stack
     /// reads it to let go of its cutout as the camera fills the frame.
     pub camera_fullscreen_progress: f32,
+    /// The zoom the camera takes, 1 for none. While the camera fills the frame (Full Camera, or a
+    /// Camera layout), the zoom in force is the camera's: the screen under it is out of sight.
+    pub webcam_zoom: f32,
     /// Where a cutout's camera turns back to as filmed, when this frame's layout cuts it out only
     /// over the screen.
     pub webcam_cutout_line: Option<f32>,
@@ -3694,6 +3716,15 @@ pub fn plan_frame(input: &FrameGeometryInput) -> FrameGeometry {
     FrameGeometry {
         scene_preset,
         camera_fullscreen_progress: cam_progress,
+        // How far the camera fills the frame: Full Camera, or a layout that hands the camera a rect
+        // over the whole frame (the editor's Camera layout). Only a camera covering it takes the zoom.
+        webcam_zoom: 1.0
+            + (p.zoom - 1.0).max(0.0)
+                * cam_progress.clamp(0.0, 1.0).max(crate::regions::smoothstep(
+                    0.9,
+                    1.0,
+                    (w_dst[2] * w_dst[3]).clamp(0.0, 1.0),
+                )),
         webcam_cutout_line: scene
             .filter(|s| s.layout.webcam_cutout_over_screen)
             .and_then(|s| s.layout.webcam_cutout_line),
@@ -5099,6 +5130,91 @@ mod tests {
 
         assert_eq!(g.w_dst, [0.0, 0.0, 1.0, 1.0], "la caméra reste plein cadre à travers le trim");
         assert_eq!(g.w_dst_prev, g.w_dst, "pas de traînée depuis le trou du trim");
+    }
+
+    /// A zoom while the camera fills the frame belongs to the camera: the screen is under it and
+    /// out of sight, so a zoom kept there did nothing anyone could see. In a corner the camera stays
+    /// as filmed and the zoom is the screen's, as before.
+    #[test]
+    fn a_zoom_goes_to_the_camera_while_it_fills_the_frame() {
+        let cfg = crate::config::all().pop().expect("au moins une config");
+        let scene_with = |full_camera: &str| {
+            Scene::from_json(&format!(
+                r##"{{
+                "clips":[{{"screenPath":"/s.mp4","webcamPath":"/w.mp4","sourceStartSec":0,"sourceEndSec":10,"webcamOffsetSec":0,"hasAudio":true}}],
+                "layout":{{"preset":"picture-in-picture","webcamSize":0.44,"webcamShape":"circle","webcamMirror":false,
+                          "webcamPosition":{{"cx":0.8577,"cy":0.8159}},"webcamReactiveZoom":false}},
+                "effects":{{"padding":0.1,"blur":false,"shadow":0.0,"roundnessFrac":0.0,"motionBlur":0.0}},
+                "background":{{"kind":"color","color":"#1e1e2e"}},
+                "zoomRegions":[{{"clipIndex":0,"startSec":1.0,"endSec":8.0,"scale":1.8,"focusX":0.2,"focusY":0.2,"rotation":"none"}}],
+                "cameraFullscreenRegions":[{full_camera}],
+                "cursor":{{"show":false,"size":1,"smoothing":0,"motionBlur":0,"clickBounce":0,"clipToBounds":false,"theme":"default"}},
+                "output":{{"width":1080,"height":1920,"fps":60}}
+            }}"##
+            ))
+            .expect("scene")
+        };
+        let at = |scene: &Scene, t: f32| {
+            let mut input = golden_input(scene, &cfg);
+            input.timeline_t_override = Some(t);
+            plan_frame(&input)
+        };
+
+        let full = scene_with(r#"{"clipIndex":0,"startSec":0,"endSec":10}"#);
+        let g = at(&full, 4.5);
+        assert_eq!(g.w_dst, [0.0, 0.0, 1.0, 1.0], "the camera fills the frame");
+        assert!((g.webcam_zoom - 1.8).abs() < 0.01, "the camera takes the zoom: {}", g.webcam_zoom);
+        assert!((at(&full, 9.5).webcam_zoom - 1.0).abs() < 1e-6, "no zoom after the region");
+
+        let corner = scene_with("");
+        assert_eq!(at(&corner, 4.5).webcam_zoom, 1.0, "in a corner the camera stays as filmed");
+    }
+
+    /// The editor's Camera layout does not use Full Camera: it hands the camera a rect over the
+    /// whole frame. That is the camera filling the frame all the same, and it takes the zoom.
+    #[test]
+    fn a_camera_layout_over_the_whole_frame_takes_the_zoom() {
+        let cfg = crate::config::all().pop().expect("au moins une config");
+        let scene_with = |rect: &str| {
+            Scene::from_json(&format!(
+                r##"{{
+                "clips":[{{"screenPath":"/s.mp4","webcamPath":"/w.mp4","sourceStartSec":0,"sourceEndSec":10,"webcamOffsetSec":0,"hasAudio":true}}],
+                "layout":{{"preset":"picture-in-picture","webcamSize":1.0,"webcamShape":"rectangle","webcamMirror":false,
+                          "webcamPosition":null,"webcamReactiveZoom":false,
+                          "screenRect":{{"x":0,"y":0,"width":1,"height":1}},"webcamRect":{rect}}},
+                "effects":{{"padding":0.0,"blur":false,"shadow":0.0,"roundnessFrac":0.0,"motionBlur":0.0}},
+                "background":{{"kind":"color","color":"#1e1e2e"}},
+                "zoomRegions":[{{"clipIndex":0,"startSec":1.0,"endSec":8.0,"scale":1.8,"focusX":0.2,"focusY":0.2,"rotation":"none"}}],
+                "cursor":{{"show":false,"size":1,"smoothing":0,"motionBlur":0,"clickBounce":0,"clipToBounds":false,"theme":"default"}},
+                "output":{{"width":1080,"height":1920,"fps":60}}
+            }}"##
+            ))
+            .expect("scene")
+        };
+        let at = |scene: &Scene, t: f32| {
+            let mut input = golden_input(scene, &cfg);
+            input.timeline_t_override = Some(t);
+            plan_frame(&input)
+        };
+        let whole = at(&scene_with(r#"{"x":0,"y":0,"width":1,"height":1}"#), 4.5);
+        assert!((whole.webcam_zoom - 1.8).abs() < 0.01, "camera over the frame: {}", whole.webcam_zoom);
+        let half = at(&scene_with(r#"{"x":0,"y":0.5,"width":1,"height":0.5}"#), 4.5);
+        assert_eq!(half.webcam_zoom, 1.0, "a camera on half the frame (stacked) stays as filmed");
+    }
+
+    /// The camera's crop under a zoom: smaller by the zoom, on the face (a little above centre),
+    /// and still the box's ratio, so the camera is never stretched.
+    #[test]
+    fn a_zoomed_camera_crop_closes_in_above_centre() {
+        let tex = [1920.0, 1080.0];
+        let box_ar = 1080.0 / 1920.0;
+        let whole = webcam_source_rect_zoomed([1920.0, 1080.0], tex, None, box_ar, 1.0);
+        assert_eq!(whole, webcam_source_rect([1920.0, 1080.0], tex, None, box_ar), "1x is today's crop");
+        let [u0, v0, u1, v1] = webcam_source_rect_zoomed([1920.0, 1080.0], tex, None, box_ar, 2.0);
+        assert!(((v1 - v0) - 0.5).abs() < 1e-4, "half the height at 2x: {}", v1 - v0);
+        assert!((((u1 - u0) * 1920.0) / ((v1 - v0) * 1080.0) - box_ar).abs() < 1e-3, "the box's ratio");
+        assert!(((u0 + u1) / 2.0 - 0.5).abs() < 1e-4, "centred across");
+        assert!((v0 + v1) / 2.0 < 0.5, "above centre, where a face is");
     }
 
     /// La caméra en orbite, en focus auto : celle qui bouge avec le pointeur. Sans piste, elle
@@ -8307,6 +8423,7 @@ mod tests {
     fn full_frame_geometry() -> FrameGeometry {
         FrameGeometry {
             camera_fullscreen_progress: 0.0,
+            webcam_zoom: 1.0,
             webcam_cutout_line: None,
             segment_look: None,
             webcam_crop: None,

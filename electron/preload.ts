@@ -19,6 +19,7 @@ import {
 	type NativeBridgeRequest,
 } from "../src/native/contracts";
 import type { RecordingPrefs } from "./ipc/handlers";
+import type { PackageProgress } from "./package/buildPackage";
 import type {
 	SttStatusEvent,
 	SttTranscribeRequest,
@@ -490,6 +491,26 @@ contextBridge.exposeInMainWorld("electronAPI", {
 		const listener = () => callback();
 		ipcRenderer.on("menu-save-project-as", listener);
 		return () => ipcRenderer.removeListener("menu-save-project-as", listener);
+	},
+	onMenuPackageForEditor: (callback: () => void) => {
+		const listener = () => callback();
+		ipcRenderer.on("menu-package-for-editor", listener);
+		return () => ipcRenderer.removeListener("menu-package-for-editor", listener);
+	},
+	onMenuOpenEditorPackage: (callback: () => void) => {
+		const listener = () => callback();
+		ipcRenderer.on("menu-open-editor-package", listener);
+		return () => ipcRenderer.removeListener("menu-open-editor-package", listener);
+	},
+	packageProjectForEditor: (projectId: string) =>
+		ipcRenderer.invoke("package-project-for-editor", projectId),
+	openEditorPackage: (opts: { source?: string; mode?: "replace" | "copy" }) =>
+		ipcRenderer.invoke("open-editor-package", opts),
+	onEditorPackageProgress: (callback: (progress: PackageProgress) => void) => {
+		const listener = (_event: Electron.IpcRendererEvent, progress: PackageProgress) =>
+			callback(progress);
+		ipcRenderer.on("editor-package-progress", listener);
+		return () => ipcRenderer.removeListener("editor-package-progress", listener);
 	},
 	// The Edit menu's Undo/Redo. On macOS this is the ONLY way Cmd+Z reaches the
 	// renderer: AppKit matches the menu's key equivalent before the key event is

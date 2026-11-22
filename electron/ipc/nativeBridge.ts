@@ -19,7 +19,10 @@ import {
 	type CursorTelemetryLoadResult,
 	TelemetryCursorAdapter,
 } from "../native-bridge/cursor/telemetryCursorAdapter";
-import { AiEditionService } from "../native-bridge/services/aiEditionService";
+import {
+	AiEditionService,
+	type AiEditionServiceOptions,
+} from "../native-bridge/services/aiEditionService";
 import { CompositorViewService } from "../native-bridge/services/compositorViewService";
 import { CursorService } from "../native-bridge/services/cursorService";
 import { ProjectService } from "../native-bridge/services/projectService";
@@ -61,6 +64,8 @@ export interface NativeBridgeContext {
 	 */
 	getNativeWindowHandle?: (sender: import("electron").WebContents) => Buffer | null;
 	getAiEditionDocuments: () => DocumentService;
+	/** Deleted projects' files and recordings to the Trash (`electron/media-cleanup`). */
+	getRecordingsTrash?: () => AiEditionServiceOptions["recordings"];
 	/** The one shared style preset service — it serialises writes per instance. */
 	getStylePresets: () => StylePresetService;
 	getAiEditionLlmConfig: () => import("../ai-edition/llm-config-store").LlmConfigStore;
@@ -236,6 +241,7 @@ export function registerNativeBridgeHandlers(context: NativeBridgeContext) {
 	const aiEditionService = new AiEditionService({
 		documents: context.getAiEditionDocuments(),
 		deleteChatHistory: deleteProjectChat,
+		recordings: context.getRecordingsTrash?.(),
 		// Passed uncalled on purpose — invoking it here would build the store (and
 		// hit the macOS Keychain) while wiring the bridge at startup.
 		llmConfig: context.getAiEditionLlmConfig,

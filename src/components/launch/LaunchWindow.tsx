@@ -155,7 +155,11 @@ export function LaunchWindow() {
 		if (cameraTake.error) toast.error(cameraTake.error);
 	}, [cameraTake.error]);
 	// Where the script stands while a take runs. The HUD is not the window the prompter reports to.
-	const [script, setScript] = useState<{ stageIndex: number; stageCount: number } | null>(null);
+	const [script, setScript] = useState<{
+		stageIndex: number;
+		stageCount: number;
+		take: number;
+	} | null>(null);
 	useEffect(() => {
 		if (!recording) {
 			setScript(null);
@@ -164,7 +168,9 @@ export function LaunchWindow() {
 		const read = async () => {
 			const state = await window.electronAPI.teleprompter?.state();
 			setScript(
-				state?.open ? { stageIndex: state.stageIndex, stageCount: state.stageCount } : null,
+				state?.open
+					? { stageIndex: state.stageIndex, stageCount: state.stageCount, take: state.take ?? 1 }
+					: null,
 			);
 		};
 		void read();
@@ -1343,9 +1349,7 @@ export function LaunchWindow() {
 							on={cameraOnly}
 							locked={controlsLocked}
 							name={t("scene.cameraOnly")}
-							tooltip={
-								cameraOnly ? t("scene.cameraOnlyOn") : t("scene.cameraOnlyOff")
-							}
+							tooltip={cameraOnly ? t("scene.cameraOnlyOn") : t("scene.cameraOnlyOff")}
 							onClick={() => {
 								writeCameraOnly(!cameraOnly);
 								setCameraOnly(!cameraOnly);
@@ -1494,6 +1498,7 @@ export function LaunchWindow() {
 								vertical={isVertical}
 								stageIndex={script.stageIndex}
 								stageCount={script.stageCount}
+								take={script.take}
 								onRetry={() => void window.electronAPI.teleprompter.perform("retakeStage")}
 								onNext={() => void window.electronAPI.teleprompter.perform("nextStage")}
 							/>

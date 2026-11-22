@@ -21,6 +21,8 @@
 		"export": "导出",
 		"showInFolder": "在文件夹中显示",
 		"file": "文件",
+		"packageForEditing": "打包以供编辑…",
+		"openPackage": "打开软件包…",
 		"edit": "编辑",
 		"view": "视图",
 		"window": "窗口",

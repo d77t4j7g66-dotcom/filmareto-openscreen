@@ -385,6 +385,28 @@ export class DocumentService {
 	}
 
 	/** Every project that parses, unrelinked and unannounced: a listing, not an open. */
+	/**
+	 * Every project file's raw text, legacy `.axcut` included, for a reader that has to see all of
+	 * them or decide nothing: the recordings cleanup protects whatever any project mentions.
+	 * Throws on the first one it cannot read, where `readAllProjects` skips it.
+	 */
+	async readAllProjectFilesRaw(): Promise<{ filePath: string; raw: string }[]> {
+		await this.ensureProjectsDir();
+		const entries = await fs.readdir(this.projectsRoot);
+		const files = entries.filter(
+			(name) =>
+				name.endsWith(PROJECT_FILE_EXTENSION) || name.endsWith(LEGACY_PROJECT_FILE_EXTENSION),
+		);
+		const out: { filePath: string; raw: string }[] = [];
+		for (const name of files) {
+			const filePath = path.join(this.projectsRoot, name);
+			const raw = await fs.readFile(filePath, "utf8");
+			JSON.parse(raw);
+			out.push({ filePath, raw });
+		}
+		return out;
+	}
+
 	private async readAllProjects(): Promise<AxcutDocument[]> {
 		await this.ensureProjectsDir();
 		const entries = await fs.readdir(this.projectsRoot);
@@ -547,8 +569,12 @@ export class DocumentService {
 	async saveProjectIfUnchanged(
 		document: AxcutDocument,
 		version: ProjectVersion,
+		options: {
+			/** Keep the document's own `updatedAt`: a cleanup is not an edit (the list is ordered by it). */
+			keepUpdatedAt?: boolean;
+		} = {},
 	): Promise<AxcutDocument | null> {
-		const stamped = stampForSave(document);
+		const stamped = options.keepUpdatedAt ? documentSchema.parse(document) : stampForSave(document);
 		const projectId = stamped.project.id;
 		const written = await this.writeProject(stamped, async () => {
 			if ((await this.projectOpenInEditor()) === projectId) {

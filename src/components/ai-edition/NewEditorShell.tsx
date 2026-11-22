@@ -59,6 +59,7 @@ import { nativeBridgeClient } from "@/native";
 import type { AiEditionProjectSummary } from "@/native/contracts";
 import { resolveVisibleClips } from "@/native/sceneDescription";
 import { useNativePlaybackSync } from "@/native/useNativePlaybackSync";
+import { EditorPackageDialog } from "./EditorPackageDialog";
 import { ExportDialog } from "./ExportDialog";
 import { importProjectFile } from "./importProjectFile";
 import { insertionsEnabled } from "./insertionsEnabled";
@@ -77,6 +78,7 @@ import {
 	maybeSaveFreshRecordingAutoZooms,
 	setTakeTargetProject,
 } from "./recordingImport";
+import { useEditorPackage } from "./useEditorPackage";
 import { AddAudioLayerDialog } from "./v4/AddAudioLayerDialog";
 import v4 from "./v4/EditorShellV4.module.css";
 import { type EditorMode, EditorTopBar } from "./v4/EditorTopBar";
@@ -410,9 +412,7 @@ export function NewEditorShell() {
 				const imported = await importPendingRecording((warning) => toast.warning(warning));
 				if (imported) {
 					toast.success(
-						imported === "take"
-							? te("studio.takeAdded")
-							: "Recording added to a new project",
+						imported === "take" ? te("studio.takeAdded") : "Recording added to a new project",
 					);
 					return;
 				}
@@ -893,9 +893,13 @@ export function NewEditorShell() {
 
 	const handleSave = useCallback(async () => {
 		const doc = useProjectStore.getState().document;
-		if (!doc) return;
-		if (await saveDocument(doc, { history: true })) toast.success("Project saved");
+		if (!doc) return false;
+		const saved = await saveDocument(doc, { history: true });
+		if (saved) toast.success("Project saved");
+		return saved;
 	}, [saveDocument]);
+
+	const editorPackage = useEditorPackage({ save: handleSave, loadProject });
 
 	// Native File menu (electron/main.ts) → v4 actions. The menu is shown via
 	// Menu.setApplicationMenu and dispatches these IPC events; the old editor
@@ -1622,6 +1626,8 @@ export function NewEditorShell() {
 					openProject: () => setOpenProjectOpen(true),
 					newProject: () => setNewProjectOpen(true),
 					save: () => void handleSave(),
+					packageForEditing: () => void editorPackage.packageForEditing(),
+					openPackage: () => void editorPackage.openPackage(),
 					export: handleExport,
 					openSettings: handleOpenSettings,
 					renameProject: handleRenameProject,
@@ -1813,6 +1819,12 @@ export function NewEditorShell() {
 				onSelect={handleSelectProject}
 				onDelete={handleDeleteProject}
 				onBrowse={handleBrowseProject}
+			/>
+			<EditorPackageDialog
+				state={editorPackage.dialog}
+				onReveal={editorPackage.reveal}
+				onChoose={editorPackage.choose}
+				onClose={editorPackage.close}
 			/>
 			<NewProjectModal
 				open={newProjectOpen}

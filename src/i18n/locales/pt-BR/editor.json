@@ -91,6 +91,8 @@
 		"toggleChatPanel": "Painel de chat",
 		"openProject": "Abrir projeto",
 		"newProject": "Novo projeto",
+		"packageForEditing": "Empacotar para edição",
+		"openPackage": "Abrir pacote",
 		"saveProject": "Salvar projeto",
 		"unsaved": "Não salvo",
 		"saved": "Salvo",
@@ -354,7 +356,7 @@
 		"openHint": "para abrir",
 		"browseFiles": "Procurar arquivos…",
 		"deleteProject": "Excluir projeto",
-		"confirmDelete": "Excluir este projeto? Suas gravações são mantidas."
+		"confirmDelete": "Excluir este projeto? Ele vai para a Lixeira com as gravações."
 	},
 	"editClipDialog": {
 		"title": "Editar clipe",
@@ -514,5 +516,27 @@
 		"layoutCutout": "Cutout",
 		"layoutFree": "Free",
 		"layoutScreen": "Screen"
+	},
+	"editorPackage": {
+		"packingTitle": "Empacotando o projeto",
+		"packingBody": "Copiando o projeto e suas mídias para um pacote…",
+		"packedTitle": "Pacote pronto",
+		"packedBody": "O pacote foi salvo como {{path}}. Envie o zip para o seu editor.",
+		"reveal": "Mostrar na pasta",
+		"missingTitle": "Alguns arquivos de mídia estão faltando",
+		"missingBody": "O pacote não foi criado porque estes arquivos não foram encontrados:",
+		"conflictTitle": "O projeto já existe",
+		"conflictBody": "Já existe um projeto “{{title}}” neste computador. Substituí-lo pelo pacote ou abrir o pacote como uma cópia separada?",
+		"replace": "Substituir o existente",
+		"openAsCopy": "Abrir como cópia",
+		"openedTitle": "Pacote aberto",
+		"openedBody": "“{{title}}” está pronto para edição.",
+		"errorTitle": "Algo deu errado",
+		"notAPackage": "Este não é um pacote do editor.",
+		"damaged": "Este pacote está danificado e não pode ser aberto.",
+		"missingNoDetail": "Alguns arquivos de mídia estão faltando no pacote.",
+		"unsafePath": "Alguns caminhos do projeto apontam para fora da pasta dele, então ele não foi empacotado.",
+		"notFound": "Projeto não encontrado. Salve-o e tente novamente.",
+		"reloadFailed": "Não foi possível recarregar o projeto após abrir o pacote."
 	}
 }

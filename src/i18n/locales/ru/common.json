@@ -21,6 +21,8 @@
 		"export": "Экспорт",
 		"showInFolder": "Показать в папке",
 		"file": "Файл",
+		"packageForEditing": "Упаковать для монтажа…",
+		"openPackage": "Открыть пакет…",
 		"edit": "Редактировать",
 		"view": "Вид",
 		"window": "Окно",

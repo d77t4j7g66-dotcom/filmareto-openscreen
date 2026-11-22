@@ -174,6 +174,104 @@ final class AudioTrackMixerTests: XCTestCase {
 		XCTAssertGreaterThan(peak(frames, from: 5.5, to: 6.0), audibleThreshold)
 	}
 
+	// MARK: - Buffer seams
+
+	/// A device hands its audio over in 10 ms buffers, and each is stamped from the host clock on its
+	/// own, so a stamp lands a frame or two off where the previous buffer ended. Placed literally,
+	/// every seam gained a frame of silence or lost one: a click a hundred times a second, which is
+	/// what a voice through a USB camera microphone sounded like ("as if it were sampled wrong").
+	func testBufferStampsAFrameOffAreJoinedWithoutAClick() {
+		let sink = RecordingSink()
+		let clock = TestClock(.zero)
+		let mixer = makeMixer(sink: sink, clock: clock, includesMicrophone: false)
+		mixer.beginTimeline(at: clock.now)
+
+		let tone = sine(seconds: 1.0, hertz: 440, amplitude: 0.5)
+		let framesPerBuffer = 480
+		let jitter: [Int64] = [0, 1, -1, 2, 0, -2, 1, -1]
+		var frame = 0
+		var buffer = 0
+		while frame < tone.count / channelCount {
+			let end = min(tone.count, (frame + framesPerBuffer) * channelCount)
+			let stamp = CMTime(
+				value: Int64(frame) + jitter[buffer % jitter.count],
+				timescale: CMTimeScale(sampleRate)
+			)
+			mixer.ingest(
+				makeSourceBuffer(Array(tone[(frame * channelCount)..<end]), at: stamp, nonInterleaved: true),
+				from: .system
+			)
+			frame += framesPerBuffer
+			buffer += 1
+			clock.advance(seconds: Double(framesPerBuffer) / Double(sampleRate))
+			mixer.tick()
+		}
+		mixer.finish(atSourceTime: clock.now)
+
+		let frames = mixedFrames(sink)
+		assertContiguous(sink)
+		// The steepest step a 440 Hz tone at half scale takes from one frame to the next, plus rounding.
+		let steepest = Int(2 * Double.pi * 440 / Double(sampleRate) * 0.5 * 32_767) + 64
+		XCTAssertLessThanOrEqual(largestStep(frames, from: 0.02, to: 0.98), steepest)
+	}
+
+	/// The device's clock and the host's never run at quite the same rate: at 200 ppm the stamps
+	/// walk a frame away every five buffers. Butting buffers up absorbs that only until the walk
+	/// outgrows the jitter allowance; then a whole millisecond of silence went in at once, a tick
+	/// every few seconds on a long take. The walk is taken back a single frame at a time instead.
+	func testADeviceClockDriftingFromTheHostNeverTicks() {
+		let sink = RecordingSink()
+		let clock = TestClock(.zero)
+		let mixer = makeMixer(sink: sink, clock: clock, includesMicrophone: false)
+		mixer.beginTimeline(at: clock.now)
+
+		let seconds = 12.0
+		let tone = sine(seconds: seconds, hertz: 440, amplitude: 0.5)
+		let framesPerBuffer = 480
+		let ratio = 1.0 + 200e-6
+		var frame = 0
+		while frame < tone.count / channelCount {
+			let end = min(tone.count, (frame + framesPerBuffer) * channelCount)
+			let stamp = CMTime(
+				value: Int64((Double(frame) * ratio).rounded()),
+				timescale: CMTimeScale(sampleRate)
+			)
+			mixer.ingest(
+				makeSourceBuffer(Array(tone[(frame * channelCount)..<end]), at: stamp, nonInterleaved: true),
+				from: .system
+			)
+			frame += framesPerBuffer
+			clock.advance(seconds: Double(framesPerBuffer) * ratio / Double(sampleRate))
+			mixer.tick()
+		}
+		mixer.finish(atSourceTime: clock.now)
+
+		let frames = mixedFrames(sink)
+		assertContiguous(sink)
+		// A frame said twice is no step at all; a frame left out is at most two steps of the tone.
+		let steepest = Int(2 * Double.pi * 440 / Double(sampleRate) * 0.5 * 32_767)
+		XCTAssertLessThanOrEqual(largestStep(frames, from: 0.02, to: seconds - 0.05), 2 * steepest + 64)
+	}
+
+	/// The other side of the same tolerance: a buffer restated whole is still a duplicate, not the
+	/// next 10 ms, and must not be heard twice.
+	func testABufferRestatedWholeIsStillNotHeardTwice() {
+		let sink = RecordingSink()
+		let clock = TestClock(.zero)
+		let mixer = makeMixer(sink: sink, clock: clock, includesMicrophone: false)
+		mixer.beginTimeline(at: clock.now)
+
+		let first = burst(seconds: 0.01, left: 0.5, right: 0.5)
+		mixer.ingest(makeSourceBuffer(first, at: .zero, nonInterleaved: true), from: .system)
+		mixer.ingest(makeSourceBuffer(first, at: .zero, nonInterleaved: true), from: .system)
+		clock.advance(seconds: 0.5)
+		mixer.finish(atSourceTime: clock.now)
+
+		let frames = mixedFrames(sink)
+		XCTAssertGreaterThan(peak(frames, from: 0, to: 0.01), audibleThreshold)
+		XCTAssertEqual(peak(frames, from: 0.011, to: 0.5), 0, "the restated buffer must not follow the first")
+	}
+
 	// MARK: - The two sources against each other
 
 	/// PR #343 rebased each source's first buffer onto the session start independently, and its
@@ -734,6 +832,31 @@ final class AudioTrackMixerTests: XCTestCase {
 			samples.append(contentsOf: bytes.withUnsafeBytes { Array($0.bindMemory(to: Int16.self)) })
 		}
 		return samples
+	}
+
+	private func sine(seconds: Double, hertz: Double, amplitude: Float) -> [Float] {
+		let frameCount = Int(seconds * Double(sampleRate))
+		var samples = [Float](repeating: 0, count: frameCount * channelCount)
+		for frame in 0..<frameCount {
+			let value = amplitude * Float(sin(2 * Double.pi * hertz * Double(frame) / Double(sampleRate)))
+			samples[frame * channelCount] = value
+			samples[frame * channelCount + 1] = value
+		}
+		return samples
+	}
+
+	/// The largest jump between two neighbouring frames of the left channel in a span.
+	private func largestStep(_ samples: [Int16], from: Double, to: Double) -> Int {
+		let firstFrame = Int(from * Double(sampleRate))
+		let lastFrame = min(Int(to * Double(sampleRate)), samples.count / channelCount)
+		var largest = 0
+		var frame = firstFrame + 1
+		while frame < lastFrame {
+			let step = abs(Int(samples[frame * channelCount]) - Int(samples[(frame - 1) * channelCount]))
+			largest = max(largest, step)
+			frame += 1
+		}
+		return largest
 	}
 
 	private func seconds(ofFrames samples: [Int16]) -> Double {

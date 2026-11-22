@@ -30,6 +30,7 @@ interface Window {
 				open: boolean;
 				stageIndex: number;
 				stageCount: number;
+				take: number;
 				run: {
 					ready: boolean;
 					next: string | null;
@@ -518,6 +519,18 @@ interface Window {
 		onMenuLoadProject: (callback: () => void) => () => void;
 		onMenuSaveProject: (callback: () => void) => () => void;
 		onMenuSaveProjectAs: (callback: () => void) => () => void;
+		onMenuPackageForEditor: (callback: () => void) => () => void;
+		onMenuOpenEditorPackage: (callback: () => void) => () => void;
+		packageProjectForEditor: (
+			projectId: string,
+		) => Promise<import("./package/ipc").PackageIpcResult>;
+		openEditorPackage: (opts: {
+			source?: string;
+			mode?: "replace" | "copy";
+		}) => Promise<import("./package/ipc").OpenPackageIpcResult>;
+		onEditorPackageProgress: (
+			callback: (progress: import("./package/buildPackage").PackageProgress) => void,
+		) => () => void;
 		/** Edit > Undo / Redo. On macOS the menu is the only route Cmd+Z has to the
 		 *  renderer at all — see `electron/edit-menu.ts`. */
 		onMenuUndo: (callback: () => void) => () => void;

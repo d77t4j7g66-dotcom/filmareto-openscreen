@@ -21,6 +21,8 @@
 		"export": "Exportar",
 		"showInFolder": "Mostrar na Pasta",
 		"file": "Arquivo",
+		"packageForEditing": "Empacotar para edição…",
+		"openPackage": "Abrir pacote…",
 		"edit": "Editar",
 		"view": "Visualizar",
 		"window": "Janela",

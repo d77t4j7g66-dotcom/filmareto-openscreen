@@ -90,6 +90,18 @@ public final class AudioTrackMixer {
 		/// enough that padding would materialize however long the outage lasted — the cursor
 		/// carries the track across the gap instead.
 		static let maxSilencePadFrames = sampleRate * 2
+		/// How far a buffer's stamp may sit from where the source's audio already ends and still be
+		/// taken as the next buffer of the same stream. Devices deliver in 10 ms buffers stamped one
+		/// by one from the host clock, so a stamp lands a frame or two off; placing it literally put
+		/// a frame of silence or a dropped frame at every seam, a click a hundred times a second.
+		/// 1 ms: far above that jitter, far below any buffer a source could restate whole, and a
+		/// device clock running apart from the host's still re-syncs, once the gap reaches it.
+		static let seamToleranceFrames: Int64 = Int64(sampleRate / 1_000)
+		/// Past the jitter allowance, a stamp still closer than this (and than half the buffer) is
+		/// the device's clock walking away from the host's, a frame every few buffers at most. It
+		/// is taken back one frame per buffer, a frame said twice or left out, where padding or
+		/// cutting the whole walk at once was a tick. Further off is a real gap or a restatement.
+		static let slewLimitFrames: Int64 = Int64(sampleRate / 200)
 		/// Writer backpressure allowance, in chunks (5 s). `expectsMediaDataInRealTime` keeps
 		/// this at zero or one in practice; the cap only bounds a pathological writer stall.
 		static let maxPendingChunks = 500
@@ -771,8 +783,36 @@ public final class AudioTrackMixer {
 		var endFrame: Int64 { startFrame + Int64(samples.count / MixFormat.channelCount) }
 
 		mutating func ingest(_ frames: [Float], atFrame frameIndex: Int64) {
+			let firstBuffer = !hasDelivered
 			hasDelivered = true
 			isStalled = false
+
+			// After the first buffer, one stamped within the allowances of where this source's audio
+			// ends follows on from that end, also when everything it held has already gone out (a
+			// buffer ending right on a chunk boundary leaves nothing pending, and placing the next
+			// one by its stamp put the frame-or-two seam back). `endFrame` is then `startFrame`.
+			let drift = frameIndex - endFrame
+			if !firstBuffer && abs(drift) <= MixFormat.seamToleranceFrames {
+				samples.append(contentsOf: frames)
+				return
+			}
+			// The device's clock walking from the host's: one frame back toward the stamps.
+			let bufferFrames = Int64(frames.count / MixFormat.channelCount)
+			if !firstBuffer && abs(drift) <= MixFormat.slewLimitFrames && abs(drift) * 2 < bufferFrames {
+				if drift > 0 {
+					// Behind the stamps: say the last frame once more (the buffer's first, when the
+					// last has gone out already), then the buffer.
+					let repeated = samples.isEmpty
+						? Array(frames.prefix(MixFormat.channelCount))
+						: Array(samples.suffix(MixFormat.channelCount))
+					samples.append(contentsOf: repeated)
+					samples.append(contentsOf: frames)
+				} else {
+					// Ahead of them: leave out the buffer's first frame.
+					samples.append(contentsOf: frames.dropFirst(MixFormat.channelCount))
+				}
+				return
+			}
 
 			if samples.isEmpty {
 				startFrame = frameIndex

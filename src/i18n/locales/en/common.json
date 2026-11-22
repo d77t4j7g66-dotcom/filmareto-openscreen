@@ -21,6 +21,8 @@
 		"export": "Export",
 		"showInFolder": "Show in Folder",
 		"file": "File",
+		"packageForEditing": "Package for Editing…",
+		"openPackage": "Open Package…",
 		"edit": "Edit",
 		"view": "View",
 		"window": "Window",

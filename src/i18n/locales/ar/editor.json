@@ -91,6 +91,8 @@
 		"toggleChatPanel": "لوحة الدردشة",
 		"openProject": "فتح مشروع",
 		"newProject": "مشروع جديد",
+		"packageForEditing": "تجهيز حزمة للتحرير",
+		"openPackage": "فتح حزمة",
 		"saveProject": "حفظ المشروع",
 		"unsaved": "غير محفوظ",
 		"saved": "تم الحفظ",
@@ -354,7 +356,7 @@
 		"openHint": "للفتح",
 		"browseFiles": "تصفح الملفات…",
 		"deleteProject": "حذف المشروع",
-		"confirmDelete": "هل تريد حذف هذا المشروع؟ سيتم الاحتفاظ بتسجيلاتك."
+		"confirmDelete": "حذف هذا المشروع؟ سينتقل إلى سلة المهملات مع تسجيلاته."
 	},
 	"editClipDialog": {
 		"title": "تعديل المقطع",
@@ -514,5 +516,27 @@
 		"layoutCutout": "Cutout",
 		"layoutFree": "Free",
 		"layoutScreen": "Screen"
+	},
+	"editorPackage": {
+		"packingTitle": "جارٍ تجهيز الحزمة",
+		"packingBody": "يتم نسخ المشروع والوسائط الخاصة به إلى حزمة…",
+		"packedTitle": "الحزمة جاهزة",
+		"packedBody": "تم حفظ الحزمة باسم {{path}}. أرسل ملف zip إلى المحرر.",
+		"reveal": "إظهار في المجلد",
+		"missingTitle": "بعض ملفات الوسائط مفقودة",
+		"missingBody": "لم يتم إنشاء الحزمة لأنه تعذر العثور على هذه الملفات:",
+		"conflictTitle": "المشروع موجود بالفعل",
+		"conflictBody": "يوجد مشروع «{{title}}» على هذا الكمبيوتر. هل تريد استبداله بالحزمة أم فتح الحزمة كنسخة منفصلة؟",
+		"replace": "استبدال الموجود",
+		"openAsCopy": "فتح كنسخة",
+		"openedTitle": "تم فتح الحزمة",
+		"openedBody": "«{{title}}» جاهز للتحرير.",
+		"errorTitle": "حدث خطأ ما",
+		"notAPackage": "هذه ليست حزمة محرر.",
+		"damaged": "هذه الحزمة تالفة ولا يمكن فتحها.",
+		"missingNoDetail": "بعض ملفات الوسائط مفقودة من الحزمة.",
+		"unsafePath": "تشير بعض المسارات في المشروع إلى خارج مجلده، لذلك لم يتم تجهيز الحزمة.",
+		"notFound": "تعذر العثور على المشروع. احفظه وحاول مرة أخرى.",
+		"reloadFailed": "تعذرت إعادة تحميل المشروع بعد فتح الحزمة."
 	}
 }

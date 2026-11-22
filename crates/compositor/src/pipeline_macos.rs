@@ -94,6 +94,15 @@ impl Drop for PacketGuard {
 /// seuil dépend du GOP des captures, pas du backend de décodage.
 const SEEK_FORWARD_MAX_SEC: f64 = 0.5;
 
+/// A frame more than this after a seek's target is not the frame FOR that target but a later one:
+/// a screen recording writes a frame only when the screen changes, so a still screen leaves gaps
+/// of up to a second (one a second, measured on ScreenCaptureKit takes). Taking that later frame
+/// put the preview's clock up to a second ahead, and the camera, cursor and zoom with it, until
+/// the drift watch pulled them back: the picture going "back and forth" after a click. Past this
+/// gap the frame before stays. 100 ms is above any constant rate a recording has (10 fps and up),
+/// so only a real still stretch is held.
+const STILL_GAP_SEC: f64 = 0.1;
+
 /// Pourquoi ce décodeur est ouvert. La preview et l'export ne demandent pas la même chose
 /// au décodeur, et sur macOS ils ne prennent donc pas le même backend.
 ///
@@ -387,9 +396,8 @@ impl Decoder {
     /// rapide compris : mêmes seuils, même critère d'arrêt (`decode_forward_to`), pour
     /// que les deux moteurs rendent la même frame au même coût relatif.
     pub unsafe fn seek_to(&mut self, seconds: f64) -> Result<*mut crate::ffi::AVFrame> {
-        // Tout seek invalide un éventuel peek en attente : il portait sur "la frame après
-        // l'ancienne position courante", qui n'a plus de sens une fois qu'on a sauté ailleurs.
-        self.has_peek = false;
+        // A peek waiting here is the next frame of the stream, and stays it while the decoder only
+        // moves forward (the fast paths below); the keyframe seek drops it, further down.
         let tb_sec = self.tb_sec();
 
         if tb_sec > 0.0 {
@@ -417,6 +425,9 @@ impl Decoder {
         }
 
         let target = if tb_sec > 0.0 { (seconds / tb_sec) as i64 } else { 0 };
+        // Tout seek keyframe invalide un éventuel peek en attente : il portait sur "la frame
+        // après l'ancienne position courante", qui n'a plus de sens une fois qu'on a sauté ailleurs.
+        self.has_peek = false;
         crate::ffi::averr(
             crate::ffi::av_seek_frame(self.fmt, self.vidx, target, crate::ffi::AVSEEK_FLAG_BACKWARD),
             "seek_to",
@@ -425,17 +436,38 @@ impl Decoder {
         // L'état vient d'être jeté : plus aucune frame courante exploitable.
         self.cur_pts = None;
         self.sent_eof = false;
+        let first = self.next()?;
+        if first.is_null() {
+            return Ok(ptr::null_mut());
+        }
+        if tb_sec <= 0.0 {
+            return Ok(first);
+        }
+        self.settle_at(seconds, tb_sec, first)
+    }
+
+    /// From `current`, the frame just decoded, moves on to the frame on screen at `seconds`: the
+    /// first frame at or after it, as before, unless that one comes more than `STILL_GAP_SEC`
+    /// later. Then `current` stays, and the later frame waits as the peek for its turn. A frame
+    /// without a usable pts is taken as it comes, and the end of the stream before the target is
+    /// `null`, both as before (`seek_to_or_last` places the last frame).
+    unsafe fn settle_at(
+        &mut self,
+        seconds: f64,
+        tb_sec: f64,
+        mut current: *mut crate::ffi::AVFrame,
+    ) -> Result<*mut crate::ffi::AVFrame> {
         loop {
-            let f = self.next()?;
-            if f.is_null() {
-                return Ok(ptr::null_mut());
-            }
-            let pts = (*f).best_effort_timestamp;
-            if pts == i64::MIN || tb_sec <= 0.0 {
-                return Ok(f);
-            }
+            let Some(pts) = self.cur_pts else {
+                return Ok(current);
+            };
             if (pts as f64) * tb_sec >= seconds - tb_sec * 0.5 {
-                return Ok(f);
+                return Ok(current);
+            }
+            match self.peek_next_time_sec()? {
+                NextFrameTime::At(next) if next > seconds + STILL_GAP_SEC => return Ok(current),
+                NextFrameTime::At(_) | NextFrameTime::Unknown => current = self.commit_peek()?,
+                NextFrameTime::Eof => return Ok(ptr::null_mut()),
             }
         }
     }
@@ -462,19 +494,10 @@ impl Decoder {
     /// Déroule le décodeur en avant jusqu'à la première frame à `seconds` ou après, SANS
     /// jeter son état. Symétrique de `pipeline_windows::Decoder::decode_forward_to`.
     unsafe fn decode_forward_to(&mut self, seconds: f64, tb_sec: f64) -> Result<*mut crate::ffi::AVFrame> {
-        loop {
-            let f = self.next()?;
-            if f.is_null() {
-                return Ok(ptr::null_mut());
-            }
-            let pts = (*f).best_effort_timestamp;
-            if pts == i64::MIN {
-                return Ok(f);
-            }
-            if (pts as f64) * tb_sec >= seconds - tb_sec * 0.5 {
-                return Ok(f);
-            }
-        }
+        // From the frame held now, which is before the target (the caller checked): the same
+        // rule as the keyframe seek, so both paths land on the same frame.
+        let current = self.cur_frame();
+        self.settle_at(seconds, tb_sec, current)
     }
 
     /// Rend la prochaine frame (valide jusqu'au prochain appel), ou null à EOF.

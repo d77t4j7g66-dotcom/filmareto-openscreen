@@ -1,5 +1,6 @@
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { AxcutDocument } from "../../../src/lib/ai-edition/schema";
 import { documentSchema } from "../../../src/lib/ai-edition/schema";
 import type {
 	AiEditionAssetResult,
@@ -41,6 +42,14 @@ import type { McpController } from "../../mcp/mcp-controller";
 export interface AiEditionServiceOptions {
 	documents: DocumentService;
 	deleteChatHistory?: (projectId: string) => Promise<void>;
+	/**
+	 * Where a deleted project's file and recordings go: the Trash, so Finder's Put Back undoes it
+	 * (`electron/media-cleanup`). Absent (the CLI, tests), a delete removes only the project file.
+	 */
+	recordings?: {
+		trashFile: (file: string) => Promise<void>;
+		trashDeletedProject: (deleted: AxcutDocument) => Promise<unknown>;
+	};
 	/**
 	 * A factory, not an instance: building `LlmConfigStore` does two sync
 	 * readFileSync plus a `safeStorage` decrypt, and on macOS that decrypt is
@@ -149,13 +158,38 @@ export class AiEditionService {
 	}
 
 	async deleteProject(projectId: string): Promise<AiEditionDocumentResult> {
+		const recordings = this.options.recordings;
+		// Read before it goes: the recordings to move are the ones this document names.
+		const deleted = recordings
+			? await this.options.documents.getProject(projectId).catch(() => null)
+			: null;
 		try {
+			if (recordings && deleted) {
+				// A volume with no Trash: the file is then removed below, as it always was.
+				await recordings
+					.trashFile(this.options.documents.filePathFor(projectId))
+					.catch((error: unknown) =>
+						console.warn(`[ai-edition] could not move ${projectId} to the Trash:`, error),
+					);
+			}
+			// Removes what is left: a legacy `.axcut`, or the file itself where nothing trashes.
 			await this.options.documents.deleteProject(projectId);
 		} catch (error) {
 			return {
 				success: false,
 				error: error instanceof Error ? error.message : String(error),
 			};
+		}
+		if (recordings && deleted) {
+			try {
+				await recordings.trashDeletedProject(deleted);
+			} catch (error) {
+				// The project is gone; a take left on the disk is clutter, not a failed delete.
+				console.warn(
+					`[ai-edition] could not move the recordings of ${projectId} to the Trash:`,
+					error,
+				);
+			}
 		}
 		try {
 			await this.options.deleteChatHistory?.(projectId);

@@ -91,6 +91,8 @@
 		"toggleChatPanel": "聊天面板",
 		"openProject": "開啟專案",
 		"newProject": "新專案",
+		"packageForEditing": "封裝給剪輯師",
+		"openPackage": "開啟封裝",
 		"saveProject": "儲存專案",
 		"unsaved": "未儲存",
 		"saved": "已儲存",
@@ -354,7 +356,7 @@
 		"openHint": "開啟",
 		"browseFiles": "瀏覽檔案…",
 		"deleteProject": "刪除專案",
-		"confirmDelete": "刪除此專案？您的錄影檔案會保留。"
+		"confirmDelete": "刪除此專案？它會連同錄製內容一起移到垃圾桶。"
 	},
 	"editClipDialog": {
 		"title": "編輯片段",
@@ -514,5 +516,27 @@
 		"layoutCutout": "Cutout",
 		"layoutFree": "Free",
 		"layoutScreen": "Screen"
+	},
+	"editorPackage": {
+		"packingTitle": "正在封裝專案",
+		"packingBody": "正在將專案及其媒體複製到封裝中…",
+		"packedTitle": "封裝已就緒",
+		"packedBody": "封裝已儲存為 {{path}}。請將 zip 傳給你的剪輯師。",
+		"reveal": "在資料夾中顯示",
+		"missingTitle": "缺少部分媒體檔案",
+		"missingBody": "由於找不到以下檔案，未能建立封裝：",
+		"conflictTitle": "專案已存在",
+		"conflictBody": "此電腦上已有名為「{{title}}」的專案。要用封裝取代它，還是將封裝以獨立副本開啟？",
+		"replace": "取代現有專案",
+		"openAsCopy": "以副本開啟",
+		"openedTitle": "封裝已開啟",
+		"openedBody": "「{{title}}」可以開始編輯了。",
+		"errorTitle": "發生了一些問題",
+		"notAPackage": "這不是編輯器封裝。",
+		"damaged": "此封裝已損毀，無法開啟。",
+		"missingNoDetail": "封裝中缺少部分媒體檔案。",
+		"unsafePath": "專案中有些路徑指向其資料夾之外，因此未封裝。",
+		"notFound": "找不到該專案。請先儲存後再試。",
+		"reloadFailed": "開啟封裝後無法重新載入專案。"
 	}
 }

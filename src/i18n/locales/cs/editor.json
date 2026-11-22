@@ -91,6 +91,8 @@
 		"toggleChatPanel": "Panel chatu",
 		"openProject": "Otevřít projekt",
 		"newProject": "Nový projekt",
+		"packageForEditing": "Zabalit k úpravám",
+		"openPackage": "Otevřít balíček",
 		"saveProject": "Uložit projekt",
 		"unsaved": "Neuloženo",
 		"saved": "Uloženo",
@@ -354,7 +356,7 @@
 		"openHint": "pro otevření",
 		"browseFiles": "Procházet soubory…",
 		"deleteProject": "Smazat projekt",
-		"confirmDelete": "Smazat tento projekt? Vaše nahrávky budou zachovány."
+		"confirmDelete": "Smazat tento projekt? Přesune se do Koše i se svými nahrávkami."
 	},
 	"editClipDialog": {
 		"title": "Upravit klip",
@@ -514,5 +516,27 @@
 		"layoutCutout": "Cutout",
 		"layoutFree": "Free",
 		"layoutScreen": "Screen"
+	},
+	"editorPackage": {
+		"packingTitle": "Balení projektu",
+		"packingBody": "Projekt a jeho média se kopírují do balíčku…",
+		"packedTitle": "Balíček je hotový",
+		"packedBody": "Balíček byl uložen jako {{path}}. Pošlete zip svému střihači.",
+		"reveal": "Zobrazit ve složce",
+		"missingTitle": "Chybí některé mediální soubory",
+		"missingBody": "Balíček nebyl vytvořen, protože tyto soubory nebyly nalezeny:",
+		"conflictTitle": "Projekt již existuje",
+		"conflictBody": "Projekt „{{title}}“ už v tomto počítači je. Nahradit ho balíčkem, nebo otevřít balíček jako samostatnou kopii?",
+		"replace": "Nahradit stávající",
+		"openAsCopy": "Otevřít jako kopii",
+		"openedTitle": "Balíček otevřen",
+		"openedBody": "„{{title}}“ je připraven k úpravám.",
+		"errorTitle": "Něco se pokazilo",
+		"notAPackage": "Toto není balíček editoru.",
+		"damaged": "Balíček je poškozený a nelze ho otevřít.",
+		"missingNoDetail": "V balíčku chybí některé mediální soubory.",
+		"unsafePath": "Některé cesty v projektu vedou mimo jeho složku, proto nebyl zabalen.",
+		"notFound": "Projekt se nepodařilo najít. Uložte ho a zkuste to znovu.",
+		"reloadFailed": "Projekt se po otevření balíčku nepodařilo znovu načíst."
 	}
 }

@@ -1,4 +1,3 @@
-import { claudeSignIn, claudeStatus } from "../ai-edition/claude-subscription";
 import { type ChildProcessWithoutNullStreams, spawn } from "node:child_process";
 import { EventEmitter } from "node:events";
 import { constants as fsConstants } from "node:fs";
@@ -65,8 +64,9 @@ import {
 	runChat,
 	selectSession,
 } from "../ai-edition/chat-service";
+import { claudeSignIn, claudeStatus } from "../ai-edition/claude-subscription";
 import type { CursorTelemetryReader } from "../ai-edition/deep-agent/service";
-import { DocumentService } from "../ai-edition/document-service";
+import { DocumentService, type ProjectVersion } from "../ai-edition/document-service";
 import { LlmConfigStore } from "../ai-edition/llm-config-store";
 import { StylePresetService } from "../ai-edition/style-preset-service";
 import { AppSettingsStore } from "../app-settings";
@@ -105,6 +105,11 @@ import {
 	type TalkingHeadAnalysis,
 } from "../media/talkingHead";
 import { analyseVoiceRegions, type VoiceRegionsResult } from "../media/voiceRegions";
+import {
+	type CleanupDeps,
+	sweepUnusedTakes,
+	trashDeletedProject,
+} from "../media-cleanup/recordingsCleanup";
 import { showOpenDialogOver, showSaveDialogOver } from "../messageBox";
 import {
 	type LinuxCaptureSourceKind,
@@ -129,6 +134,13 @@ import {
 } from "../native-bridge/screen/macPickerSession";
 import { readMacScreenCaptureAccess } from "../native-bridge/screen/macScreenAccess";
 import { CompositorViewService } from "../native-bridge/services/compositorViewService";
+import { buildEditorPackage } from "../package/buildPackage";
+import { handleOpenEditorPackage, handlePackageProject, type PackageIpcDeps } from "../package/ipc";
+import { openEditorPackage } from "../package/openPackage";
+import {
+	RECORDING_SESSION_SUFFIX,
+	sessionManifestPathForVideo,
+} from "../package/packageReferences";
 import { getMacPermissions, showPermissionsWindow } from "../permissions";
 import { scoreDeviceNameMatch } from "../recording/deviceNameMatching";
 import { recordingStorageProblem } from "../recording/diskSpaceCheck";
@@ -188,7 +200,6 @@ import { type SelectSourceContext, selectSourceWithOwnership } from "./selectSou
 const PROJECT_FILE_EXTENSION = "openscreen";
 export const SHORTCUTS_FILE = path.join(app.getPath("userData"), "shortcuts.json");
 const RECORDING_FILE_PREFIX = "recording-";
-const RECORDING_SESSION_SUFFIX = ".session.json";
 const ALLOWED_IMPORT_VIDEO_EXTENSIONS = new Set([
 	".webm",
 	".mp4",
@@ -1802,19 +1813,11 @@ function setCurrentRecordingSessionState(session: RecordingSession | null) {
 	currentVideoPath = session?.screenVideoPath ?? null;
 }
 
-function getSessionManifestPathForVideo(videoPath: string) {
-	const parsedPath = path.parse(videoPath);
-	const baseName = parsedPath.name.endsWith("-webcam")
-		? parsedPath.name.slice(0, -"-webcam".length)
-		: parsedPath.name;
-	return path.join(parsedPath.dir, `${baseName}${RECORDING_SESSION_SUFFIX}`);
-}
-
 async function loadRecordedSessionForVideoPath(
 	videoPath: string,
 ): Promise<RecordingSession | null> {
 	try {
-		const manifestPath = getSessionManifestPathForVideo(videoPath);
+		const manifestPath = sessionManifestPathForVideo(videoPath);
 		if (!isPathAllowed(manifestPath)) {
 			const parsedVideoPath = path.parse(videoPath);
 			if (!isPathWithinDir(path.resolve(manifestPath), parsedVideoPath.dir)) {
@@ -4740,6 +4743,37 @@ export function registerIpcHandlers(
 		},
 	);
 
+	// Editor packages: the work is in `package/ipc.ts`; this only supplies Electron's side of it.
+	const packageIpcDeps = (sender: WebContents): PackageIpcDeps => ({
+		recordingsDir: RECORDINGS_DIR,
+		registryDir: DEFAULT_RECORDINGS_DIR,
+		userDataDir: app.getPath("userData"),
+		appVersion: app.getVersion(),
+		listProjects: () => aiEditionDocuments.listProjects(),
+		getProject: (id) => aiEditionDocuments.getProject(id),
+		saveProject: (doc) => aiEditionDocuments.saveProject(doc),
+		showOpenDialog: (options) => {
+			const parent = BrowserWindow.fromWebContents(sender);
+			return parent ? dialog.showOpenDialog(parent, options) : dialog.showOpenDialog(options);
+		},
+		showItemInFolder: (fullPath) => shell.showItemInFolder(fullPath),
+		sendProgress: (progress) => {
+			if (!sender.isDestroyed()) sender.send("editor-package-progress", progress);
+		},
+		build: buildEditorPackage,
+		open: openEditorPackage,
+	});
+
+	ipcMain.handle("package-project-for-editor", (event, projectId: string) =>
+		handlePackageProject(packageIpcDeps(event.sender), projectId),
+	);
+
+	ipcMain.handle(
+		"open-editor-package",
+		(event, opts?: { source?: string; mode?: "replace" | "copy" }) =>
+			handleOpenEditorPackage(packageIpcDeps(event.sender), opts ?? {}),
+	);
+
 	async function saveProjectFile(
 		projectData: unknown,
 		suggestedName?: string,
@@ -5147,6 +5181,13 @@ export function registerIpcHandlers(
 		approveDocumentMedia,
 		() => stylePresets.newProjectAppearance(),
 	);
+	/** What the recordings cleanup reads and moves; the recordings folder as it is now. */
+	const recordingsCleanupDeps = (): CleanupDeps => ({
+		recordingsDir: RECORDINGS_DIR,
+		readAllProjectFilesRaw: () => aiEditionDocuments.readAllProjectFilesRaw(),
+		trash: (file) => shell.trashItem(file),
+		log: (message) => console.warn(`[recordings-cleanup] ${message}`),
+	});
 
 	// LlmConfigStore is single-instance for a duller reason — its constructor does
 	// two sync readFileSync plus a safeStorage decrypt, and it was running on every
@@ -5353,6 +5394,18 @@ export function registerIpcHandlers(
 			}
 		},
 		getAiEditionDocuments: () => aiEditionDocuments,
+		getRecordingsTrash: () => ({
+			trashFile: (file: string) => shell.trashItem(file),
+			trashDeletedProject: async (deleted) => {
+				const result = await trashDeletedProject(recordingsCleanupDeps(), deleted);
+				console.info(
+					`[recordings-cleanup] deleted ${deleted.project.id}: ${result.trashed.length} file(s) to the Trash` +
+						(result.kept.length ? `, ${result.kept.length} left` : "") +
+						(result.failedClosed ? ", none moved: a project file could not be read" : ""),
+				);
+				return result;
+			},
+		}),
 		getStylePresets: () => stylePresets,
 		getAiEditionLlmConfig,
 		runAiEditionChat: (projectId, sessionId, message, document, sink) =>
@@ -5385,6 +5438,39 @@ export function registerIpcHandlers(
 
 	// `openscreen mcp` serves the same tools on stdio, from the CLI process.
 	return {
+		/** Takes deleted from a timeline leave their project for the Trash. GUI start only. */
+		sweepUnusedTakes: async () => {
+			const versions = new Map<string, ProjectVersion>();
+			const result = await sweepUnusedTakes({
+				...recordingsCleanupDeps(),
+				listProjects: async () => {
+					const docs: AxcutDocument[] = [];
+					for (const summary of await aiEditionDocuments.listProjects()) {
+						const { document, version } = await aiEditionDocuments.getProjectForUpdate(summary.id);
+						versions.set(document.project.id, version);
+						docs.push(document);
+					}
+					return docs;
+				},
+				projectOpenInEditor: () => aiEditionDocuments.projectOpenInEditor(),
+				saveIfUnchanged: async (next, previous) => {
+					const version = versions.get(previous.project.id);
+					if (!version) return false;
+					return (
+						(await aiEditionDocuments
+							.saveProjectIfUnchanged(next, version, { keepUpdatedAt: true })
+							.catch(() => null)) !== null
+					);
+				},
+			});
+			if (result.trashed.length || result.kept.length || result.failedClosed) {
+				console.info(
+					`[recordings-cleanup] start: ${result.trashed.length} unused take file(s) to the Trash` +
+						(result.kept.length ? `, ${result.kept.length} left` : "") +
+						(result.failedClosed ? ", none moved: a project file could not be read" : ""),
+				);
+			}
+		},
 		mcpController,
 		mcpAppChannel: { deps: mcpToolDeps, runTool: mcpRunTool },
 		agentServices: {

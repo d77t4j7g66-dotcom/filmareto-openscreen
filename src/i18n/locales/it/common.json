@@ -21,6 +21,8 @@
 		"export": "Esporta",
 		"showInFolder": "Mostra nella cartella",
 		"file": "File",
+		"packageForEditing": "Crea pacchetto per la modifica…",
+		"openPackage": "Apri pacchetto…",
 		"edit": "Modifica",
 		"view": "Visualizza",
 		"window": "Finestra",

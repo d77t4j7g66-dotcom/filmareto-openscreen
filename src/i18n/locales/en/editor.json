@@ -91,6 +91,8 @@
 		"toggleChatPanel": "Chat panel",
 		"openProject": "Open project",
 		"newProject": "New project",
+		"packageForEditing": "Package for editing",
+		"openPackage": "Open package",
 		"saveProject": "Save project",
 		"unsaved": "Unsaved",
 		"saved": "Saved",
@@ -354,7 +356,7 @@
 		"openHint": "to open",
 		"browseFiles": "Browse files…",
 		"deleteProject": "Delete project",
-		"confirmDelete": "Delete this project? Your recordings are kept."
+		"confirmDelete": "Delete this project? It goes to the Trash with its recordings."
 	},
 	"editClipDialog": {
 		"title": "Edit clip",
@@ -514,5 +516,27 @@
 		"layoutCutout": "Cutout",
 		"layoutFree": "Free",
 		"layoutScreen": "Screen"
+	},
+	"editorPackage": {
+		"packingTitle": "Packaging project",
+		"packingBody": "Copying the project and its media into a package…",
+		"packedTitle": "Package ready",
+		"packedBody": "The package was saved as {{path}}. Send the zip to your editor.",
+		"reveal": "Show in folder",
+		"missingTitle": "Some media files are missing",
+		"missingBody": "The package was not created because these files could not be found:",
+		"conflictTitle": "Project already exists",
+		"conflictBody": "A project “{{title}}” is already on this computer. Replace it with the package, or open the package as a separate copy?",
+		"replace": "Replace existing",
+		"openAsCopy": "Open as copy",
+		"openedTitle": "Package opened",
+		"openedBody": "“{{title}}” is ready to edit.",
+		"errorTitle": "Something went wrong",
+		"notAPackage": "This is not an editor package.",
+		"damaged": "This package is damaged and cannot be opened.",
+		"missingNoDetail": "Some media files are missing from the package.",
+		"unsafePath": "Some paths in the project point outside its folder, so it was not packaged.",
+		"notFound": "The project could not be found. Save it and try again.",
+		"reloadFailed": "The project could not be reloaded after opening the package."
 	}
 }

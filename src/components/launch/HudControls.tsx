@@ -1,4 +1,3 @@
-import { useScopedT } from "@/contexts/I18nContext";
 import { Check, Languages, NotepadText, Settings } from "lucide-react";
 import {
 	createContext,
@@ -9,6 +8,7 @@ import {
 	useRef,
 	useState,
 } from "react";
+import { useScopedT } from "@/contexts/I18nContext";
 import { moveMenuFocus } from "@/lib/menuKeyboard";
 import { formatTimePadded } from "../../utils/timeUtils";
 import { Button } from "../ui/button";
@@ -424,7 +424,9 @@ export const HudSceneRunControls = memo(function HudSceneRunControls({
 			className={`flex items-center gap-1.5 ${vertical ? "flex-col" : ""} ${styles.electronNoDrag}`}
 		>
 			<span className="max-w-[150px] truncate px-1 text-[11px] font-medium text-white/80">
-				{next ? t("scene.nextOf", { number: nextNumber ?? 0, count, name: next }) : t("scene.allDone")}
+				{next
+					? t("scene.nextOf", { number: nextNumber ?? 0, count, name: next })
+					: t("scene.allDone")}
 			</span>
 			{done ? (
 				<HudTooltip content={t("scene.againNamed", { name: done })}>
@@ -445,12 +447,15 @@ export const HudSegmentControls = memo(function HudSegmentControls({
 	vertical,
 	stageIndex,
 	stageCount,
+	take,
 	onRetry,
 	onNext,
 }: {
 	vertical: boolean;
 	stageIndex: number;
 	stageCount: number;
+	/** Which attempt at this segment the take is on: 2 after one "again". */
+	take: number;
 	onRetry: () => void;
 	onNext: () => void;
 }) {
@@ -463,6 +468,14 @@ export const HudSegmentControls = memo(function HudSegmentControls({
 			<span className="px-1 text-[11px] font-medium text-white/70 tabular-nums">
 				{stageIndex + 1}/{stageCount}
 			</span>
+			{take > 1 ? (
+				<span
+					data-testid="hud-segment-take"
+					className="px-1 text-[11px] font-medium text-white tabular-nums"
+				>
+					{t("scene.take", { number: take })}
+				</span>
+			) : null}
 			<HudTooltip content={t("scene.retrySegment")}>
 				<button
 					type="button"

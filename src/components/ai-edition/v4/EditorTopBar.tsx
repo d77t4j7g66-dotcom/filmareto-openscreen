@@ -7,6 +7,8 @@ import {
 	Keyboard,
 	Languages,
 	Moon,
+	Package as PackageIcon,
+	PackageOpen,
 	PanelLeft,
 	Redo2,
 	RefreshCw,
@@ -32,6 +34,8 @@ export interface TopBarActions {
 	openProject: () => void;
 	newProject: () => void;
 	save: () => void;
+	packageForEditing: () => void;
+	openPackage: () => void;
 	export: () => void;
 	openSettings: () => void;
 	renameProject: (title: string) => void;
@@ -415,6 +419,24 @@ function AppMenu({ actions }: { actions: TopBarActions }) {
 					>
 						<Save size={15} />
 						{tEditor("topbar.saveProject")}
+					</button>
+					<button
+						type="button"
+						role="menuitem"
+						className={styles.appMenuRow}
+						onClick={run(actions.packageForEditing)}
+					>
+						<PackageIcon size={15} />
+						{tEditor("topbar.packageForEditing")}
+					</button>
+					<button
+						type="button"
+						role="menuitem"
+						className={styles.appMenuRow}
+						onClick={run(actions.openPackage)}
+					>
+						<PackageOpen size={15} />
+						{tEditor("topbar.openPackage")}
 					</button>
 					<div className={styles.appMenuSep} aria-hidden />
 					<button

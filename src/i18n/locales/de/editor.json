@@ -91,6 +91,8 @@
 		"toggleChatPanel": "Chat-Panel",
 		"openProject": "Projekt öffnen",
 		"newProject": "Neues Projekt",
+		"packageForEditing": "Für Bearbeitung verpacken",
+		"openPackage": "Paket öffnen",
 		"saveProject": "Projekt speichern",
 		"unsaved": "Nicht gespeichert",
 		"saved": "Gespeichert",
@@ -354,7 +356,7 @@
 		"openHint": "zum Öffnen",
 		"browseFiles": "Dateien durchsuchen…",
 		"deleteProject": "Projekt löschen",
-		"confirmDelete": "Dieses Projekt löschen? Deine Aufnahmen bleiben erhalten."
+		"confirmDelete": "Dieses Projekt löschen? Es wird mit seinen Aufnahmen in den Papierkorb verschoben."
 	},
 	"editClipDialog": {
 		"title": "Clip bearbeiten",
@@ -514,5 +516,27 @@
 		"layoutCutout": "Cutout",
 		"layoutFree": "Free",
 		"layoutScreen": "Screen"
+	},
+	"editorPackage": {
+		"packingTitle": "Projekt wird verpackt",
+		"packingBody": "Das Projekt und seine Medien werden in ein Paket kopiert…",
+		"packedTitle": "Paket fertig",
+		"packedBody": "Das Paket wurde als {{path}} gespeichert. Sende die ZIP-Datei an deinen Editor.",
+		"reveal": "Im Ordner zeigen",
+		"missingTitle": "Einige Mediendateien fehlen",
+		"missingBody": "Das Paket wurde nicht erstellt, weil diese Dateien nicht gefunden wurden:",
+		"conflictTitle": "Projekt existiert bereits",
+		"conflictBody": "Auf diesem Computer gibt es bereits ein Projekt „{{title}}“. Durch das Paket ersetzen oder das Paket als eigene Kopie öffnen?",
+		"replace": "Vorhandenes ersetzen",
+		"openAsCopy": "Als Kopie öffnen",
+		"openedTitle": "Paket geöffnet",
+		"openedBody": "„{{title}}“ ist bereit zur Bearbeitung.",
+		"errorTitle": "Etwas ist schiefgelaufen",
+		"notAPackage": "Das ist kein Editor-Paket.",
+		"damaged": "Dieses Paket ist beschädigt und kann nicht geöffnet werden.",
+		"missingNoDetail": "Im Paket fehlen einige Mediendateien.",
+		"unsafePath": "Einige Pfade im Projekt zeigen außerhalb seines Ordners, daher wurde es nicht verpackt.",
+		"notFound": "Das Projekt wurde nicht gefunden. Speichere es und versuche es erneut.",
+		"reloadFailed": "Das Projekt konnte nach dem Öffnen des Pakets nicht neu geladen werden."
 	}
 }

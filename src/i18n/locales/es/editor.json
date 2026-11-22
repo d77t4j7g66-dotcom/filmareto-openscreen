@@ -91,6 +91,8 @@
 		"toggleChatPanel": "Panel de chat",
 		"openProject": "Abrir proyecto",
 		"newProject": "Nuevo proyecto",
+		"packageForEditing": "Empaquetar para edición",
+		"openPackage": "Abrir paquete",
 		"saveProject": "Guardar proyecto",
 		"unsaved": "Sin guardar",
 		"saved": "Guardado",
@@ -354,7 +356,7 @@
 		"openHint": "para abrir",
 		"browseFiles": "Explorar archivos…",
 		"deleteProject": "Eliminar proyecto",
-		"confirmDelete": "¿Eliminar este proyecto? Tus grabaciones se conservan."
+		"confirmDelete": "¿Eliminar este proyecto? Irá a la Papelera con sus grabaciones."
 	},
 	"editClipDialog": {
 		"title": "Editar clip",
@@ -514,5 +516,27 @@
 		"layoutCutout": "Cutout",
 		"layoutFree": "Free",
 		"layoutScreen": "Screen"
+	},
+	"editorPackage": {
+		"packingTitle": "Empaquetando el proyecto",
+		"packingBody": "Copiando el proyecto y sus archivos multimedia a un paquete…",
+		"packedTitle": "Paquete listo",
+		"packedBody": "El paquete se guardó como {{path}}. Envía el zip a tu editor.",
+		"reveal": "Mostrar en la carpeta",
+		"missingTitle": "Faltan algunos archivos multimedia",
+		"missingBody": "No se creó el paquete porque no se encontraron estos archivos:",
+		"conflictTitle": "El proyecto ya existe",
+		"conflictBody": "Ya hay un proyecto «{{title}}» en este equipo. ¿Reemplazarlo por el paquete o abrir el paquete como una copia aparte?",
+		"replace": "Reemplazar el existente",
+		"openAsCopy": "Abrir como copia",
+		"openedTitle": "Paquete abierto",
+		"openedBody": "«{{title}}» está listo para editar.",
+		"errorTitle": "Algo salió mal",
+		"notAPackage": "Esto no es un paquete del editor.",
+		"damaged": "Este paquete está dañado y no se puede abrir.",
+		"missingNoDetail": "Faltan algunos archivos multimedia en el paquete.",
+		"unsafePath": "Algunas rutas del proyecto apuntan fuera de su carpeta, por lo que no se empaquetó.",
+		"notFound": "No se encontró el proyecto. Guárdalo e inténtalo de nuevo.",
+		"reloadFailed": "No se pudo volver a cargar el proyecto tras abrir el paquete."
 	}
 }

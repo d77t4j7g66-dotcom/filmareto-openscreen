@@ -21,6 +21,8 @@
 		"export": "Exportar",
 		"showInFolder": "Mostrar en carpeta",
 		"file": "Archivo",
+		"packageForEditing": "Empaquetar para edición…",
+		"openPackage": "Abrir paquete…",
 		"edit": "Editar",
 		"view": "Vista",
 		"window": "Ventana",

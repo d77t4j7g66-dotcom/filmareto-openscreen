@@ -1,4 +1,3 @@
-import { stopClaudeTurns } from "./ai-edition/claude-subscription";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -24,6 +23,7 @@ import {
 	usesNativeAboutPanel,
 } from "./about";
 import { flushChatPersistence } from "./ai-edition/chat-service";
+import { stopClaudeTurns } from "./ai-edition/claude-subscription";
 import {
 	blockedFromInstalling,
 	checkForSelfUpdate,
@@ -260,7 +260,13 @@ function isEditorWindow(window: BrowserWindow) {
 }
 
 function sendEditorMenuAction(
-	channel: "menu-load-project" | "menu-save-project" | "menu-save-project-as" | "menu-new-project",
+	channel:
+		| "menu-load-project"
+		| "menu-save-project"
+		| "menu-save-project-as"
+		| "menu-new-project"
+		| "menu-package-for-editor"
+		| "menu-open-editor-package",
 ) {
 	let targetWindow = BrowserWindow.getFocusedWindow() ?? mainWindow;
 
@@ -369,6 +375,15 @@ function setupApplicationMenu() {
 					accelerator: "CmdOrCtrl+Shift+S",
 					click: () => sendEditorMenuAction("menu-save-project-as"),
 				},
+				{ type: "separator" as const },
+				{
+					label: mainT("common", "actions.packageForEditing") || "Package for Editing…",
+					click: () => sendEditorMenuAction("menu-package-for-editor"),
+				},
+				{
+					label: mainT("common", "actions.openPackage") || "Open Package…",
+					click: () => sendEditorMenuAction("menu-open-editor-package"),
+				},
 				...(isMac
 					? []
 					: [
@@ -472,7 +487,6 @@ function setupApplicationMenu() {
 					label: mainT("common", "actions.saveDiagnostics") || "Save Diagnostics",
 					click: runSaveDiagnostics,
 				},
-				
 			],
 		});
 	}
@@ -1594,7 +1608,7 @@ appReady?.then(async () => {
 
 	registerTeleprompter(() => notesWindow);
 	registerGraphics();
-	const { mcpController, mcpAppChannel } = registerIpcHandlers(
+	const { mcpController, mcpAppChannel, sweepUnusedTakes } = registerIpcHandlers(
 		createEditorWindowWrapper,
 		createSourceSelectorWindowWrapper,
 		createCountdownOverlayWindowWrapper,
@@ -1639,6 +1653,15 @@ appReady?.then(async () => {
 		return;
 	}
 
+	// Before any window can open a project: the takes deleted from a timeline leave their project
+	// for the Trash (electron/media-cleanup). Only here, in the app's own launch: never in the CLI,
+	// `openscreen mcp`, a runner or a second instance. Bounded, so a slow disk never holds the app.
+	await Promise.race([
+		sweepUnusedTakes().catch((error: unknown) =>
+			console.warn("[recordings-cleanup] the start sweep failed:", error),
+		),
+		new Promise((resolve) => setTimeout(resolve, 8000)),
+	]);
 	createWindow();
 	// Off unless the user turned it on in Settings → AI. Started here rather than
 	// in registerIpcHandlers so neither the headless CLI nor a bench run binds it.

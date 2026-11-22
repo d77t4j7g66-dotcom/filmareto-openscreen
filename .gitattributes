@@ -25,3 +25,7 @@ workbench/measurements/** -text
 # files in public/, served from the tree (README, raw.githubusercontent links),
 # never from an archive, so leaving them out of archives costs nothing.
 docs/assets/** export-ignore
+
+# Internal design notes name people and how they work: kept out of the public snapshots
+# (packaging/publish-release.sh publishes `git archive HEAD`, which honours export-ignore).
+docs/superpowers export-ignore

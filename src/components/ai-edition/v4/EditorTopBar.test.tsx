@@ -68,6 +68,8 @@ function renderTopBar(
 					openProject: onOpenProject,
 					newProject: onNewProject,
 					save: onSave,
+					packageForEditing: noop,
+					openPackage: noop,
 					export: noop,
 					openSettings: onOpenSettings,
 					renameProject: onRename,

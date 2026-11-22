@@ -91,6 +91,8 @@
 		"toggleChatPanel": "Panneau de discussion",
 		"openProject": "Ouvrir un projet",
 		"newProject": "Nouveau projet",
+		"packageForEditing": "Empaqueter pour le montage",
+		"openPackage": "Ouvrir un paquet",
 		"saveProject": "Enregistrer le projet",
 		"unsaved": "Non enregistré",
 		"saved": "Enregistré",
@@ -354,7 +356,7 @@
 		"openHint": "pour ouvrir",
 		"browseFiles": "Parcourir les fichiers…",
 		"deleteProject": "Supprimer le projet",
-		"confirmDelete": "Supprimer ce projet ? Vos enregistrements sont conservés."
+		"confirmDelete": "Supprimer ce projet ? Il ira à la Corbeille avec ses enregistrements."
 	},
 	"editClipDialog": {
 		"title": "Modifier le clip",
@@ -514,5 +516,27 @@
 		"layoutCutout": "Cutout",
 		"layoutFree": "Free",
 		"layoutScreen": "Screen"
+	},
+	"editorPackage": {
+		"packingTitle": "Création du paquet",
+		"packingBody": "Copie du projet et de ses médias dans un paquet…",
+		"packedTitle": "Paquet prêt",
+		"packedBody": "Le paquet a été enregistré sous {{path}}. Envoyez le zip à votre monteur.",
+		"reveal": "Afficher dans le dossier",
+		"missingTitle": "Des fichiers médias sont introuvables",
+		"missingBody": "Le paquet n’a pas été créé car ces fichiers sont introuvables :",
+		"conflictTitle": "Le projet existe déjà",
+		"conflictBody": "Un projet « {{title}} » existe déjà sur cet ordinateur. Le remplacer par le paquet ou ouvrir le paquet comme copie séparée ?",
+		"replace": "Remplacer l’existant",
+		"openAsCopy": "Ouvrir comme copie",
+		"openedTitle": "Paquet ouvert",
+		"openedBody": "« {{title}} » est prêt à être monté.",
+		"errorTitle": "Une erreur est survenue",
+		"notAPackage": "Ceci n’est pas un paquet d’éditeur.",
+		"damaged": "Ce paquet est endommagé et ne peut pas être ouvert.",
+		"missingNoDetail": "Des fichiers médias sont absents du paquet.",
+		"unsafePath": "Certains chemins du projet pointent hors de son dossier, il n’a donc pas été empaqueté.",
+		"notFound": "Projet introuvable. Enregistrez-le et réessayez.",
+		"reloadFailed": "Le projet n’a pas pu être rechargé après l’ouverture du paquet."
 	}
 }

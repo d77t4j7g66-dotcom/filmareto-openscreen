@@ -21,6 +21,8 @@
 		"export": "匯出",
 		"showInFolder": "在資料夾中顯示",
 		"file": "檔案",
+		"packageForEditing": "封裝以供編輯…",
+		"openPackage": "開啟套件…",
 		"edit": "編輯",
 		"view": "檢視",
 		"window": "視窗",

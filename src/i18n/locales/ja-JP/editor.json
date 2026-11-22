@@ -91,6 +91,8 @@
 		"toggleChatPanel": "チャットパネル",
 		"openProject": "プロジェクトを開く",
 		"newProject": "新規プロジェクト",
+		"packageForEditing": "編集用にパッケージ化",
+		"openPackage": "パッケージを開く",
 		"saveProject": "プロジェクトを保存",
 		"unsaved": "未保存",
 		"saved": "保存済み",
@@ -354,7 +356,7 @@
 		"openHint": "で開く",
 		"browseFiles": "ファイルを参照…",
 		"deleteProject": "プロジェクトを削除",
-		"confirmDelete": "このプロジェクトを削除しますか？録画ファイルは保持されます。"
+		"confirmDelete": "このプロジェクトを削除しますか？収録データと一緒にゴミ箱に移動します。"
 	},
 	"editClipDialog": {
 		"title": "クリップを編集",
@@ -514,5 +516,27 @@
 		"layoutCutout": "Cutout",
 		"layoutFree": "Free",
 		"layoutScreen": "Screen"
+	},
+	"editorPackage": {
+		"packingTitle": "プロジェクトをパッケージ化中",
+		"packingBody": "プロジェクトとメディアをパッケージにコピーしています…",
+		"packedTitle": "パッケージの準備ができました",
+		"packedBody": "パッケージを {{path}} として保存しました。zip を編集者に送ってください。",
+		"reveal": "フォルダで表示",
+		"missingTitle": "一部のメディアファイルが見つかりません",
+		"missingBody": "次のファイルが見つからないため、パッケージを作成できませんでした:",
+		"conflictTitle": "プロジェクトはすでに存在します",
+		"conflictBody": "「{{title}}」というプロジェクトがこのコンピューターにすでにあります。パッケージで置き換えますか？ それとも別のコピーとして開きますか？",
+		"replace": "既存のものを置き換える",
+		"openAsCopy": "コピーとして開く",
+		"openedTitle": "パッケージを開きました",
+		"openedBody": "「{{title}}」を編集できます。",
+		"errorTitle": "問題が発生しました",
+		"notAPackage": "これはエディターのパッケージではありません。",
+		"damaged": "このパッケージは破損しているため開けません。",
+		"missingNoDetail": "パッケージ内の一部のメディアファイルが見つかりません。",
+		"unsafePath": "プロジェクト内の一部のパスがフォルダの外を指しているため、パッケージ化できませんでした。",
+		"notFound": "プロジェクトが見つかりません。保存してからもう一度お試しください。",
+		"reloadFailed": "パッケージを開いた後、プロジェクトを再読み込みできませんでした。"
 	}
 }

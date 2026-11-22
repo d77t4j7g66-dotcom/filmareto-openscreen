@@ -193,6 +193,10 @@ export const assetSchema = z.object({
 	// The eye line in a take with no pointer to follow, 0-1 from the top left. Null: looked, none
 	// there. Absent: not looked yet. Additive, as above.
 	face: z.object({ x: z.number(), y: z.number(), h: z.number().optional() }).nullish(),
+	// When the user deleted the last clip of this take (`markDiscardedTakes`). Only a take marked
+	// so leaves the disk at the next start (`electron/media-cleanup`); Undo takes the mark back
+	// with the clip. Additive, as above.
+	discardedAt: z.string().optional(),
 });
 
 // A crop is a sub-rectangle of the source video, expressed as fractions

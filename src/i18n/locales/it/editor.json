@@ -91,6 +91,8 @@
 		"toggleChatPanel": "Pannello chat",
 		"openProject": "Apri progetto",
 		"newProject": "Nuovo progetto",
+		"packageForEditing": "Crea pacchetto per il montaggio",
+		"openPackage": "Apri pacchetto",
 		"saveProject": "Salva progetto",
 		"unsaved": "Non salvato",
 		"saved": "Salvato",
@@ -354,7 +356,7 @@
 		"openHint": "per aprire",
 		"browseFiles": "Sfoglia file…",
 		"deleteProject": "Elimina progetto",
-		"confirmDelete": "Eliminare questo progetto? Le tue registrazioni vengono conservate."
+		"confirmDelete": "Eliminare questo progetto? Finirà nel Cestino con le sue registrazioni."
 	},
 	"editClipDialog": {
 		"title": "Modifica clip",
@@ -514,5 +516,27 @@
 		"layoutCutout": "Cutout",
 		"layoutFree": "Free",
 		"layoutScreen": "Screen"
+	},
+	"editorPackage": {
+		"packingTitle": "Creazione del pacchetto",
+		"packingBody": "Copia del progetto e dei suoi file multimediali in un pacchetto…",
+		"packedTitle": "Pacchetto pronto",
+		"packedBody": "Il pacchetto è stato salvato come {{path}}. Invia lo zip al tuo montatore.",
+		"reveal": "Mostra nella cartella",
+		"missingTitle": "Mancano alcuni file multimediali",
+		"missingBody": "Il pacchetto non è stato creato perché questi file non sono stati trovati:",
+		"conflictTitle": "Il progetto esiste già",
+		"conflictBody": "Su questo computer esiste già un progetto «{{title}}». Sostituirlo con il pacchetto o aprire il pacchetto come copia separata?",
+		"replace": "Sostituisci l’esistente",
+		"openAsCopy": "Apri come copia",
+		"openedTitle": "Pacchetto aperto",
+		"openedBody": "«{{title}}» è pronto per essere modificato.",
+		"errorTitle": "Qualcosa è andato storto",
+		"notAPackage": "Questo non è un pacchetto dell’editor.",
+		"damaged": "Questo pacchetto è danneggiato e non può essere aperto.",
+		"missingNoDetail": "Nel pacchetto mancano alcuni file multimediali.",
+		"unsafePath": "Alcuni percorsi del progetto puntano fuori dalla sua cartella, quindi non è stato pacchettizzato.",
+		"notFound": "Progetto non trovato. Salvalo e riprova.",
+		"reloadFailed": "Non è stato possibile ricaricare il progetto dopo l’apertura del pacchetto."
 	}
 }

@@ -91,6 +91,8 @@
 		"toggleChatPanel": "Sohbet paneli",
 		"openProject": "Proje aç",
 		"newProject": "Yeni proje",
+		"packageForEditing": "Düzenleme için paketle",
+		"openPackage": "Paketi aç",
 		"saveProject": "Projeyi kaydet",
 		"unsaved": "Kaydedilmedi",
 		"saved": "Kaydedildi",
@@ -354,7 +356,7 @@
 		"openHint": "açmak için",
 		"browseFiles": "Dosyalara göz at…",
 		"deleteProject": "Projeyi sil",
-		"confirmDelete": "Bu proje silinsin mi? Kayıtlarınız korunur."
+		"confirmDelete": "Bu proje silinsin mi? Kayıtlarıyla birlikte Çöp Sepeti'ne taşınır."
 	},
 	"editClipDialog": {
 		"title": "Klibi düzenle",
@@ -514,5 +516,27 @@
 		"layoutCutout": "Cutout",
 		"layoutFree": "Free",
 		"layoutScreen": "Screen"
+	},
+	"editorPackage": {
+		"packingTitle": "Proje paketleniyor",
+		"packingBody": "Proje ve medyaları bir pakete kopyalanıyor…",
+		"packedTitle": "Paket hazır",
+		"packedBody": "Paket {{path}} olarak kaydedildi. Zip dosyasını editörünüze gönderin.",
+		"reveal": "Klasörde göster",
+		"missingTitle": "Bazı medya dosyaları eksik",
+		"missingBody": "Şu dosyalar bulunamadığı için paket oluşturulmadı:",
+		"conflictTitle": "Proje zaten var",
+		"conflictBody": "Bu bilgisayarda “{{title}}” adlı bir proje zaten var. Paketle değiştirilsin mi, yoksa paket ayrı bir kopya olarak mı açılsın?",
+		"replace": "Mevcut olanı değiştir",
+		"openAsCopy": "Kopya olarak aç",
+		"openedTitle": "Paket açıldı",
+		"openedBody": "“{{title}}” düzenlemeye hazır.",
+		"errorTitle": "Bir şeyler ters gitti",
+		"notAPackage": "Bu bir editör paketi değil.",
+		"damaged": "Bu paket hasarlı ve açılamıyor.",
+		"missingNoDetail": "Pakette bazı medya dosyaları eksik.",
+		"unsafePath": "Projedeki bazı yollar klasörünün dışını gösterdiği için paketlenmedi.",
+		"notFound": "Proje bulunamadı. Kaydedip tekrar deneyin.",
+		"reloadFailed": "Paket açıldıktan sonra proje yeniden yüklenemedi."
 	}
 }

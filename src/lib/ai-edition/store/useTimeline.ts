@@ -1,16 +1,16 @@
 // Hook: region mutations for the new editor shell. Wraps the project store
+import { markDiscardedTakes } from "../document/discardedTakes";
+
 // with typed add/remove/select operations for zoom, trim, annotation, and
 // speed regions. Each add creates a 2-second region at the current playhead
 // (a reasonable default for the user to then resize).
 
-import { toastText } from "@/i18n/toastText";
-import { ZOOM_DEPTH_SCALES } from "../timeline/zoom-scale";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { toast } from "sonner";
 import {
 	documentHasRecordedCursor,
 	recordingHasCursor,
 } from "@/components/ai-edition/recordedCursorTypes";
-import { useCallback, useEffect, useRef, useState } from "react";
-import { toast } from "sonner";
 import { toFileUrl } from "@/components/video-editor/projectPersistence";
 import type {
 	AnnotationRegion,
@@ -23,6 +23,7 @@ import type {
 } from "@/components/video-editor/types";
 import { DEFAULT_ANNOTATION_STYLE } from "@/components/video-editor/types";
 import { useScopedT } from "@/contexts/I18nContext";
+import { toastText } from "@/i18n/toastText";
 import { patchKeycaps } from "@/lib/ai-edition/annotations/keycapLayout";
 import {
 	coverAxis,
@@ -92,7 +93,7 @@ import {
 	resolveRegionIds,
 } from "../timeline/timelineMap";
 import { dropTrimPillsByIds, resolveTimelineSpanToTrim } from "../timeline/trim-mapping";
-import { MAX_ZOOM_SCALE, MIN_ZOOM_SCALE } from "../timeline/zoom-scale";
+import { MAX_ZOOM_SCALE, MIN_ZOOM_SCALE, ZOOM_DEPTH_SCALES } from "../timeline/zoom-scale";
 import type { AutoZoomSuggestion } from "../timeline/zoom-suggestions";
 import {
 	applyLookToAllClips,
@@ -2146,7 +2147,14 @@ export function useTimeline() {
 		async (clipId: string) => {
 			if (!document) return;
 			// One shared mutator with the agent's removeClip tool: reflow survivors + rederive pills.
-			if (!(await saveDocument(removeClipInDocument(document, clipId), { history: true }))) return;
+			// A take whose last clip this was is marked discarded in the same change, so Undo
+			// restores both; only a marked take leaves the disk at the next start.
+			const next = markDiscardedTakes(
+				document,
+				removeClipInDocument(document, clipId),
+				new Date().toISOString(),
+			);
+			if (!(await saveDocument(next, { history: true }))) return;
 			if (clipSelection === clipId) setClipSelection(null);
 		},
 		[document, clipSelection, saveDocument],

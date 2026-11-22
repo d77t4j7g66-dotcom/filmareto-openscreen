@@ -6,7 +6,8 @@ import { HelperBridge } from "./main/helperBridge";
 import { PrompterController } from "./main/prompterController";
 import { scriptFromText } from "./script";
 import type { HotkeyAction, PrompterSettings, PrompterUiState } from "./shared/protocol";
-import { normalizeSettings, type Settings } from "./shared/settings";
+import { normalizeSettings, type Settings, settingsWindowOnTop } from "./shared/settings";
+import { segmentAttempt } from "./shared/takeMarks";
 
 const HELPER_NAME = "filmareto-teleprompter";
 const PROJECT = "settings-window";
@@ -136,6 +137,8 @@ type WindowState = PrompterUiState & {
 	message: string;
 	micName: string;
 	settings: PrompterSettings;
+	/** While a take runs: which attempt at the open segment it is on, for the recording bar. */
+	take: number;
 	displays: { id: number; label: string }[];
 	run: {
 		ready: boolean;
@@ -152,6 +155,10 @@ function windowState(): WindowState {
 		message,
 		micName,
 		settings: currentSettings().prompter,
+		take:
+			recording && controller?.isOpen
+				? segmentAttempt(takeMarks, controller.uiState.stageIndex)
+				: 1,
 		displays: screen.getAllDisplays().map((display) => ({
 			id: display.id,
 			label: display.label || `${display.size.width} × ${display.size.height}`,
@@ -168,12 +175,28 @@ function windowState(): WindowState {
 	};
 }
 
+const followedSettingsWindows = new WeakSet<BrowserWindow>();
+
+/** A full-screen prompter on the settings window's display must not bury the window that controls it. */
+function pinSettingsWindow(target: BrowserWindow): void {
+	const onTop = settingsWindowOnTop(
+		currentSettings().prompter,
+		screen.getDisplayMatching(target.getBounds()).id,
+	);
+	if (target.isAlwaysOnTop() !== onTop) target.setAlwaysOnTop(onTop);
+}
+
 function publish(): void {
 	const target = getSettingsWindow();
 	if (target && !target.isDestroyed()) {
-		// A full-screen prompter on this display must not bury the window that controls it.
-		const onTop = currentSettings().prompter.position === "fullscreen";
-		if (target.isAlwaysOnTop() !== onTop) target.setAlwaysOnTop(onTop);
+		pinSettingsWindow(target);
+		// Dragged to another display, it may now share it with the prompter, or no longer.
+		if (!followedSettingsWindows.has(target)) {
+			followedSettingsWindows.add(target);
+			target.on("moved", () => {
+				if (!target.isDestroyed()) pinSettingsWindow(target);
+			});
+		}
 	}
 	// The Record tab of the editor shows the same settings.
 	const state = windowState();

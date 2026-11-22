@@ -91,6 +91,8 @@
 		"toggleChatPanel": "Bảng trò chuyện",
 		"openProject": "Mở dự án",
 		"newProject": "Dự án mới",
+		"packageForEditing": "Đóng gói để chỉnh sửa",
+		"openPackage": "Mở gói",
 		"saveProject": "Lưu dự án",
 		"unsaved": "Chưa lưu",
 		"saved": "Đã lưu",
@@ -354,7 +356,7 @@
 		"openHint": "để mở",
 		"browseFiles": "Duyệt tệp…",
 		"deleteProject": "Xoá dự án",
-		"confirmDelete": "Xoá dự án này? Các bản ghi của bạn vẫn được giữ lại."
+		"confirmDelete": "Xóa dự án này? Dự án sẽ được chuyển vào Thùng rác cùng các bản ghi."
 	},
 	"editClipDialog": {
 		"title": "Chỉnh sửa clip",
@@ -514,5 +516,27 @@
 		"layoutCutout": "Cutout",
 		"layoutFree": "Free",
 		"layoutScreen": "Screen"
+	},
+	"editorPackage": {
+		"packingTitle": "Đang đóng gói dự án",
+		"packingBody": "Đang sao chép dự án và phương tiện vào gói…",
+		"packedTitle": "Gói đã sẵn sàng",
+		"packedBody": "Gói đã được lưu thành {{path}}. Hãy gửi tệp zip cho biên tập viên của bạn.",
+		"reveal": "Hiện trong thư mục",
+		"missingTitle": "Thiếu một số tệp phương tiện",
+		"missingBody": "Gói chưa được tạo vì không tìm thấy các tệp sau:",
+		"conflictTitle": "Dự án đã tồn tại",
+		"conflictBody": "Máy này đã có dự án “{{title}}”. Thay thế bằng gói hay mở gói như một bản sao riêng?",
+		"replace": "Thay thế bản hiện có",
+		"openAsCopy": "Mở dưới dạng bản sao",
+		"openedTitle": "Đã mở gói",
+		"openedBody": "“{{title}}” đã sẵn sàng để chỉnh sửa.",
+		"errorTitle": "Đã xảy ra lỗi",
+		"notAPackage": "Đây không phải là gói của trình chỉnh sửa.",
+		"damaged": "Gói này bị hỏng và không thể mở.",
+		"missingNoDetail": "Gói thiếu một số tệp phương tiện.",
+		"unsafePath": "Một số đường dẫn trong dự án trỏ ra ngoài thư mục của nó nên dự án chưa được đóng gói.",
+		"notFound": "Không tìm thấy dự án. Hãy lưu rồi thử lại.",
+		"reloadFailed": "Không thể tải lại dự án sau khi mở gói."
 	}
 }

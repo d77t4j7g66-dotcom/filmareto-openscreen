@@ -21,6 +21,8 @@
 		"export": "エクスポート",
 		"showInFolder": "フォルダに表示",
 		"file": "ファイル",
+		"packageForEditing": "編集用にパッケージ化…",
+		"openPackage": "パッケージを開く…",
 		"edit": "編集",
 		"view": "表示",
 		"window": "ウィンドウ",

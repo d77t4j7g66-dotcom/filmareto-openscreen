@@ -91,6 +91,8 @@
 		"toggleChatPanel": "채팅 패널",
 		"openProject": "프로젝트 열기",
 		"newProject": "새 프로젝트",
+		"packageForEditing": "편집용으로 패키징",
+		"openPackage": "패키지 열기",
 		"saveProject": "프로젝트 저장",
 		"unsaved": "저장 안 됨",
 		"saved": "저장됨",
@@ -354,7 +356,7 @@
 		"openHint": "열기",
 		"browseFiles": "파일 찾아보기…",
 		"deleteProject": "프로젝트 삭제",
-		"confirmDelete": "이 프로젝트를 삭제할까요? 녹화 파일은 유지됩니다."
+		"confirmDelete": "이 프로젝트를 삭제할까요? 녹화본과 함께 휴지통으로 이동합니다."
 	},
 	"editClipDialog": {
 		"title": "클립 편집",
@@ -514,5 +516,27 @@
 		"layoutCutout": "Cutout",
 		"layoutFree": "Free",
 		"layoutScreen": "Screen"
+	},
+	"editorPackage": {
+		"packingTitle": "프로젝트 패키징 중",
+		"packingBody": "프로젝트와 미디어를 패키지로 복사하고 있습니다…",
+		"packedTitle": "패키지 준비 완료",
+		"packedBody": "패키지를 {{path}}(으)로 저장했습니다. zip 파일을 편집자에게 보내세요.",
+		"reveal": "폴더에서 보기",
+		"missingTitle": "일부 미디어 파일이 없습니다",
+		"missingBody": "다음 파일을 찾을 수 없어 패키지를 만들지 못했습니다:",
+		"conflictTitle": "프로젝트가 이미 있습니다",
+		"conflictBody": "이 컴퓨터에 “{{title}}” 프로젝트가 이미 있습니다. 패키지로 바꾸시겠습니까, 아니면 별도의 사본으로 여시겠습니까?",
+		"replace": "기존 항목 바꾸기",
+		"openAsCopy": "사본으로 열기",
+		"openedTitle": "패키지를 열었습니다",
+		"openedBody": "“{{title}}”을(를) 편집할 수 있습니다.",
+		"errorTitle": "문제가 발생했습니다",
+		"notAPackage": "편집기 패키지가 아닙니다.",
+		"damaged": "이 패키지는 손상되어 열 수 없습니다.",
+		"missingNoDetail": "패키지에 일부 미디어 파일이 없습니다.",
+		"unsafePath": "프로젝트의 일부 경로가 폴더 밖을 가리켜 패키징하지 않았습니다.",
+		"notFound": "프로젝트를 찾을 수 없습니다. 저장한 뒤 다시 시도하세요.",
+		"reloadFailed": "패키지를 연 후 프로젝트를 다시 불러오지 못했습니다."
 	}
 }

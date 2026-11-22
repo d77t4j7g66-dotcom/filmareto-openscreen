@@ -3138,11 +3138,12 @@ impl Compositor {
         let enc = self.begin_pass(cmd_buf, &self.rt, None, &self.pipeline_main)?;
         // A scene with the screen alone leaves the camera a rect of no size: nothing to draw, shadow included.
         if let (true, Some((wy, wuv))) = (lp.has_webcam && g.w_dst[2] > 0.0005, webcam_tex.as_ref()) {
-            let [cu0, cv0, cu1, cv1] = crate::frame_geometry::webcam_source_rect(
+            let [cu0, cv0, cu1, cv1] = crate::frame_geometry::webcam_source_rect_zoomed(
                 [wcw, wch],
                 [wtw as f32, wth as f32],
                 g.webcam_crop,
                 g.w_px[0] / g.w_px[1].max(0.0001),
+                g.webcam_zoom,
             );
             let mirror = g.segment_look.as_ref().map_or(lp.webcam_mirror, |l| l.webcam_mirror);
             let (u0, u1) = if mirror { (cu1, cu0) } else { (cu0, cu1) };

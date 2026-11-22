@@ -111,6 +111,8 @@ function renderPane() {
 							openProject: noop,
 							newProject: noop,
 							save: noop,
+							packageForEditing: noop,
+							openPackage: noop,
 							export: noop,
 							openSettings: noop,
 							renameProject: noop,
