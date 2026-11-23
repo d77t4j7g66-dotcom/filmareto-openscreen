@@ -1102,6 +1102,10 @@
 	color: var(--accent);
 	background: var(--accent-wash);
 }
+.importBtn:disabled {
+	opacity: 0.5;
+	cursor: default;
+}
 .mediaDetail {
 	width: 400px;
 	flex-shrink: 0;

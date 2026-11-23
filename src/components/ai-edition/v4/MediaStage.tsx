@@ -97,6 +97,7 @@ export function MediaStage({
 	const projectId = useProjectStore((s) => s.projectId);
 	const document = useProjectStore((s) => s.document);
 	const addAsset = useProjectStore((s) => s.addAsset);
+	const createProject = useProjectStore((s) => s.createProject);
 	const saveDocument = useProjectStore((s) => s.saveDocument);
 	const vocabularySave = useRef<Promise<boolean>>(undefined);
 	// Transcripts are produced in the background as soon as a media lands here
@@ -151,14 +152,21 @@ export function MediaStage({
 		: null;
 
 	const handleImport = async () => {
-		if (!projectId) {
-			toast.error(t("mediaStage.openProjectFirst"));
+		const picker = await window.electronAPI?.openVideoFilePicker();
+		if (!picker?.success || !picker.path) {
+			// A refused pick says why instead of doing nothing; a cancelled one is silent.
+			if (picker && !picker.canceled && picker.message) {
+				toast.error(t("mediaStage.couldNotAddAsset"), { description: picker.message });
+			}
 			return;
 		}
-		const picker = await window.electronAPI?.openVideoFilePicker();
-		if (!picker?.success || !picker.path) return;
 		setBusy(true);
 		try {
+			// No project open yet (a fresh editor): this import starts one, as the empty state's
+			// "Import video" does. The button used to be disabled here and looked alive.
+			if (!useProjectStore.getState().projectId) {
+				await createProject(`Project ${new Date().toLocaleString()}`);
+			}
 			const label = picker.name || basename(picker.path);
 			await addAsset(picker.path, label);
 			toast.success(t("mediaStage.added", { label }));
@@ -414,7 +422,7 @@ export function MediaStage({
 							type="button"
 							className={styles.importBtn}
 							onClick={handleImport}
-							disabled={!projectId || busy}
+							disabled={busy}
 						>
 							<Plus size={14} />
 							{t("mediaStage.importMedia")}

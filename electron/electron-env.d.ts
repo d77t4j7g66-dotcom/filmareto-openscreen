@@ -409,6 +409,7 @@ interface Window {
 			// the shim carries the picked File's real name here for the label.
 			name?: string;
 			canceled?: boolean;
+			message?: string;
 		}>;
 		// Import an external audio file from the timeline toolbar (issue #350).
 		openAudioFilePicker: () => Promise<{
