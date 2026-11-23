@@ -288,6 +288,38 @@ fn lerp_webcam(a: Option<SceneRect>, b: Option<SceneRect>, t: f32) -> Option<Sce
     }
 }
 
+/// The camera's crop glides from one layout's to the other's, so a camera framed differently
+/// in two scenes moves between the framings instead of jumping at the middle of the move. A
+/// layout without one (a screen-only scene) has nothing to glide from: the nearer one stands.
+fn lerp_crop(a: Option<SceneCrop>, b: Option<SceneCrop>, t: f32) -> Option<SceneCrop> {
+    match (a, b) {
+        (Some(a), Some(b)) => {
+            let centre = [0.5, 0.5];
+            let pan = match (a.pan, b.pan) {
+                (None, None) => None,
+                (pa, pb) => {
+                    let (pa, pb) = (pa.unwrap_or(centre), pb.unwrap_or(centre));
+                    Some([lerp_f32(pa[0], pb[0], t), lerp_f32(pa[1], pb[1], t)])
+                }
+            };
+            Some(SceneCrop {
+                x: lerp_f32(a.x, b.x, t),
+                y: lerp_f32(a.y, b.y, t),
+                width: lerp_f32(a.width, b.width, t),
+                height: lerp_f32(a.height, b.height, t),
+                pan,
+            })
+        }
+        (a, b) => {
+            if t >= 0.5 {
+                b
+            } else {
+                a
+            }
+        }
+    }
+}
+
 fn lerp_option(a: Option<f32>, b: Option<f32>, t: f32) -> Option<f32> {
     match (a, b) {
         (Some(a), Some(b)) => Some(lerp_f32(a, b, t)),
@@ -317,7 +349,7 @@ pub(crate) fn lerp_clip_layout(
         webcam_shadow: lerp_option(from.webcam_shadow, to.webcam_shadow, t),
         webcam_mirror: nearer.webcam_mirror,
         webcam_reactive_zoom: nearer.webcam_reactive_zoom,
-        webcam_crop: nearer.webcam_crop,
+        webcam_crop: lerp_crop(from.webcam_crop, to.webcam_crop, t),
         webcam_effect: nearer.webcam_effect.clone(),
         webcam_blur: lerp_option(from.webcam_blur, to.webcam_blur, t),
         webcam_cutout_over_screen: nearer.webcam_cutout_over_screen,
@@ -1466,6 +1498,7 @@ impl Scene {
             screen_cover: self.layout.screen_cover,
             screen_rest: self.layout.screen_rest,
             screen_fixed: self.layout.screen_fixed,
+            webcam_crop: self.layout.webcam_crop,
             ..Default::default()
         };
         // On the way out a scene returns to the clip's layout; only the way in has a neighbour.
@@ -1547,6 +1580,40 @@ mod tests {
         assert!(camera.width > 0.1 && camera.width < 1.0, "camera moves too: {}", camera.width);
         let leaving = rect(9.9);
         assert!(leaving.height > 0.5 && leaving.height < 1.0, "part way back: {}", leaving.height);
+    }
+
+    #[test]
+    fn the_camera_crop_glides_between_two_scenes_instead_of_jumping() {
+        let whole = SceneCrop { x: 0.0, y: 0.0, width: 1.0, height: 1.0, pan: None };
+        let framed = SceneCrop { x: 0.2, y: 0.3, width: 0.6, height: 0.6, pan: Some([0.8, 1.0]) };
+        // The clip is framed whole; the scene crops the camera in.
+        let mut region = scene_region(2.0, 10.0);
+        region.layout = Some(ResolvedClipLayout { webcam_crop: Some(framed), ..stack() });
+        let mut scene = scene_with_regions(vec![region]);
+        scene.layout.webcam_crop = Some(whole);
+        let crop = |t: f32| {
+            let at = scene.with_scene_layout_at(t).unwrap();
+            at.layout.webcam_crop.expect("a crop while the scene is on")
+        };
+        let settled = crop(6.0);
+        assert_eq!((settled.x, settled.y, settled.width, settled.height), (0.2, 0.3, 0.6, 0.6));
+        // Going in and coming back, no two frames a hundredth of a second apart hold crops that
+        // far from each other: the crop is on its way, not switching at the middle of the move.
+        for (from, to) in [(2.02_f32, 3.5_f32), (8.5, 9.98)] {
+            let mut previous = crop(from).width;
+            let mut t = from + 0.01;
+            while t <= to {
+                let width = crop(t).width;
+                assert!((width - previous).abs() < 0.1, "the crop jumped at {t}: {previous} to {width}");
+                previous = width;
+                t += 0.01;
+            }
+        }
+        let part_way = crop(2.1);
+        assert!(part_way.width < 1.0 && part_way.width > 0.6, "part way in: {}", part_way.width);
+        assert!(part_way.x > 0.0 && part_way.x < 0.2, "x part way: {}", part_way.x);
+        let back = crop(9.9);
+        assert!(back.width < 1.0 && back.width > 0.6, "part way back: {}", back.width);
     }
 
     #[test]
