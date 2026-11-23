@@ -242,7 +242,8 @@ function documentInfoFields(doc: ReturnType<typeof parseDocumentFile>): ProjectI
 		exportFormat: stringOrNull(editor.exportFormat),
 		exportQuality: stringOrNull(editor.exportQuality),
 		aspectRatio: stringOrNull(editor.aspectRatio),
-		zoomRegions: doc.zoomRanges.length,
+		// Both lanes: a camera zoom is a zoom too.
+		zoomRegions: doc.zoomRanges.length + (doc.cameraZoomRanges?.length ?? 0),
 		trimRegions: doc.timeline.trimRanges.length,
 		speedRegions: Array.isArray(editor.speedRegions) ? editor.speedRegions.length : 0,
 		annotationRegions: doc.annotations.length,

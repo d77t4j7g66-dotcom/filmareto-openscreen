@@ -1,8 +1,8 @@
-import { useScopedT } from "@/contexts/I18nContext";
 import { ChevronDown, ChevronRight, Plus } from "lucide-react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { toFileUrl } from "@/components/video-editor/projectPersistence";
+import { useScopedT } from "@/contexts/I18nContext";
 import { createId } from "@/lib/ai-edition/document/ids";
 import { scenesOf } from "@/lib/ai-edition/document/script";
 import { placeSceneTake } from "@/lib/ai-edition/document/timeline";

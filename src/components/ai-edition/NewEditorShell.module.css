@@ -2168,6 +2168,14 @@ textarea.control {
 	border: 1px solid var(--accent);
 }
 .btnPrimary:hover { background: var(--brand-lo); }
+/* The confirm of an action that moves files out of the project to the Trash. */
+.btnDanger {
+	background: var(--danger);
+	color: var(--accent-on);
+	border: 1px solid var(--danger);
+}
+.btnDanger:hover:not(:disabled) { background: color-mix(in oklab, var(--danger) 85%, black); }
+.btnDanger:disabled { opacity: 0.5; cursor: not-allowed; }
 .btnPrimary:disabled {
 	background: var(--surface-2);
 	border-color: var(--border);

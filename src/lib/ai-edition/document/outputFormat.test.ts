@@ -13,6 +13,10 @@ import {
 import {
 	collectEffectiveClipDims,
 	collectNativeFormats,
+	fillCentreAt,
+	fillCutAxes,
+	fillShareOf,
+	fillTravel,
 	formatFillAvailability,
 	isAutoFormatAvailable,
 	isFormatFillActive,
@@ -459,5 +463,45 @@ describe("formatFillAvailability", () => {
 		expect(isFormatFillActive(at(hd, {}))).toBe(false);
 		expect(isFormatFillActive(at(hd, { formatFollowCursor: true }))).toBe(true);
 		expect(isFormatFillActive(at(hd, { formatFollowCursor: true, frame: "phone" }))).toBe(false);
+	});
+
+	it("maps the slider onto the cut's travel inside the crop", () => {
+		// A 9:16 window of a 16:9 take is 0.3164 of its width: its centre travels 0.158 to 0.842.
+		const travel = fillTravel(at(hd, {}));
+		expect(travel.x.min).toBeCloseTo(0.1582, 3);
+		expect(travel.x.max).toBeCloseTo(0.8418, 3);
+		// Full height: nothing to move up or down, the middle.
+		expect(travel.y).toEqual({ min: 0.5, max: 0.5 });
+		expect(fillCentreAt(travel.x, 0)).toBeCloseTo(0.1582, 3);
+		expect(fillCentreAt(travel.x, 0.5)).toBeCloseTo(0.5, 6);
+		expect(fillCentreAt(travel.x, 1)).toBeCloseTo(0.8418, 3);
+		expect(fillShareOf(travel.x, 0.5)).toBeCloseTo(0.5, 6);
+		expect(fillShareOf(travel.x, fillCentreAt(travel.x, 0.25))).toBeCloseTo(0.25, 6);
+		// A stored centre past the ends sits on the end; with no travel the share is the middle.
+		expect(fillShareOf(travel.x, 0)).toBe(0);
+		expect(fillShareOf(travel.y, 0.9)).toBe(0.5);
+
+		// Cropped to the middle half: the picture is 960×1080 at x 0.25..0.75, so the same window
+		// (still full height) travels only inside the crop, and 50 is the middle of the crop.
+		const cropped = at(hd, {});
+		cropped.timeline.clips[0] = {
+			...cropped.timeline.clips[0],
+			cropRegion: { x: 0.25, y: 0, width: 0.5, height: 1 },
+		};
+		const inCrop = fillTravel(cropped);
+		expect(inCrop.x.min).toBeCloseTo(0.25 + 0.1582, 3);
+		expect(inCrop.x.max).toBeCloseTo(0.75 - 0.1582, 3);
+		expect(fillCentreAt(inCrop.x, 0.5)).toBeCloseTo(0.5, 6);
+	});
+
+	it("moves a cut sideways over a wider recording and up and down over a taller one", () => {
+		expect(fillCutAxes(at(hd, {}))).toEqual({ horizontal: true, vertical: false });
+		const tall = doc([asset("a1", 1080, 1920)], [clip("c1", "a1")]);
+		expect(fillCutAxes(at(tall, { aspectRatio: "16:9" }))).toEqual({
+			horizontal: false,
+			vertical: true,
+		});
+		// Padding scales both sides of the box, so it does not change which way the cut moves.
+		expect(fillCutAxes(at(hd, { padding: 60 }))).toEqual({ horizontal: true, vertical: false });
 	});
 });

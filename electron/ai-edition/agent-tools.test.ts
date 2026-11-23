@@ -3998,3 +3998,281 @@ describe("the executor's view of a check asked beforehand", () => {
 		).toBeNull();
 	});
 });
+
+describe("zoom lanes (screen and camera)", () => {
+	const add = (document: AxcutDocument, args: Record<string, unknown>) =>
+		executeAgentTool(document, "addZoom", JSON.stringify(args));
+
+	it("addZoom with lane camera lands in cameraZoomRanges, following the face by default", () => {
+		const result = add(fixtureDocument(), { startSec: 2, endSec: 4, lane: "camera" });
+		expect(result.ok).toBe(true);
+		expect(result.document?.zoomRanges).toHaveLength(0);
+		expect(result.document?.cameraZoomRanges).toHaveLength(1);
+		expect(result.document?.cameraZoomRanges?.[0]).toMatchObject({
+			startMs: 2000,
+			endMs: 4000,
+			focusMode: "auto",
+			source: "manual",
+		});
+		expect(result.document?.cameraZoomRanges?.[0].id.startsWith("camzoom_")).toBe(true);
+		expect(JSON.parse(result.resultJson).lane).toBe("camera");
+		expect(() => documentSchema.parse(result.document)).not.toThrow();
+	});
+
+	it("addZoom is the screen's by default, with its focus mode as before", () => {
+		const result = add(fixtureDocument(), { startSec: 2, endSec: 4 });
+		expect(result.document?.cameraZoomRanges ?? []).toHaveLength(0);
+		expect(result.document?.zoomRanges.at(-1)).toMatchObject({ focusMode: "manual" });
+		expect(JSON.parse(result.resultJson).lane).toBe("screen");
+	});
+
+	it("a camera zoom may overlap a screen zoom, never another camera zoom", () => {
+		const withScreen = add(fixtureDocument(), { startSec: 2, endSec: 4 }).document as AxcutDocument;
+		const withCamera = add(withScreen, { startSec: 3, endSec: 5, lane: "camera" });
+		expect(withCamera.ok).toBe(true);
+		const refused = add(withCamera.document as AxcutDocument, {
+			startSec: 4,
+			endSec: 6,
+			lane: "camera",
+		});
+		expect(refused.ok).toBe(false);
+		expect(refused.resultJson).toMatch(/camera zoom/);
+	});
+
+	it("addZooms takes the lane per region", () => {
+		const result = executeAgentTool(
+			fixtureDocument(),
+			"addZooms",
+			JSON.stringify({
+				regions: [
+					{ startSec: 1, endSec: 2, lane: "camera" },
+					{ startSec: 5, endSec: 6 },
+				],
+			}),
+		);
+		expect(result.ok).toBe(true);
+		expect(result.document?.cameraZoomRanges).toHaveLength(1);
+		expect(result.document?.zoomRanges.filter((z) => z.startMs === 5000)).toHaveLength(1);
+	});
+
+	it("setZoom finds a camera zoom by id, and moves it only when lane is given", () => {
+		const added = add(fixtureDocument(), { startSec: 2, endSec: 4, lane: "camera" })
+			.document as AxcutDocument;
+		const id = added.cameraZoomRanges?.[0].id as string;
+		const patched = executeAgentTool(added, "setZoom", JSON.stringify({ zoomId: id, depth: 5 }));
+		expect(patched.ok).toBe(true);
+		expect(patched.document?.cameraZoomRanges?.[0]).toMatchObject({ id, depth: 5 });
+		expect(patched.document?.zoomRanges).toHaveLength(0);
+
+		const moved = executeAgentTool(
+			added,
+			"setZoom",
+			JSON.stringify({ zoomId: id, lane: "screen" }),
+		);
+		expect(moved.ok).toBe(true);
+		expect(moved.document?.cameraZoomRanges).toHaveLength(0);
+		expect(moved.document?.zoomRanges.some((z) => z.id === id)).toBe(true);
+		expect(JSON.parse(moved.resultJson).lane).toBe("screen");
+	});
+
+	it("setZoom refuses a move onto a zoom of the lane it goes to", () => {
+		const doc = add(fixtureDocument(), { startSec: 2, endSec: 4, lane: "camera" })
+			.document as AxcutDocument;
+		const screen = add(doc, { startSec: 2, endSec: 4 }).document as AxcutDocument;
+		const screenId = screen.zoomRanges.at(-1)?.id as string;
+		const refused = executeAgentTool(
+			screen,
+			"setZoom",
+			JSON.stringify({ zoomId: screenId, lane: "camera" }),
+		);
+		expect(refused.ok).toBe(false);
+		expect(refused.document).toBeUndefined();
+	});
+
+	it("removeModifier deletes a camera zoom", () => {
+		const added = add(fixtureDocument(), { startSec: 2, endSec: 4, lane: "camera" })
+			.document as AxcutDocument;
+		const id = added.cameraZoomRanges?.[0].id as string;
+		const removed = executeAgentTool(added, "removeModifier", JSON.stringify({ id }));
+		expect(removed.ok).toBe(true);
+		expect(removed.document?.cameraZoomRanges).toHaveLength(0);
+		expect(JSON.parse(removed.resultJson).kind).toBe("cameraZoom");
+	});
+
+	it("a camera zoom looks at the upper middle by default, on Auto", () => {
+		const result = add(fixtureDocument(), { startSec: 2, endSec: 4, lane: "camera" });
+		expect(result.document?.cameraZoomRanges?.[0]).toMatchObject({
+			focus: { cx: 0.5, cy: 0.4 },
+			focusMode: "auto",
+		});
+		// The screen's default is still the centre.
+		const screen = add(fixtureDocument(), { startSec: 2, endSec: 4 });
+		expect(screen.document?.zoomRanges.at(-1)?.focus).toEqual({ cx: 0.5, cy: 0.5 });
+	});
+
+	it("setZoom taking a zoom to the camera lane drops its screen point for the upper middle, on Auto", () => {
+		const doc = add(fixtureDocument(), {
+			startSec: 2,
+			endSec: 4,
+			focus: { cx: 0.85, cy: 0.15 },
+		}).document as AxcutDocument;
+		const id = doc.zoomRanges.at(-1)?.id as string;
+		const moved = executeAgentTool(doc, "setZoom", JSON.stringify({ zoomId: id, lane: "camera" }));
+		expect(moved.ok).toBe(true);
+		expect(moved.document?.cameraZoomRanges?.[0]).toMatchObject({
+			id,
+			focus: { cx: 0.5, cy: 0.4 },
+			focusMode: "auto",
+		});
+		// A focus passed with the move is the one it gets.
+		const placed = executeAgentTool(
+			doc,
+			"setZoom",
+			JSON.stringify({
+				zoomId: id,
+				lane: "camera",
+				focus: { cx: 0.3, cy: 0.3 },
+				focusMode: "manual",
+			}),
+		);
+		expect(placed.document?.cameraZoomRanges?.[0]).toMatchObject({
+			focus: { cx: 0.3, cy: 0.3 },
+			focusMode: "manual",
+		});
+	});
+
+	describe("on a talking head", () => {
+		// The take has no camera beside it and was looked at for a face: its picture is the camera.
+		const headDocument = (): AxcutDocument => {
+			const doc = fixtureDocument();
+			return { ...doc, assets: doc.assets.map((a) => ({ ...a, face: null })) };
+		};
+		// clip_2 on a screen take, clip_1 on the talking head.
+		const mixedDocument = (): AxcutDocument => {
+			const doc = headDocument();
+			return {
+				...doc,
+				assets: [
+					...doc.assets,
+					{ ...fixtureDocument().assets[0], id: "asset_screen", originalPath: "C:/videos/s.mp4" },
+				],
+				timeline: {
+					...doc.timeline,
+					clips: doc.timeline.clips.map((c) =>
+						c.id === "clip_2"
+							? { ...c, assetId: "asset_screen", sourceStartSec: 0, sourceEndSec: 30 }
+							: c,
+					),
+				},
+			};
+		};
+
+		it("addZoom with no lane is a camera zoom", () => {
+			const result = add(headDocument(), { startSec: 2, endSec: 4 });
+			expect(result.ok).toBe(true);
+			expect(result.document?.zoomRanges).toHaveLength(0);
+			expect(result.document?.cameraZoomRanges?.[0]).toMatchObject({
+				startMs: 2000,
+				endMs: 4000,
+				focus: { cx: 0.5, cy: 0.4 },
+				focusMode: "auto",
+			});
+			expect(JSON.parse(result.resultJson)).toMatchObject({ lane: "camera" });
+		});
+
+		it("addZoom and addZooms refuse lane screen, saying why", () => {
+			const refused = add(headDocument(), { startSec: 2, endSec: 4, lane: "screen" });
+			expect(refused.ok).toBe(false);
+			expect(refused.document).toBeUndefined();
+			expect(refused.resultJson).toMatch(/talking head/);
+			const batch = executeAgentTool(
+				headDocument(),
+				"addZooms",
+				JSON.stringify({
+					regions: [
+						{ startSec: 1, endSec: 2 },
+						{ startSec: 5, endSec: 6 },
+					],
+				}),
+			);
+			expect(batch.ok).toBe(true);
+			expect(batch.document?.zoomRanges).toHaveLength(0);
+			expect(batch.document?.cameraZoomRanges).toHaveLength(2);
+		});
+
+		it("addZoom across a talking head and a screen take asks for one zoom per clip", () => {
+			const refused = add(mixedDocument(), { startSec: 28, endSec: 32 });
+			expect(refused.ok).toBe(false);
+			expect(refused.resultJson).toMatch(/one zoom per clip/);
+			// The screen take alone is the screen's, as before.
+			const screen = add(mixedDocument(), { startSec: 40, endSec: 42 });
+			expect(screen.document?.zoomRanges.at(-1)).toMatchObject({ startMs: 40_000 });
+			// Asked for, the camera lane takes the whole span.
+			expect(add(mixedDocument(), { startSec: 28, endSec: 32, lane: "camera" }).ok).toBe(true);
+		});
+
+		it("setZoom moves a screen zoom left on a talking head to the camera lane, and refuses lane screen", () => {
+			const legacy: AxcutDocument = {
+				...headDocument(),
+				zoomRanges: [
+					{
+						id: "zoom_old",
+						startMs: 2000,
+						endMs: 4000,
+						depth: 3,
+						focus: { cx: 0.7, cy: 0.2 },
+						clipId: "clip_1",
+					} as AxcutDocument["zoomRanges"][number],
+				],
+			};
+			const patched = executeAgentTool(
+				legacy,
+				"setZoom",
+				JSON.stringify({ zoomId: "zoom_old", depth: 4 }),
+			);
+			expect(patched.ok).toBe(true);
+			expect(patched.document?.zoomRanges).toHaveLength(0);
+			// Moved only because it sits on a talking head: it keeps the point it framed that picture with.
+			expect(patched.document?.cameraZoomRanges?.[0]).toMatchObject({
+				id: "zoom_old",
+				depth: 4,
+				focus: { cx: 0.7, cy: 0.2 },
+			});
+			expect(patched.document?.cameraZoomRanges?.[0].focusMode).toBeUndefined();
+			expect(JSON.parse(patched.resultJson).lane).toBe("camera");
+
+			const refused = executeAgentTool(
+				legacy,
+				"setZoom",
+				JSON.stringify({ zoomId: "zoom_old", lane: "screen", depth: 4 }),
+			);
+			expect(refused.ok).toBe(false);
+			expect(refused.resultJson).toMatch(/talking head/);
+			const camera = add(headDocument(), { startSec: 2, endSec: 4 }).document as AxcutDocument;
+			const camId = camera.cameraZoomRanges?.[0].id as string;
+			const back = executeAgentTool(
+				camera,
+				"setZoom",
+				JSON.stringify({ zoomId: camId, lane: "screen" }),
+			);
+			expect(back.ok).toBe(false);
+			expect(back.resultJson).toMatch(/NOT moved/);
+		});
+	});
+
+	it("the snapshot lists the camera lane next to the screen's", () => {
+		const added = add(fixtureDocument(), { startSec: 2, endSec: 4, lane: "camera" })
+			.document as AxcutDocument;
+		const snapshot = JSON.parse(executeAgentTool(added, "getCurrentDocument", "").resultJson);
+		expect(snapshot.cameraZoomRanges).toHaveLength(1);
+		expect(snapshot.cameraZoomRanges[0]).toMatchObject({
+			startSec: 2,
+			endSec: 4,
+			focusMode: "auto",
+			source: "manual",
+		});
+		expect(snapshot.zoomRanges.map((z: { id: string }) => z.id)).not.toContain(
+			snapshot.cameraZoomRanges[0].id,
+		);
+	});
+});

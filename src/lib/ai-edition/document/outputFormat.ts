@@ -268,6 +268,91 @@ export function isFormatFillActive(
 }
 
 /**
+ * Which way a filled cut can be moved over a clip's recording: `horizontal` when the cut is
+ * narrower than the recording (a 9:16 cut of a 16:9 take), `vertical` when it is shorter. The
+ * box the cut fills has the frame's own shape, whatever the padding (it scales both sides), so
+ * the two shapes alone decide. With no known recording nothing is offered but the horizontal.
+ */
+export function fillCutAxes(
+	document: AxcutDocument,
+	clip?: AxcutClip | null,
+	probedAssetDims: Record<string, Dims> = {},
+): { horizontal: boolean; vertical: boolean } {
+	const assetById = new Map(document.assets.map((a) => [a.id, a]));
+	const target = clip ?? firstClip(document, probedAssetDims)?.clip;
+	const dims = target ? clipEffectiveDims(target, assetById, probedAssetDims) : null;
+	if (!dims) return { horizontal: true, vertical: false };
+	const frame = resolveAspectRatioValue(
+		document,
+		getEditorSettings(document).aspectRatio,
+		probedAssetDims,
+	);
+	const recording = dims.width / dims.height;
+	return { horizontal: frame < recording, vertical: frame > recording };
+}
+
+/** Where the centre of the cut can sit on each axis, in the recording's own 0..1. */
+export interface FillTravel {
+	x: { min: number; max: number };
+	y: { min: number; max: number };
+}
+
+/**
+ * The room the filled cut has inside a clip's cropped picture. The cut is the largest window of
+ * the frame's shape that fits the crop, so its centre can only travel between half a window from
+ * each edge of the crop: `[crop.x + half, crop.x + crop.width - half]` (and the same down).
+ * The compositor clamps to the same range, so these are the ends of what the picture can show.
+ * An axis the cut fills entirely has no travel: min = max = the middle of the crop.
+ */
+export function fillTravel(
+	document: AxcutDocument,
+	clip?: AxcutClip | null,
+	probedAssetDims: Record<string, Dims> = {},
+): FillTravel {
+	const whole: FillTravel = { x: { min: 0.5, max: 0.5 }, y: { min: 0.5, max: 0.5 } };
+	const assetById = new Map(document.assets.map((a) => [a.id, a]));
+	const target = clip ?? firstClip(document, probedAssetDims)?.clip;
+	const asset = target ? assetById.get(target.assetId) : undefined;
+	const rawW = asset?.video?.width || (asset ? probedAssetDims[asset.id]?.width : 0) || 0;
+	const rawH = asset?.video?.height || (asset ? probedAssetDims[asset.id]?.height : 0) || 0;
+	if (!target || rawW <= 0 || rawH <= 0) return whole;
+	const crop = target.cropRegion ?? { x: 0, y: 0, width: 1, height: 1 };
+	const cropW = crop.width * rawW;
+	const cropH = crop.height * rawH;
+	const frame = resolveAspectRatioValue(
+		document,
+		getEditorSettings(document).aspectRatio,
+		probedAssetDims,
+	);
+	// The window, in pixels of the recording: full height of the crop when the frame is narrower.
+	const [winW, winH] = frame < cropW / cropH ? [cropH * frame, cropH] : [cropW, cropW / frame];
+	const axis = (start: number, size: number, window: number) => {
+		const half = Math.min(size, window) / 2;
+		const mid = start + size / 2;
+		return size - window > 1e-6
+			? { min: start + half, max: start + size - half }
+			: { min: mid, max: mid };
+	};
+	return {
+		x: axis(crop.x, crop.width, winW / rawW),
+		y: axis(crop.y, crop.height, winH / rawH),
+	};
+}
+
+/** A slider share (0 = the start of the travel, 1 = its end) as the stored centre on one axis. */
+export function fillCentreAt(range: { min: number; max: number }, share: number): number {
+	const s = Math.min(1, Math.max(0, share));
+	return range.min + (range.max - range.min) * s;
+}
+
+/** The slider share a stored centre sits at on one axis; 0.5 where there is no travel. */
+export function fillShareOf(range: { min: number; max: number }, centre: number): number {
+	const room = range.max - range.min;
+	if (room <= 1e-6) return 0.5;
+	return Math.min(1, Math.max(0, (centre - range.min) / room));
+}
+
+/**
  * The clip that opens the timeline, among those whose dimensions are known: where Auto reads
  * the composition it frames.
  */

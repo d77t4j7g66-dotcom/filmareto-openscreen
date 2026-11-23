@@ -1,6 +1,8 @@
 {
 	"buttons": {
 		"addZoom": "현재 시점에 줌 추가",
+		"addCameraZoom": "Add camera zoom",
+		"autoCameraZooms": "Auto camera zooms",
 		"autoFocusAll": "모든 줌에 자동 초점",
 		"autoFocusAllTip": "모든 줌이 커서를 따라갑니다. 꺼짐: 줌마다 초점을 직접 고릅니다.",
 		"clearTimeline": "모든 줌, 트림, 속도, 주석, 전체 화면 카메라를 제거합니다. 클립, 오디오, 자막은 그대로 남습니다.",
@@ -11,6 +13,7 @@
 	},
 	"hints": {
 		"pressZoom": "{{key}}를 눌러 줌 추가",
+		"pressCameraZoom": "Press Shift+Z to zoom the camera",
 		"pressTrim": "{{key}}를 눌러 트림 추가",
 		"pressAnnotation": "{{key}}를 눌러 주석 추가",
 		"pressAudio": "{{audioKey}} 키로 오디오 추가, {{voiceoverKey}} 키로 보이스오버 녹음",
@@ -25,6 +28,7 @@
 		"trim": "트림",
 		"speed": "속도",
 		"zoomItem": "줌 {{index}}",
+		"cameraZoom": "Camera zoom",
 		"trimItem": "트림 {{index}}",
 		"speedItem": "속도 {{index}}",
 		"annotationItem": "주석",
@@ -86,6 +90,8 @@
 		"importRecordingFirst": "먼저 녹화 파일을 가져오세요",
 		"noAutoZoomMoments": "자동 줌 순간을 찾을 수 없음",
 		"noAutoZoomMomentsDescription": "이 녹화에는 기록된 클릭이 없거나, 줌을 넣을 여유가 있는 클릭이 없습니다.",
+		"noAutoCameraZooms": "No cuts to punch in on",
+		"noAutoCameraZoomsDescription": "Needs two or more touching clips where the camera fills the frame.",
 		"addedAutoZoom": "자동 줌 {{count}}개가 추가되었습니다",
 		"addedAutoZoomPlural": "자동 줌 {{count}}개가 추가되었습니다",
 		"autoZoomFailed": "자동 줌 실패",

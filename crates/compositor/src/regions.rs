@@ -532,7 +532,7 @@ pub struct ZoomState {
     /// Le pointeur lissé qui place l'œil sur son orbite, 0..1 dans le recadrage, pondéré de même.
     pub orbit: [f32; 2],
     /// À quel point la région tient la vue sur son point de focus (0..1) : sa force quand elle est
-    /// en focus MANUEL, 0 en auto. Sous « Follow cursor », elle retient la fenêtre sur ce point au
+    /// en focus MANUEL ou "face", 0 en auto. Sous « Follow cursor », elle retient la fenêtre sur ce point au
     /// lieu de la laisser suivre le curseur, qui la reprend à la sortie du zoom.
     pub pin: f32,
 }
@@ -573,12 +573,17 @@ fn camera_for(rotation: &Option<String>) -> Camera {
 
 /// Ce que l'orbite en focus auto lit de la scène : la piste curseur (celle de la parallaxe,
 /// donc `None` curseur masqué, comme à l'export), le recadrage du clip actif dans le repère
-/// normalisé du curseur (`[x0, y0, x1, y1]`) et sa fenêtre source `[début, fin)`.
+/// normalisé du curseur (`[x0, y0, x1, y1]`) et sa fenêtre source `[début, fin)`. Et ce que lit le
+/// focus "face" : la piste du visage du clip actif, rapportée à ce même recadrage (pour un zoom
+/// caméra, `camera_zoom_state_in`, la vue de la caméra : sa coupe à 1×).
 #[derive(Clone, Copy)]
 pub struct CameraFrame<'a> {
     pub track: Option<&'a CursorTrack>,
     pub crop: [f32; 4],
     pub window: [f32; 2],
+    /// The active clip's face track (`SceneClip::face_track`), which a zoom in focus mode "face"
+    /// reads. Empty: no track.
+    pub face: &'a [[f32; 3]],
 }
 
 impl CameraFrame<'static> {
@@ -587,6 +592,7 @@ impl CameraFrame<'static> {
         track: None,
         crop: [0.0, 0.0, 1.0, 1.0],
         window: [f32::NEG_INFINITY, f32::INFINITY],
+        face: &[],
     };
 }
 
@@ -607,16 +613,18 @@ fn fixed_flag(region: &SceneZoomRegion) -> f32 {
     }
 }
 
-/// 1 si la région porte la caméra réelle, 0 sinon.
-/// 1 pour une région en focus manuel : elle tient la vue sur son point (`ZoomState::pin`).
+/// 1 pour une région en focus manuel ou "face" : son point est connu (le sien, ou le visage), elle
+/// tient donc la vue dessus (`ZoomState::pin`) — sous un remplissage du format, la fenêtre reste sur
+/// le visage d'une prise de caméra seule au lieu de revenir à son point de repos. 0 en auto.
 fn pin_flag(region: &SceneZoomRegion) -> f32 {
-    if region.focus_mode.as_deref() == Some("manual") {
+    if matches!(region.focus_mode.as_deref(), Some("manual" | "face")) {
         1.0
     } else {
         0.0
     }
 }
 
+/// 1 si la région porte la caméra réelle, 0 sinon.
 fn orbit_flag(region: &SceneZoomRegion) -> f32 {
     if camera_for(&region.rotation) == Camera::Orbit {
         1.0
@@ -771,13 +779,43 @@ pub fn arrow_local_geometry(
     )
 }
 
+/// Where the face is at `t_sec` on a face track (`SceneClip::face_track`: `[t, x, y]` in time
+/// order): linear between two samples, the first sample before the track and the last after it.
+/// None for an empty track.
+pub fn face_at(track: &[[f32; 3]], t_sec: f32) -> Option<[f32; 2]> {
+    let (first, last) = (track.first()?, track.last()?);
+    // `!(t > first)` rather than `t <= first`: a NaN time holds the first sample too.
+    if !(t_sec > first[0]) {
+        return Some([first[1], first[2]]);
+    }
+    if t_sec >= last[0] {
+        return Some([last[1], last[2]]);
+    }
+    // first[0] < t_sec < last[0]: the first sample past `t_sec` is neither the first nor past the end.
+    let i = track.partition_point(|p| p[0] <= t_sec);
+    let (a, b) = (track[i - 1], track[i]);
+    let span = b[0] - a[0];
+    let k = if span > 0.0 { (t_sec - a[0]) / span } else { 1.0 };
+    Some([lerp(a[1], b[1], k), lerp(a[2], b[2], k)])
+}
+
+/// A point of the whole picture (0..1) as a fraction of `crop` (`[x0, y0, x1, y1]`, the same 0..1),
+/// the convention of a zoom's focus (`frame_geometry::screen_source_rect`). Not clamped: the cut is.
+fn in_crop(p: [f32; 2], crop: [f32; 4]) -> [f32; 2] {
+    let along = |v: f32, a: f32, b: f32| if b - a > 1e-6 { (v - a) / (b - a) } else { 0.5 };
+    [along(p[0], crop[0], crop[2]), along(p[1], crop[1], crop[3])]
+}
+
 /// Focus effectif d'une région à `t` : sa position fixe, sauf en mode "auto" où elle suit la
 /// télémétrie curseur (port de `getResolvedFocus`, sans le clamp — le crop-window de
-/// `compositor.rs` clampe déjà après coup, cf. `su0.clamp(...)`, donc redondant ici).
+/// `compositor.rs` clampe déjà après coup, cf. `su0.clamp(...)`, donc redondant ici), et en mode
+/// "face" où elle suit la piste du visage du clip actif (`frame.face`, lue au même temps source
+/// `t` que les régions), rapportée au recadrage `frame.crop`. Sans piste, sa position fixe.
 fn resolve_focus(
     region: &SceneZoomRegion,
     t: f32,
     cursor: Option<&CursorTrack>,
+    frame: &CameraFrame,
     clock: &ScreenClock,
 ) -> [f32; 2] {
     // Sous la caméra réelle, le cadrage vient de sa visée (`orbit_at`), en auto comme en manuel :
@@ -785,6 +823,11 @@ fn resolve_focus(
     // transition glisse donc vers le focus de celle-ci sans saut.
     if camera_for(&region.rotation) == Camera::Orbit {
         return [0.5, 0.5];
+    }
+    if region.focus_mode.as_deref() == Some("face") {
+        if let Some(face) = face_at(frame.face, t) {
+            return in_crop(face, frame.crop);
+        }
     }
     if region.focus_mode.as_deref() == Some("auto") {
         if let Some(track) = cursor {
@@ -857,6 +900,7 @@ fn moving_zoom_at(
     regions: &[SceneZoomRegion],
     t: f32,
     cursor: Option<&CursorTrack>,
+    frame: &CameraFrame,
     clock: &ScreenClock,
 ) -> Option<ZoomState> {
     let r = regions
@@ -879,7 +923,7 @@ fn moving_zoom_at(
         let anchor = (centre * peak - 0.5) / (peak - 1.0);
         anchor + (0.5 - anchor) / scale
     };
-    let focus = resolve_focus(r, t, cursor, clock);
+    let focus = resolve_focus(r, t, cursor, frame, clock);
     Some(ZoomState {
         scale,
         strength: 1.0,
@@ -910,8 +954,8 @@ pub fn zoom_state_at(
 /// hold), sinon la région "dominante" indépendante la plus forte (ties → la plus récente).
 /// Hors de toute région → identité (échelle 1, focus centre, tilt nul).
 ///
-/// `frame` est ce que lit l'orbite en focus auto (sans piste, elle vise le centre) ; `clock`
-/// mesure les transitions à l'écran, cf. `ScreenClock`.
+/// `frame` est ce que lit l'orbite en focus auto (sans piste, elle vise le centre), et la piste du
+/// visage que lit le focus "face" ; `clock` mesure les transitions à l'écran, cf. `ScreenClock`.
 pub fn zoom_state_in(
     regions: &[SceneZoomRegion],
     t: f32,
@@ -922,7 +966,7 @@ pub fn zoom_state_in(
     if regions.is_empty() {
         return IDENTITY_ZOOM;
     }
-    if let Some(state) = moving_zoom_at(regions, t, cursor, clock) {
+    if let Some(state) = moving_zoom_at(regions, t, cursor, frame, clock) {
         return state;
     }
     let pairs = connected_pairs(regions, clock);
@@ -936,8 +980,8 @@ pub fn zoom_state_in(
         let progress =
             ease_connected_pan(clamp01((screen_t - t_start) / (t_end - t_start).max(1e-3)));
         let (cur, next) = (&regions[ci], &regions[ni]);
-        let cur_focus = resolve_focus(cur, t, cursor, clock);
-        let next_focus = resolve_focus(next, t, cursor, clock);
+        let cur_focus = resolve_focus(cur, t, cursor, frame, clock);
+        let next_focus = resolve_focus(next, t, cursor, frame, clock);
         // Entre deux présets DIFFÉRENTS, la base traverse des poses qu'aucun préset ne valide
         // (left→right passe par Y = 0) : la marge que l'échelle gelée laissait au budget n'y est
         // plus. La porte se ferme donc en milieu de course et ne se rouvre qu'au ras des bouts —
@@ -1003,7 +1047,7 @@ pub fn zoom_state_in(
             return ZoomState {
                 scale: next.scale,
                 strength: 1.0,
-                focus: resolve_focus(next, t, cursor, clock),
+                focus: resolve_focus(next, t, cursor, frame, clock),
                 rotation: fixed_rotation(next),
                 tilt: fixed_flag(next),
                 camera,
@@ -1042,7 +1086,7 @@ pub fn zoom_state_in(
     match best {
         Some((i, strength)) => {
             let r = &regions[i];
-            let focus = resolve_focus(r, t, cursor, clock);
+            let focus = resolve_focus(r, t, cursor, frame, clock);
             let scale = scale_lerp(1.0, r.scale, strength);
             // La référence (`zoomTransform.ts`) fait converger le point de focus vers le centre
             // de l'écran LINÉAIREMENT : screen(f) = 0.5 + (f - 0.5)(1 - strength). Passer
@@ -1069,6 +1113,40 @@ pub fn zoom_state_in(
         }
         None => IDENTITY_ZOOM,
     }
+}
+
+/// The camera's zoom at `t` (source seconds of the active clip): `zoom_state_in` over the camera's
+/// own regions (`Scene::camera_zoom_regions`), a second evaluation independent of the screen's, with
+/// the same easing, chaining and motion. No pointer: it is a point of the screen and means nothing
+/// on the camera, so a region on "auto" reads the face, as one on "face" does (`resolve_focus`).
+///
+/// `frame.crop` is the camera's VIEW: its un-zoomed cut, in fractions of the whole camera picture
+/// (`[x0, y0, x1, y1]`), the picture the zoom pushes in from. A camera focus (a region's point, the
+/// face track) is a point of the whole picture; both are expressed as fractions of the view before
+/// `zoom_state_in` eases them, so the ease runs about the view's centre, as the screen's runs about
+/// the screen's. The focus returned is a fraction of the view. Easing about the picture's centre
+/// instead swayed the camera whenever the cut was off-centre (a pan, an off-centre crop): the
+/// window ran into the cut's edge, then slid back.
+pub fn camera_zoom_state_in(
+    regions: &[SceneZoomRegion],
+    t: f32,
+    frame: &CameraFrame,
+    clock: &ScreenClock,
+) -> ZoomState {
+    let viewed: Vec<SceneZoomRegion> = regions
+        .iter()
+        .map(|r| {
+            let mut r = r.clone();
+            if r.focus_mode.as_deref() == Some("auto") {
+                r.focus_mode = Some("face".into());
+            }
+            // The face track is mapped by `resolve_focus` (`in_crop` on `frame.crop`); the
+            // region's own point here, the same way.
+            [r.focus_x, r.focus_y] = in_crop([r.focus_x, r.focus_y], frame.crop);
+            r
+        })
+        .collect();
+    zoom_state_in(&viewed, t, None, frame, clock)
 }
 
 /// Port de `computeCameraFullscreenRegionStrength` (TS), avant son ease : phase LINÉAIRE
@@ -1149,6 +1227,18 @@ pub struct ActiveSceneRegion<'a> {
     pub leaving: bool,
 }
 
+/// How long before its start a scene that eases in from its neighbour already holds that
+/// neighbour's layout. The first sample of a clip can land before the scene's start by:
+/// - up to one 30 fps frame plus `SPEED_FRAME_EPSILON_SEC`: the Resolve export samples a
+///   non-retimed clip at whole media frames, and its first one is floored from a programme frame
+///   that may itself sit 1 ms early (`plan.ts`, `mediaStartFrame` / `framesDue`);
+/// - up to 50 ms more: a scene counts as touching a cut when its start is within
+///   `CUT_TOLERANCE_MS` of it (`sceneDescription.ts`), so it may start after its clip does.
+///
+/// Wider is harmless: in the same clip the scene before still covers that span at full phase and
+/// wins; across clips only the new clip's own first instants (or Resolve handles) fall inside.
+const SCENE_HOLD_BEFORE_START_S: f32 = 0.05 + 1.0 / 30.0 + SPEED_FRAME_EPSILON_SEC as f32 + 0.001;
+
 /// The strongest scene region at `t`. Scenes ease exactly as Full Camera does, so a change of
 /// scene moves at the same speed whatever the two scenes are.
 pub fn scene_region_at<'a>(
@@ -1159,7 +1249,16 @@ pub fn scene_region_at<'a>(
     let mut best: Option<ActiveSceneRegion<'a>> = None;
     for region in regions.iter().filter(|r| r.layout.is_some()) {
         let phase = camera_fullscreen_region_phase(region, t, clock);
-        if phase > 0.0 && best.as_ref().is_none_or(|b| phase > b.phase) {
+        // A scene easing in from its neighbour holds that neighbour's layout on its very first
+        // instant. Its phase is 0 there, so it was dropped and the clip's own layout drew: when
+        // a cut lands on a frame, one frame of the end state flashed before the move began.
+        // The first sample of a clip can also fall just BEFORE the scene's start (see
+        // `SCENE_HOLD_BEFORE_START_S`), so the hold covers that short span too.
+        let start = region.start_sec as f32;
+        let from_neighbour = region.from_layout.is_some()
+            && !region.continues_before
+            && (start - SCENE_HOLD_BEFORE_START_S..=start).contains(&t);
+        if (phase > 0.0 || from_neighbour) && best.as_ref().is_none_or(|b| phase > b.phase) {
             let middle = (region.start_sec + region.end_sec) as f32 * 0.5;
             best = Some(ActiveSceneRegion {
                 region,
@@ -1798,6 +1897,22 @@ mod zoom_focus_tests {
     }
 
     #[test]
+    fn a_held_zoom_is_at_full_scale_from_its_first_frame_to_its_last() {
+        // A camera punch-in cuts in and out with its clip: no ease-in before the span, no
+        // ease-out after it, full scale on every frame inside.
+        let held = SceneZoomRegion {
+            motion: Some("hold".into()),
+            ..region(1.5, 0.5)
+        };
+        let scale_at = |t: f32| zoom_state_at(&[held.clone()], t, None).scale;
+        assert_eq!(scale_at(1.999), 1.0);
+        assert!((scale_at(2.0) - 1.5).abs() < 1e-6);
+        assert!((scale_at(5.0) - 1.5).abs() < 1e-6);
+        assert!((scale_at(7.999) - 1.5).abs() < 1e-6);
+        assert_eq!(scale_at(8.0), 1.0);
+    }
+
+    #[test]
     fn a_moving_zoom_drifts_through_its_span_and_holds_one_point_still() {
         let moving = |kind: &str| SceneZoomRegion {
             motion: Some(kind.into()),
@@ -1825,8 +1940,8 @@ mod zoom_focus_tests {
         }
     }
 
-    /// Une région en focus manuel tient la vue sur son point (`pin` suit sa force) ; en auto elle ne
-    /// la tient pas, et le curseur garde la main.
+    /// Une région en focus manuel tient la vue sur son point (`pin` suit sa force), comme une région
+    /// en focus "face" sur le visage ; en auto elle ne la tient pas, et le curseur garde la main.
     #[test]
     fn a_manual_zoom_pins_the_view_and_an_auto_one_does_not() {
         let clock = ScreenClock::default();
@@ -1838,9 +1953,71 @@ mod zoom_focus_tests {
         let mut auto = region(2.0, 0.3);
         auto.focus_mode = Some("auto".into());
         assert_eq!(mid(&auto).pin, 0.0);
+        // "face" is a known point too (the face track, or the region's point): it holds the view.
+        let mut face = region(2.0, 0.3);
+        face.focus_mode = Some("face".into());
+        assert!((mid(&face).pin - 1.0).abs() < 1e-4, "face, pleine force : {}", mid(&face).pin);
         // Hors du zoom, plus rien n'est tenu.
         let out = zoom_state_in(std::slice::from_ref(&manual), 20.0, None, &CameraFrame::NONE, &clock);
         assert_eq!(out.pin, 0.0);
+    }
+
+    fn assert_near(a: [f32; 2], b: [f32; 2], what: &str) {
+        assert!((a[0] - b[0]).abs() < 1e-5 && (a[1] - b[1]).abs() < 1e-5, "{what}: {a:?} != {b:?}");
+    }
+
+    #[test]
+    fn face_at_interpolates_and_holds_the_ends() {
+        let track = [[0.0, 0.3, 0.4], [2.0, 0.7, 0.4], [4.0, 0.7, 0.8]];
+        let at = |t: f32| face_at(&track, t).expect("a point");
+        assert_near(at(1.0), [0.5, 0.4], "between two samples");
+        assert_near(at(3.0), [0.7, 0.6], "between the next two");
+        assert_near(at(2.0), [0.7, 0.4], "on a sample");
+        assert_near(at(-1.0), [0.3, 0.4], "held before the first");
+        assert_near(at(9.0), [0.7, 0.8], "held after the last");
+        assert_near(face_at(&[[5.0, 0.2, 0.6]], 0.0).expect("one sample"), [0.2, 0.6], "one sample");
+        assert_eq!(face_at(&[], 1.0), None, "no track");
+    }
+
+    /// A zoom in focus mode "face" closes in on the clip's face, mapped into the frame's crop (the
+    /// screen's crop on the screen; the camera passes its view, its cut at 1x), with no track on its
+    /// own point. On the screen, "auto" stays the pointer's: without one it is the region's point, never
+    /// the face, which is a point of the camera. On the camera, "auto" is the face.
+    #[test]
+    fn a_face_zoom_follows_the_face_track() {
+        let track = [[0.0, 0.3, 0.4], [10.0, 0.7, 0.4]];
+        let frame = CameraFrame { face: &track, ..CameraFrame::NONE };
+        let clock = ScreenClock::default();
+        let mut face = region(2.0, 0.2);
+        face.focus_mode = Some("face".into());
+        let focus = |r: &SceneZoomRegion, t: f32, f: &CameraFrame| {
+            zoom_state_in(std::slice::from_ref(r), t, None, f, &clock).focus
+        };
+        // Mid-region, at full strength: the face at t = 5 is at [0.5, 0.4].
+        assert_near(focus(&face, 5.0, &frame), [0.5, 0.4], "on the face");
+        assert_near(focus(&face, 7.5, &frame), [0.6, 0.4], "the face moves, the zoom follows");
+        assert_near(focus(&face, 5.0, &CameraFrame::NONE), [0.2, 0.5], "no track: the region's point");
+        // A crop of x 0.2..0.8: the face is a fraction of the crop, the convention of the zoom's focus.
+        let cropped = CameraFrame { crop: [0.2, 0.0, 0.8, 1.0], ..frame };
+        assert_near(focus(&face, 7.5, &cropped), [(0.6 - 0.2) / 0.6, 0.4], "in the crop");
+
+        let mut auto = face.clone();
+        auto.focus_mode = Some("auto".into());
+        assert_near(focus(&auto, 5.0, &frame), [0.2, 0.5], "screen auto, no pointer: not the face");
+        let camera = |r: &SceneZoomRegion| {
+            camera_zoom_state_in(std::slice::from_ref(r), 5.0, &frame, &clock).focus
+        };
+        assert_near(camera(&auto), [0.5, 0.4], "camera auto: the face");
+        assert_near(camera(&face), [0.5, 0.4], "camera face: the face");
+        assert_near(camera(&region(2.0, 0.2)), [0.2, 0.5], "camera manual: its point");
+        // Same easing and scale as a screen zoom.
+        let (on_camera, on_screen) = (
+            camera_zoom_state_in(std::slice::from_ref(&auto), 1.7, &frame, &clock),
+            zoom_state_in(std::slice::from_ref(&face), 1.7, None, &frame, &clock),
+        );
+        assert!(on_camera.scale > 1.0 && on_camera.scale < 2.0, "easing in: {}", on_camera.scale);
+        assert_eq!(on_camera.scale, on_screen.scale);
+        assert_eq!(on_camera.strength, on_screen.strength);
     }
 
     /// Le focus automatique ne « perd » jamais la piste : hors de ses bornes, il tient la
@@ -1875,7 +2052,7 @@ mod zoom_focus_tests {
         );
         let t_end = clock.source_at(clock.at(r.end_sec as f32) + window);
         let (x, y) = track.follow_in_view(t0, 3.0, t_end, r.scale).unwrap();
-        assert_eq!(resolve_focus(&r, 3.0, Some(&track), &clock), [x, y]);
+        assert_eq!(resolve_focus(&r, 3.0, Some(&track), &CameraFrame::NONE, &clock), [x, y]);
     }
 
     #[test]
@@ -1893,14 +2070,14 @@ mod zoom_focus_tests {
         let last = track.follow_in_view(t0, t_end, t_end, r.scale).unwrap();
         for t in [4.5f32, 6.0, 7.9] {
             assert_eq!(
-                resolve_focus(&r, t, Some(&track), &clock),
+                resolve_focus(&r, t, Some(&track), &CameraFrame::NONE, &clock),
                 [last.0, last.1],
                 "t = {t}"
             );
         }
         let first = track.follow_in_view(t0, 2.1, t_end, r.scale).unwrap();
         assert_eq!(
-            resolve_focus(&r, 2.1, Some(&track), &clock),
+            resolve_focus(&r, 2.1, Some(&track), &CameraFrame::NONE, &clock),
             [first.0, first.1]
         );
     }
@@ -3635,6 +3812,7 @@ mod orbit_camera_tests {
             track: Some(track),
             crop: [0.0, 0.0, 1.0, 1.0],
             window: [0.0, 100.0],
+            face: &[],
         }
     }
 

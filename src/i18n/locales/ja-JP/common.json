@@ -51,7 +51,9 @@
 		"unhide": "すべて表示",
 		"saveDiagnostics": "診断情報を保存",
 		"permissions": "アクセス許可…",
-		"closeNotification": "通知を閉じる"
+		"closeNotification": "通知を閉じる",
+		"exportForResolve": "Export for Resolve…",
+		"resolveExportSetting": "Export for DaVinci Resolve (open timeline)"
 	},
 	"updates": {
 		"available": "Filmareto {{latestVersion}} を利用できます。現在のバージョンは {{currentVersion}} です。",

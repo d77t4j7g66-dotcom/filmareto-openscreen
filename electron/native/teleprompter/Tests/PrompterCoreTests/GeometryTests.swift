@@ -3,6 +3,20 @@ import XCTest
 @testable import PrompterCore
 
 final class GeometryTests: XCTestCase {
+    func testTopFrameIsTopAnchoredAndCentredOnTheGivenDisplay() {
+        // A second display placed to the right and above the main one.
+        let visible = CGRect(x: 1512, y: 200, width: 1920, height: 1055)
+        let f = Geometry.topFrame(visibleFrame: visible, width: 600, height: 180)
+        XCTAssertEqual(f, CGRect(x: 1512 + 960 - 300, y: 1255 - 180, width: 600, height: 180))
+        XCTAssertEqual(f.maxY, visible.maxY)
+    }
+
+    func testTopFrameCapsToTheVisibleArea() {
+        let visible = CGRect(x: 0, y: 0, width: 800, height: 500)
+        let f = Geometry.topFrame(visibleFrame: visible, width: 2000, height: 900)
+        XCTAssertEqual(f, visible)
+    }
+
     func testNotchFrameWithNotch() {
         let screen = CGRect(x: 0, y: 0, width: 1512, height: 982)
         let r = Geometry.notchFrame(screenFrame: screen, notchHeight: 32, menuBarHeight: 37, width: 560, contentHeight: 200)

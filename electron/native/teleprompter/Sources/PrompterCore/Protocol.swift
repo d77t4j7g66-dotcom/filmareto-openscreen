@@ -23,11 +23,13 @@ public struct PrompterSettings: Codable, Equatable {
     public var paddingV: Double
     public var lineSpacing: Double
     public var showGuide: Bool
+    /// Live camera behind the text (full screen on another screen only): 0 hides it, 1 is full.
+    public var cameraOpacity: Double
 
     public static let `default` = PrompterSettings(
         position: .notch, fontSize: 28, visibleLines: 4, width: 560, opacity: 1, screenOpacity: 0.55,
         mirror: false, showCues: false, fadeNearCursor: false, mode: .voice, speed: 4,
-        displayId: nil, activeLine: 1.0 / 3.0, paddingH: 16, paddingV: 0, lineSpacing: 1, showGuide: true
+        displayId: nil, activeLine: 1.0 / 3.0, paddingH: 16, paddingV: 0, lineSpacing: 1, showGuide: true, cameraOpacity: 0
     )
 }
 
@@ -48,6 +50,8 @@ public enum Inbound: Equatable {
     case prompterOpen(stage: PrompterStage, startLineId: String, settings: PrompterSettings)
     case prompterSetCursor(lineId: String, wordIndex: Int)
     case prompterSetSettings(PrompterSettings)
+    /// The camera to show behind the text, as Chromium labels it. Nil while the camera is off.
+    case prompterSetCamera(name: String?)
     case prompterSetPlaying(Bool)
     case prompterSetVisible(Bool)
     case prompterStageEnd(hint: String)
@@ -59,6 +63,7 @@ public enum Inbound: Equatable {
     case speechFile(path: String, contextualStrings: [String])
     case hotkeysSet([HotkeyBinding])
     case audioListDevices
+    case cameraPreviewSet(CameraPreviewConfig)
 }
 
 public enum ProtocolError: Error, Equatable {
@@ -70,6 +75,7 @@ private struct Head: Decodable { let type: String }
 private struct OpenMsg: Decodable { let stage: PrompterStage; let startLineId: String; let settings: PrompterSettings }
 private struct CursorMsg: Decodable { let lineId: String; let wordIndex: Int }
 private struct SettingsMsg: Decodable { let settings: PrompterSettings }
+private struct CameraMsg: Decodable { let name: String? }
 private struct PlayingMsg: Decodable { let playing: Bool }
 private struct VisibleMsg: Decodable { let visible: Bool }
 private struct HintMsg: Decodable { let hint: String }
@@ -78,6 +84,29 @@ private struct StatusMsg: Decodable { let text: String? }
 private struct SpeechStartMsg: Decodable { let sessionId: Int; let deviceId: String?; let contextualStrings: [String] }
 private struct SpeechFileMsg: Decodable { let path: String; let contextualStrings: [String] }
 private struct HotkeysMsg: Decodable { let bindings: [HotkeyBinding] }
+private struct CameraPreviewMsg: Decodable {
+    let enabled: Bool
+    let displayId: String?
+    let cameraName: String?
+    let mirror: Bool?
+
+    enum Keys: String, CodingKey { case enabled, displayId, cameraName, mirror }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: Keys.self)
+        enabled = try c.decode(Bool.self, forKey: .enabled)
+        cameraName = try c.decodeIfPresent(String.self, forKey: .cameraName)
+        mirror = try c.decodeIfPresent(Bool.self, forKey: .mirror)
+        // The protocol types the id as a string; a bare number (Electron's display.id) is tolerated.
+        if let text = try? c.decodeIfPresent(String.self, forKey: .displayId) {
+            displayId = text
+        } else if let number = try? c.decodeIfPresent(Int.self, forKey: .displayId) {
+            displayId = String(number)
+        } else {
+            displayId = nil
+        }
+    }
+}
 
 public func decodeInbound(_ line: String) throws -> Inbound {
     let decoder = JSONDecoder()
@@ -93,6 +122,7 @@ public func decodeInbound(_ line: String) throws -> Inbound {
         let m = try body(CursorMsg.self)
         return .prompterSetCursor(lineId: m.lineId, wordIndex: m.wordIndex)
     case "prompter.setSettings": return .prompterSetSettings(try body(SettingsMsg.self).settings)
+    case "prompter.setCamera": return .prompterSetCamera(name: try body(CameraMsg.self).name)
     case "prompter.setPlaying": return .prompterSetPlaying(try body(PlayingMsg.self).playing)
     case "prompter.setVisible": return .prompterSetVisible(try body(VisibleMsg.self).visible)
     case "prompter.stageEnd": return .prompterStageEnd(hint: try body(HintMsg.self).hint)
@@ -108,6 +138,9 @@ public func decodeInbound(_ line: String) throws -> Inbound {
         return .speechFile(path: m.path, contextualStrings: m.contextualStrings)
     case "hotkeys.set": return .hotkeysSet(try body(HotkeysMsg.self).bindings)
     case "audio.listDevices": return .audioListDevices
+    case "cameraPreview.set":
+        let m = try body(CameraPreviewMsg.self)
+        return .cameraPreviewSet(CameraPreviewConfig(enabled: m.enabled, displayId: m.displayId, cameraName: m.cameraName, mirror: m.mirror ?? false))
     default: throw ProtocolError.unknownType(head.type)
     }
 }

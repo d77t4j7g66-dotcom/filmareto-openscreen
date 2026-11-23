@@ -115,6 +115,21 @@ describe("readNativeMacHelperEvents", () => {
 });
 
 describe("readNativeMacStopOutcome", () => {
+	it("carries the camera and the microphone WAV the helper wrote (1.2.0)", () => {
+		const withCamera = `${JSON.stringify({
+			event: "recording-stopped",
+			screenPath: TARGET,
+			webcamPath: "/rec/a-webcam.mov",
+			micWavPath: "/rec/a.mic.wav",
+		})}\n`;
+		expect(readNativeMacStopOutcome(started + withCamera, null, TARGET)).toEqual({
+			ok: true,
+			screenVideoPath: TARGET,
+			webcamVideoPath: "/rec/a-webcam.mov",
+			micAudioPath: "/rec/a.mic.wav",
+		});
+	});
+
 	it("takes the path the helper reported", () => {
 		expect(readNativeMacStopOutcome(started + stopped, null, "/elsewhere.mp4")).toEqual({
 			ok: true,
@@ -323,6 +338,23 @@ describe("sendNativeMacStopCommand", () => {
 });
 
 describe("nativeMacDiscardTargets", () => {
+	it("removes the camera and the WAV too, reported or only asked for (1.2.0)", () => {
+		expect(
+			nativeMacDiscardTargets(
+				{ ok: true, screenVideoPath: "/rec/a.mp4", micAudioPath: "/rec/a.mic.wav" },
+				TARGET,
+				["/rec/a-webcam.mov", "/rec/a.mic.wav"],
+			),
+		).toEqual(["/rec/a.mp4", "/rec/a.mp4.cursor.json", "/rec/a.mic.wav", "/rec/a-webcam.mov"]);
+		expect(
+			nativeMacDiscardTargets(
+				{ ok: false, reason: "stop-timeout", message: "x", exited: false },
+				TARGET,
+				["/rec/a-webcam.mov"],
+			),
+		).toEqual([TARGET, `${TARGET}.cursor.json`, "/rec/a-webcam.mov"]);
+	});
+
 	it("removes the file the helper finalized", () => {
 		expect(nativeMacDiscardTargets({ ok: true, screenVideoPath: "/rec/a.mp4" }, TARGET)).toEqual([
 			"/rec/a.mp4",

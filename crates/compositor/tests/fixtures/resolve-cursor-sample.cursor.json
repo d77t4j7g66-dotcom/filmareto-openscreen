@@ -1,0 +1,1804 @@
+{
+	"version": 2,
+	"provider": "native",
+	"samples": [
+		{
+			"timeMs": 0,
+			"cx": 0.37890625,
+			"cy": 0.5390625,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 0,
+			"cx": 0.37890625,
+			"cy": 0.5390625,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 0,
+			"cx": 0.37890625,
+			"cy": 0.5390625,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 0,
+			"cx": 0.37890625,
+			"cy": 0.5390625,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 0,
+			"cx": 0.37890625,
+			"cy": 0.5390625,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 0,
+			"cx": 0.37890625,
+			"cy": 0.5390625,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 0,
+			"cx": 0.37890625,
+			"cy": 0.5390625,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 0,
+			"cx": 0.37890625,
+			"cy": 0.5390625,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 0,
+			"cx": 0.37890625,
+			"cy": 0.5390625,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 0,
+			"cx": 0.37890625,
+			"cy": 0.5390625,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 24,
+			"cx": 0.37890625,
+			"cy": 0.5390625,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 71,
+			"cx": 0.37890625,
+			"cy": 0.5390625,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 112,
+			"cx": 0.37890625,
+			"cy": 0.5390625,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 152,
+			"cx": 0.37890625,
+			"cy": 0.5390625,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 194,
+			"cx": 0.37890625,
+			"cy": 0.5390625,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 235,
+			"cx": 0.37890625,
+			"cy": 0.5390625,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 280,
+			"cx": 0.37890625,
+			"cy": 0.5390625,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 321,
+			"cx": 0.22509765625,
+			"cy": 0.6840277777777778,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 1313,
+			"cx": 0.2177734375,
+			"cy": 0.6883680555555556,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 1354,
+			"cx": 0.21044921875,
+			"cy": 0.6901041666666666,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 1394,
+			"cx": 0.193359375,
+			"cy": 0.6909722222222222,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 1437,
+			"cx": 0.138671875,
+			"cy": 0.6927083333333334,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 1502,
+			"cx": 0.1318359375,
+			"cy": 0.6927083333333334,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 1544,
+			"cx": 0.13232421875,
+			"cy": 0.6909722222222222,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 1586,
+			"cx": 0.13720703125,
+			"cy": 0.6788194444444444,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 1623,
+			"cx": 0.14111328125,
+			"cy": 0.6640625,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 1665,
+			"cx": 0.14306640625,
+			"cy": 0.6501736111111112,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 1704,
+			"cx": 0.14453125,
+			"cy": 0.6432291666666666,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 1745,
+			"cx": 0.14404296875,
+			"cy": 0.6432291666666666,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 1783,
+			"cx": 0.13330078125,
+			"cy": 0.6545138888888888,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 1829,
+			"cx": 0.1162109375,
+			"cy": 0.6640625,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 1869,
+			"cx": 0.11328125,
+			"cy": 0.6579861111111112,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 1910,
+			"cx": 0.1142578125,
+			"cy": 0.640625,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 1954,
+			"cx": 0.1171875,
+			"cy": 0.6319444444444444,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 1996,
+			"cx": 0.1181640625,
+			"cy": 0.6310763888888888,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 2037,
+			"cx": 0.11865234375,
+			"cy": 0.6302083333333334,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 2080,
+			"cx": 0.12255859375,
+			"cy": 0.6302083333333334,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 2119,
+			"cx": 0.12744140625,
+			"cy": 0.6293402777777778,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "b296909b3933e8ec76238c8b8924ef97a45d5d22e2e6d10abdf1da4a13aabbad"
+		},
+		{
+			"timeMs": 2158,
+			"cx": 0.13037109375,
+			"cy": 0.6276041666666666,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 2204,
+			"cx": 0.13037109375,
+			"cy": 0.6276041666666666,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 2241,
+			"cx": 0.13037109375,
+			"cy": 0.6276041666666666,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 2280,
+			"cx": 0.13037109375,
+			"cy": 0.6276041666666666,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 2321,
+			"cx": 0.13037109375,
+			"cy": 0.6276041666666666,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 2361,
+			"cx": 0.13037109375,
+			"cy": 0.6276041666666666,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 2403,
+			"cx": 0.13037109375,
+			"cy": 0.6276041666666666,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 2444,
+			"cx": 0.13037109375,
+			"cy": 0.6276041666666666,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 2489,
+			"cx": 0.13037109375,
+			"cy": 0.6276041666666666,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 2531,
+			"cx": 0.13037109375,
+			"cy": 0.6276041666666666,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 2572,
+			"cx": 0.13037109375,
+			"cy": 0.6276041666666666,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 2616,
+			"cx": 0.13037109375,
+			"cy": 0.6276041666666666,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 2657,
+			"cx": 0.13037109375,
+			"cy": 0.6276041666666666,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 2700,
+			"cx": 0.13037109375,
+			"cy": 0.6276041666666666,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 2742,
+			"cx": 0.13037109375,
+			"cy": 0.6276041666666666,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 2784,
+			"cx": 0.13037109375,
+			"cy": 0.6276041666666666,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 2823,
+			"cx": 0.13037109375,
+			"cy": 0.6276041666666666,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 2864,
+			"cx": 0.13037109375,
+			"cy": 0.6276041666666666,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 2904,
+			"cx": 0.13037109375,
+			"cy": 0.6276041666666666,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 2950,
+			"cx": 0.13037109375,
+			"cy": 0.6276041666666666,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 2990,
+			"cx": 0.13037109375,
+			"cy": 0.6276041666666666,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 3031,
+			"cx": 0.13037109375,
+			"cy": 0.6276041666666666,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 3073,
+			"cx": 0.13037109375,
+			"cy": 0.6276041666666666,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 3115,
+			"cx": 0.13037109375,
+			"cy": 0.6276041666666666,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 3157,
+			"cx": 0.13037109375,
+			"cy": 0.6276041666666666,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 3205,
+			"cx": 0.13037109375,
+			"cy": 0.6276041666666666,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 3247,
+			"cx": 0.13037109375,
+			"cy": 0.6276041666666666,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 3288,
+			"cx": 0.13037109375,
+			"cy": 0.6276041666666666,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 3330,
+			"cx": 0.13037109375,
+			"cy": 0.6276041666666666,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 3372,
+			"cx": 0.13037109375,
+			"cy": 0.6276041666666666,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 3416,
+			"cx": 0.13037109375,
+			"cy": 0.6276041666666666,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 3458,
+			"cx": 0.13037109375,
+			"cy": 0.6276041666666666,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 3501,
+			"cx": 0.13037109375,
+			"cy": 0.6276041666666666,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 3545,
+			"cx": 0.13037109375,
+			"cy": 0.6276041666666666,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 3586,
+			"cx": 0.13037109375,
+			"cy": 0.6276041666666666,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 3629,
+			"cx": 0.13037109375,
+			"cy": 0.6276041666666666,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 3671,
+			"cx": 0.13037109375,
+			"cy": 0.6276041666666666,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 3714,
+			"cx": 0.13037109375,
+			"cy": 0.6276041666666666,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 3757,
+			"cx": 0.13037109375,
+			"cy": 0.6276041666666666,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 3805,
+			"cx": 0.13037109375,
+			"cy": 0.6276041666666666,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 3848,
+			"cx": 0.13037109375,
+			"cy": 0.6276041666666666,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 3889,
+			"cx": 0.13037109375,
+			"cy": 0.6276041666666666,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 3927,
+			"cx": 0.13037109375,
+			"cy": 0.6276041666666666,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 3969,
+			"cx": 0.13037109375,
+			"cy": 0.6276041666666666,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 4008,
+			"cx": 0.13037109375,
+			"cy": 0.6276041666666666,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 4045,
+			"cx": 0.13037109375,
+			"cy": 0.6276041666666666,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 4086,
+			"cx": 0.13037109375,
+			"cy": 0.6276041666666666,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 4124,
+			"cx": 0.13037109375,
+			"cy": 0.6276041666666666,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 4164,
+			"cx": 0.13037109375,
+			"cy": 0.6276041666666666,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 4205,
+			"cx": 0.13037109375,
+			"cy": 0.6276041666666666,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 4252,
+			"cx": 0.13037109375,
+			"cy": 0.6276041666666666,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 4289,
+			"cx": 0.13037109375,
+			"cy": 0.6276041666666666,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 4332,
+			"cx": 0.13037109375,
+			"cy": 0.6276041666666666,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 4369,
+			"cx": 0.13037109375,
+			"cy": 0.6276041666666666,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 4408,
+			"cx": 0.13037109375,
+			"cy": 0.6276041666666666,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 4451,
+			"cx": 0.13037109375,
+			"cy": 0.6276041666666666,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 4493,
+			"cx": 0.13037109375,
+			"cy": 0.6276041666666666,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 4535,
+			"cx": 0.13037109375,
+			"cy": 0.6276041666666666,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 4576,
+			"cx": 0.13037109375,
+			"cy": 0.6276041666666666,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 4618,
+			"cx": 0.13037109375,
+			"cy": 0.6276041666666666,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 4657,
+			"cx": 0.13037109375,
+			"cy": 0.6276041666666666,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 4695,
+			"cx": 0.13037109375,
+			"cy": 0.6276041666666666,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 4738,
+			"cx": 0.13037109375,
+			"cy": 0.6276041666666666,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 4779,
+			"cx": 0.13037109375,
+			"cy": 0.6276041666666666,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 4823,
+			"cx": 0.13037109375,
+			"cy": 0.6276041666666666,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 4866,
+			"cx": 0.13037109375,
+			"cy": 0.6276041666666666,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 4907,
+			"cx": 0.13037109375,
+			"cy": 0.6276041666666666,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 4953,
+			"cx": 0.13037109375,
+			"cy": 0.6276041666666666,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 4994,
+			"cx": 0.13037109375,
+			"cy": 0.6276041666666666,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 5035,
+			"cx": 0.13037109375,
+			"cy": 0.6276041666666666,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 5077,
+			"cx": 0.13037109375,
+			"cy": 0.6276041666666666,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 5117,
+			"cx": 0.13037109375,
+			"cy": 0.6276041666666666,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 5158,
+			"cx": 0.13037109375,
+			"cy": 0.6276041666666666,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 5199,
+			"cx": 0.1220703125,
+			"cy": 0.6223958333333334,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 5244,
+			"cx": 0,
+			"cy": 0.5416666666666666,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f",
+			"cursorType": "pointer"
+		},
+		{
+			"timeMs": 5294,
+			"cx": 0,
+			"cy": 0.3637152777777778,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 5404,
+			"cx": 0,
+			"cy": 0.3142361111111111,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 5479,
+			"cx": 0,
+			"cy": 0.2769097222222222,
+			"visible": false,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 5522,
+			"cx": 0,
+			"cy": 0.24479166666666666,
+			"visible": false,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 5582,
+			"cx": 0,
+			"cy": 0.2265625,
+			"visible": false,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 5625,
+			"cx": 0,
+			"cy": 0.19270833333333334,
+			"visible": false,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 5679,
+			"cx": 0,
+			"cy": 0.1796875,
+			"visible": false,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 5721,
+			"cx": 0,
+			"cy": 0.17881944444444445,
+			"visible": false,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 5762,
+			"cx": 0,
+			"cy": 0.17881944444444445,
+			"visible": false,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 5803,
+			"cx": 0,
+			"cy": 0.1857638888888889,
+			"visible": false,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 5846,
+			"cx": 0,
+			"cy": 0.1970486111111111,
+			"visible": false,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 5889,
+			"cx": 0,
+			"cy": 0.1970486111111111,
+			"visible": false,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 5933,
+			"cx": 0,
+			"cy": 0.19618055555555555,
+			"visible": false,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f",
+			"cursorType": "pointer"
+		},
+		{
+			"timeMs": 5978,
+			"cx": 0,
+			"cy": 0.19444444444444445,
+			"visible": false,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f",
+			"cursorType": "pointer"
+		},
+		{
+			"timeMs": 6021,
+			"cx": 0,
+			"cy": 0.19270833333333334,
+			"visible": false,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f",
+			"cursorType": "pointer"
+		},
+		{
+			"timeMs": 6062,
+			"cx": 0,
+			"cy": 0.1918402777777778,
+			"visible": false,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f",
+			"cursorType": "pointer"
+		},
+		{
+			"timeMs": 6105,
+			"cx": 0,
+			"cy": 0.1918402777777778,
+			"visible": false,
+			"interactionType": "click",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f",
+			"cursorType": "pointer"
+		},
+		{
+			"timeMs": 6145,
+			"cx": 0,
+			"cy": 0.1918402777777778,
+			"visible": false,
+			"interactionType": "click",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f",
+			"cursorType": "pointer"
+		},
+		{
+			"timeMs": 6184,
+			"cx": 0,
+			"cy": 0.1918402777777778,
+			"visible": false,
+			"interactionType": "mouseup",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 6774,
+			"cx": 0,
+			"cy": 0.1918402777777778,
+			"visible": false,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 6819,
+			"cx": 0,
+			"cy": 0.1918402777777778,
+			"visible": false,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 6861,
+			"cx": 0,
+			"cy": 0.1918402777777778,
+			"visible": false,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 6903,
+			"cx": 0,
+			"cy": 0.1918402777777778,
+			"visible": false,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 6946,
+			"cx": 0,
+			"cy": 0.1996527777777778,
+			"visible": false,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 6994,
+			"cx": 0,
+			"cy": 0.3385416666666667,
+			"visible": false,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f",
+			"cursorType": "pointer"
+		},
+		{
+			"timeMs": 7041,
+			"cx": 0,
+			"cy": 0.5034722222222222,
+			"visible": false,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f",
+			"cursorType": "text"
+		},
+		{
+			"timeMs": 7086,
+			"cx": 0,
+			"cy": 0.6484375,
+			"visible": false,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 7128,
+			"cx": 0.06787109375,
+			"cy": 0.6866319444444444,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f",
+			"cursorType": "pointer"
+		},
+		{
+			"timeMs": 7169,
+			"cx": 0.08740234375,
+			"cy": 0.6909722222222222,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f",
+			"cursorType": "pointer"
+		},
+		{
+			"timeMs": 7211,
+			"cx": 0.07763671875,
+			"cy": 0.6840277777777778,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f",
+			"cursorType": "pointer"
+		},
+		{
+			"timeMs": 7253,
+			"cx": 0.060546875,
+			"cy": 0.6770833333333334,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 7294,
+			"cx": 0.0517578125,
+			"cy": 0.6788194444444444,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f",
+			"cursorType": "pointer"
+		},
+		{
+			"timeMs": 7336,
+			"cx": 0.0498046875,
+			"cy": 0.6805555555555556,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f",
+			"cursorType": "pointer"
+		},
+		{
+			"timeMs": 7377,
+			"cx": 0.04931640625,
+			"cy": 0.6805555555555556,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f",
+			"cursorType": "pointer"
+		},
+		{
+			"timeMs": 7414,
+			"cx": 0.0546875,
+			"cy": 0.6770833333333334,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f",
+			"cursorType": "pointer"
+		},
+		{
+			"timeMs": 7458,
+			"cx": 0.07080078125,
+			"cy": 0.6701388888888888,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 7501,
+			"cx": 0.09375,
+			"cy": 0.6666666666666666,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "dd01f387f39c1dc6336d899404eb7c232c768a6a295b4998cd592ba75e72eec3"
+		},
+		{
+			"timeMs": 7544,
+			"cx": 0.1083984375,
+			"cy": 0.6640625,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 7586,
+			"cx": 0.10986328125,
+			"cy": 0.6614583333333334,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 7627,
+			"cx": 0.10986328125,
+			"cy": 0.6614583333333334,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 7665,
+			"cx": 0.10986328125,
+			"cy": 0.6614583333333334,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 7704,
+			"cx": 0.10986328125,
+			"cy": 0.6614583333333334,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 7745,
+			"cx": 0.11083984375,
+			"cy": 0.6605902777777778,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 7787,
+			"cx": 0.115234375,
+			"cy": 0.6571180555555556,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 7827,
+			"cx": 0.12548828125,
+			"cy": 0.6501736111111112,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 7872,
+			"cx": 0.1298828125,
+			"cy": 0.6484375,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "b296909b3933e8ec76238c8b8924ef97a45d5d22e2e6d10abdf1da4a13aabbad"
+		},
+		{
+			"timeMs": 7911,
+			"cx": 0.1298828125,
+			"cy": 0.6484375,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 7952,
+			"cx": 0.1298828125,
+			"cy": 0.6484375,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 7994,
+			"cx": 0.1298828125,
+			"cy": 0.6484375,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 8034,
+			"cx": 0.1298828125,
+			"cy": 0.6484375,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 8075,
+			"cx": 0.1298828125,
+			"cy": 0.6484375,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 8118,
+			"cx": 0.1298828125,
+			"cy": 0.6484375,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 8161,
+			"cx": 0.1298828125,
+			"cy": 0.6484375,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 8204,
+			"cx": 0.1298828125,
+			"cy": 0.6484375,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 8245,
+			"cx": 0.1298828125,
+			"cy": 0.6484375,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 8285,
+			"cx": 0.1298828125,
+			"cy": 0.6484375,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 8326,
+			"cx": 0.1298828125,
+			"cy": 0.6484375,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 8366,
+			"cx": 0.1298828125,
+			"cy": 0.6484375,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 8407,
+			"cx": 0.13037109375,
+			"cy": 0.6484375,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 8448,
+			"cx": 0.13037109375,
+			"cy": 0.6484375,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 8486,
+			"cx": 0.13037109375,
+			"cy": 0.6484375,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 8526,
+			"cx": 0.13037109375,
+			"cy": 0.6484375,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 8570,
+			"cx": 0.13037109375,
+			"cy": 0.6484375,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 8610,
+			"cx": 0.13037109375,
+			"cy": 0.6484375,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 8654,
+			"cx": 0.13037109375,
+			"cy": 0.6484375,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 8694,
+			"cx": 0.13037109375,
+			"cy": 0.6484375,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 8731,
+			"cx": 0.13037109375,
+			"cy": 0.6484375,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 8781,
+			"cx": 0.13037109375,
+			"cy": 0.6484375,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 8824,
+			"cx": 0.13037109375,
+			"cy": 0.6484375,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 8866,
+			"cx": 0.13037109375,
+			"cy": 0.6484375,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 8913,
+			"cx": 0.13037109375,
+			"cy": 0.6484375,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 8954,
+			"cx": 0.13037109375,
+			"cy": 0.6484375,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 8994,
+			"cx": 0.13037109375,
+			"cy": 0.6484375,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 9041,
+			"cx": 0.13037109375,
+			"cy": 0.6484375,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 9078,
+			"cx": 0.13037109375,
+			"cy": 0.6484375,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 9120,
+			"cx": 0.13037109375,
+			"cy": 0.6484375,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 9159,
+			"cx": 0.13037109375,
+			"cy": 0.6484375,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 9196,
+			"cx": 0.13037109375,
+			"cy": 0.6484375,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 9237,
+			"cx": 0.13037109375,
+			"cy": 0.6484375,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 9276,
+			"cx": 0.13037109375,
+			"cy": 0.6484375,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 9313,
+			"cx": 0.13037109375,
+			"cy": 0.6484375,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 9354,
+			"cx": 0.13037109375,
+			"cy": 0.6484375,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 9393,
+			"cx": 0.13037109375,
+			"cy": 0.6484375,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 9431,
+			"cx": 0.13037109375,
+			"cy": 0.6484375,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 9473,
+			"cx": 0.13037109375,
+			"cy": 0.6484375,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 9514,
+			"cx": 0.13037109375,
+			"cy": 0.6484375,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		},
+		{
+			"timeMs": 9553,
+			"cx": 0.13037109375,
+			"cy": 0.6484375,
+			"visible": true,
+			"interactionType": "move",
+			"assetId": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f"
+		}
+	],
+	"assets": [
+		{
+			"id": "f00c7435d2f14ab41f0bde89a962270ece724b5b346835fa4b7bd82e34b0178f",
+			"platform": "darwin",
+			"width": 28,
+			"height": 40,
+			"hotspotX": 5,
+			"hotspotY": 5,
+			"scaleFactor": 1
+		},
+		{
+			"id": "b296909b3933e8ec76238c8b8924ef97a45d5d22e2e6d10abdf1da4a13aabbad",
+			"platform": "darwin",
+			"width": 40,
+			"height": 40,
+			"hotspotX": 10,
+			"hotspotY": 10,
+			"scaleFactor": 1.25
+		},
+		{
+			"id": "dd01f387f39c1dc6336d899404eb7c232c768a6a295b4998cd592ba75e72eec3",
+			"platform": "darwin",
+			"width": 40,
+			"height": 40,
+			"hotspotX": 10,
+			"hotspotY": 10,
+			"scaleFactor": 1.25
+		},
+		{
+			"id": "1fafd2c75507947386430bb1b6b2601542e9bb1046550ce776a8731c28fb0829",
+			"platform": "darwin",
+			"width": 40,
+			"height": 40,
+			"hotspotX": 8.75,
+			"hotspotY": 12.5,
+			"scaleFactor": 1.25
+		},
+		{
+			"id": "2e93d235390d4caa0894c0777cf4d22f3fc1f6decde31d822678ff85cf76630a",
+			"platform": "darwin",
+			"width": 40,
+			"height": 40,
+			"hotspotX": 1.25,
+			"hotspotY": 1.25,
+			"scaleFactor": 1.25
+		},
+		{
+			"id": "7538e792f7b44d859f6aea7e15c50e6b6da77724214569a396cc20e360cc72c1",
+			"platform": "darwin",
+			"width": 40,
+			"height": 40,
+			"hotspotX": 10,
+			"hotspotY": 3.75,
+			"scaleFactor": 1.25
+		},
+		{
+			"id": "7bea2ec0ce026abae90b3b4a928e489816b00f434bfd74ad39d097870f1ebf29",
+			"platform": "darwin",
+			"width": 23,
+			"height": 22,
+			"hotspotX": 12,
+			"hotspotY": 11,
+			"scaleFactor": 1
+		},
+		{
+			"id": "51cd5289c9db014c0934da65baa29b781fca049435173e4e96a3e10be4afb228",
+			"platform": "darwin",
+			"width": 40,
+			"height": 40,
+			"hotspotX": 5,
+			"hotspotY": 15,
+			"scaleFactor": 1.25
+		},
+		{
+			"id": "ee3e955b3a2484a9c586b3117a2ee1ddd70a2732955dac6d6c77ba04941ba9ed",
+			"platform": "darwin",
+			"width": 40,
+			"height": 40,
+			"hotspotX": 13.75,
+			"hotspotY": 13.75,
+			"scaleFactor": 1.25
+		},
+		{
+			"id": "66addb9ebd6d510192c99c2f92a544be697f9faa4ad76c0cc907e3b8b0610744",
+			"platform": "darwin",
+			"width": 40,
+			"height": 40,
+			"hotspotX": 13.75,
+			"hotspotY": 13.75,
+			"scaleFactor": 1.25
+		},
+		{
+			"id": "56bdb78e9a2591bf260a39009fb0f1d3c57c65fd3a5ddb95acfba3fb195b537e",
+			"platform": "darwin",
+			"width": 40,
+			"height": 40,
+			"hotspotX": 10,
+			"hotspotY": 10,
+			"scaleFactor": 1.25
+		},
+		{
+			"id": "29dfb490761f7cdc9a0ba7ce0e157c3542c95a03fca7c0d17c0f0f79e3726873",
+			"platform": "darwin",
+			"width": 40,
+			"height": 40,
+			"hotspotX": 11.25,
+			"hotspotY": 11.25,
+			"scaleFactor": 1.25
+		},
+		{
+			"id": "fac801894a80e3b8e4737ad5766f3e39bba481c96cd72160ccee8ad543860f84",
+			"platform": "darwin",
+			"width": 40,
+			"height": 40,
+			"hotspotX": 13.75,
+			"hotspotY": 13.75,
+			"scaleFactor": 1.25
+		},
+		{
+			"id": "f994e3f237dbdc95f7cb81fe538fc8b7291b57372bc115724fcf469af53bdf68",
+			"platform": "darwin",
+			"width": 40,
+			"height": 40,
+			"hotspotX": 11.25,
+			"hotspotY": 11.25,
+			"scaleFactor": 1.25
+		},
+		{
+			"id": "ae17035eb72cb3198ccf581f8f016152e687cd3eabeb2e47339a2d67bd9daced",
+			"platform": "darwin",
+			"width": 40,
+			"height": 40,
+			"hotspotX": 11.25,
+			"hotspotY": 11.25,
+			"scaleFactor": 1.25
+		},
+		{
+			"id": "2032aaf6ba4463802728d972d1a30700616d7e5233690669f8c5d93af3f0222b",
+			"platform": "darwin",
+			"width": 40,
+			"height": 40,
+			"hotspotX": 10,
+			"hotspotY": 10,
+			"scaleFactor": 1.25
+		},
+		{
+			"id": "64f74fa5f79ceda192735c3a9a5e1526b3edd85e4a720c682294406381d67b6d",
+			"platform": "darwin",
+			"width": 40,
+			"height": 40,
+			"hotspotX": 13.75,
+			"hotspotY": 13.75,
+			"scaleFactor": 1.25
+		},
+		{
+			"id": "070c81163cadb0111bbaebc8c29497cb95e465e5650ce537d40066f5b113c804",
+			"platform": "darwin",
+			"width": 40,
+			"height": 40,
+			"hotspotX": 12.5,
+			"hotspotY": 12.5,
+			"scaleFactor": 1.25
+		},
+		{
+			"id": "8ce73162f5cde0f4564f7e375498a29db6c381ad95c17432edfcc273c15398e6",
+			"platform": "darwin",
+			"width": 28,
+			"height": 40,
+			"hotspotX": 5,
+			"hotspotY": 5,
+			"scaleFactor": 1
+		},
+		{
+			"id": "ed57f52b2f19cd106f5062515615199779c7e8bf43184c349e287b7d6c0ac664",
+			"platform": "darwin",
+			"width": 32,
+			"height": 32,
+			"hotspotX": 13,
+			"hotspotY": 8,
+			"scaleFactor": 1
+		}
+	]
+}

@@ -40,6 +40,7 @@ pub mod frame_geometry;
 pub mod alpha_export;
 pub mod gif_export;
 pub mod regions;
+pub mod resolve_samples;
 // Multiplateforme à dessein : n'utilise que libavformat (liée sur les trois
 // cibles) et le shim C. Seul Linux l'appelle aujourd'hui, parce que c'est la
 // seule plateforme dont la capture passe par `MediaRecorder`, mais rien dedans

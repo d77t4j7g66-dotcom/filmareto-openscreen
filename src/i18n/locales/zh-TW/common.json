@@ -51,7 +51,9 @@
 		"unhide": "全部顯示",
 		"saveDiagnostics": "儲存診斷資料",
 		"permissions": "權限…",
-		"closeNotification": "關閉通知"
+		"closeNotification": "關閉通知",
+		"exportForResolve": "Export for Resolve…",
+		"resolveExportSetting": "Export for DaVinci Resolve (open timeline)"
 	},
 	"updates": {
 		"available": "Filmareto {{latestVersion}} 已推出。目前版本為 {{currentVersion}}。",

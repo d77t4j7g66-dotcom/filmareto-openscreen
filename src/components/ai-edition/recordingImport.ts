@@ -17,7 +17,12 @@
 import { toFileUrl } from "@/components/video-editor/projectPersistence";
 import type { CursorTelemetryPoint } from "@/components/video-editor/types";
 import { createId } from "@/lib/ai-edition/document/ids";
-import { clipAwaitsProbedDuration, insertAssetClip, placeSceneTake } from "@/lib/ai-edition/document/timeline";
+import {
+	clipAwaitsProbedDuration,
+	insertAssetClip,
+	placeSceneTake,
+	withoutSeededClipsOf,
+} from "@/lib/ai-edition/document/timeline";
 import type { AxcutDocument } from "@/lib/ai-edition/schema";
 import {
 	DOCUMENT_SAVES_WAIT_TIMEOUT_MS,
@@ -200,6 +205,8 @@ async function importSceneRun(run: {
 				other.id === asset.id ? { ...other, durationSec } : other,
 			),
 		};
+		// The preview may have seeded the whole take into the still empty timeline meanwhile.
+		next = withoutSeededClipsOf(next, asset.id);
 		for (const part of parts) {
 			const sceneId = sceneOrder[part.segment];
 			if (!sceneId) continue;

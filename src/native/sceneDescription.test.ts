@@ -13,6 +13,7 @@ import {
 	ZOOM_DEPTH_SCALES,
 } from "@/components/video-editor/types";
 import { prepareClickSound } from "@/lib/ai-edition/clickSound";
+import { splitZoomsIntoCameraLane } from "@/lib/ai-edition/document/cameraZooms";
 import type {
 	AxcutAsset,
 	AxcutClip,
@@ -101,6 +102,7 @@ function makeDoc(
 		},
 		annotations: overrides.annotations ?? [],
 		zoomRanges: overrides.zoomRanges ?? [],
+		cameraZoomRanges: overrides.cameraZoomRanges ?? [],
 		audioTracks: overrides.audioTracks ?? [],
 		...(overrides.shaderEffects ? { shaderEffects: overrides.shaderEffects } : {}),
 		...(overrides.shaderEffectRanges ? { shaderEffectRanges: overrides.shaderEffectRanges } : {}),
@@ -1265,15 +1267,20 @@ describe("buildSceneDescription.audio", () => {
 // --- settings mapping ------------------------------------------------------
 
 describe("buildSceneDescription format fill", () => {
-	const doc = (editor: Record<string, unknown>) =>
+	// A talking head by default: no camera beside it, looked at for a face (none found). Its cut is
+	// the one a fixed position places (`fillPositionApplies`).
+	const doc = (editor: Record<string, unknown>, take: Record<string, unknown> = { face: null }) =>
 		makeDoc({
 			assets: [
-				makeAsset({
-					id: "a",
-					originalPath: "/a.mp4",
-					durationSec: 5,
-					video: { codec: "h264", width: 1920, height: 1080, fps: 30 },
-				}),
+				{
+					...makeAsset({
+						id: "a",
+						originalPath: "/a.mp4",
+						durationSec: 5,
+						video: { codec: "h264", width: 1920, height: 1080, fps: 30 },
+					}),
+					...take,
+				},
 			],
 			clips: [
 				makeClip({
@@ -1310,6 +1317,254 @@ describe("buildSceneDescription format fill", () => {
 			expect(layout.screenCover).toBe(false);
 			expect("screenFollow" in layout).toBe(false);
 		}
+	});
+
+	it("leaves Auto's payload as it was: no screenFixed key without a position", () => {
+		for (const editor of [
+			{ formatFollowCursor: true },
+			{ formatFollowCursor: true, fillPosition: null },
+		]) {
+			const { layout } = buildSceneDescription(doc(editor));
+			expect(layout.screenFollow).toBe(true);
+			expect("screenFixed" in layout).toBe(false);
+			expect("screenFixed" in (layout.layoutByClip?.[0] ?? {})).toBe(false);
+		}
+	});
+
+	it("passes the placed cut, for the scene and for the clip", () => {
+		const { layout } = buildSceneDescription(
+			doc({ formatFollowCursor: true, fillPosition: { x: 0.25, y: 0.5 } }),
+		);
+		expect(layout.screenFixed).toEqual([0.25, 0.5]);
+		expect(layout.layoutByClip?.[0]?.screenFixed).toEqual([0.25, 0.5]);
+		expect(layout.screenFollow).toBe(true);
+	});
+
+	it.each([
+		["a screen take with a pointer (never looked at for a face)", {}],
+		[
+			"a screen take with its camera beside it",
+			{ cameraTrack: { sourcePath: "/cam.mp4", startMs: 0, offsetMs: 0, visible: true } },
+		],
+	])("ignores a fixed position stored on %s: its cut is Auto", (_name, take) => {
+		const placed = { formatFollowCursor: true, fillPosition: { x: 0.25, y: 0.5 } };
+		const scene = buildSceneDescription(doc(placed, take));
+		const { layout } = scene;
+		expect(layout.screenFollow).toBe(true);
+		expect("screenFixed" in layout).toBe(false);
+		expect("screenFixed" in (layout.layoutByClip?.[0] ?? {})).toBe(false);
+		for (const region of scene.cameraFullscreenRegions) {
+			expect(region.layout && "screenFixed" in region.layout).toBeFalsy();
+		}
+		// The setting is still in the document, untouched: only the scene leaves it out.
+		expect(placed.fillPosition).toEqual({ x: 0.25, y: 0.5 });
+	});
+
+	it("ignores a screen take's own position in its clip's look too", () => {
+		const scene = buildSceneDescription(
+			makeDoc({
+				assets: [
+					makeAsset({
+						id: "s",
+						originalPath: "/s.mp4",
+						durationSec: 10,
+						video: { codec: "h264", width: 1920, height: 1080, fps: 30 },
+						cameraTrack: { sourcePath: "/cam.mp4", startMs: 0, offsetMs: 0, visible: true },
+					}),
+				],
+				clips: [0, 5].map((start, i) => ({
+					...makeClip({
+						id: `c${i + 1}`,
+						assetId: "s",
+						sourceStartSec: start,
+						sourceEndSec: start + 5,
+						timelineStartSec: start,
+						timelineEndSec: start + 5,
+					}),
+					look: { fillPosition: { x: 0.9, y: 0.5 }, segmentScene: "camera" },
+				})),
+				legacyEditor: { aspectRatio: "9:16", formatFollowCursor: true },
+			}),
+		);
+		for (const entry of scene.layout.layoutByClip ?? []) {
+			expect(entry && "screenFixed" in entry).toBe(false);
+		}
+		for (const region of scene.cameraFullscreenRegions) {
+			expect(region.layout && "screenFixed" in region.layout).toBe(false);
+		}
+	});
+
+	it("does not pass it while the recording is shown whole", () => {
+		const { layout } = buildSceneDescription(
+			doc({ formatFollowCursor: false, fillPosition: { x: 0.25, y: 0.5 } }),
+		);
+		expect("screenFixed" in layout).toBe(false);
+		expect("screenFixed" in (layout.layoutByClip?.[0] ?? {})).toBe(false);
+	});
+
+	it("resolves it per clip through the clip's look", () => {
+		const asset = {
+			...makeAsset({
+				id: "a",
+				originalPath: "/a.mp4",
+				durationSec: 15,
+				video: { codec: "h264", width: 1920, height: 1080, fps: 30 },
+			}),
+			face: { x: 0.7, y: 0.3 },
+		};
+		const clip = (id: string, start: number, look?: Record<string, unknown>) => ({
+			...makeClip({
+				id,
+				assetId: "a",
+				sourceStartSec: start,
+				sourceEndSec: start + 5,
+				timelineStartSec: start,
+				timelineEndSec: start + 5,
+			}),
+			...(look ? { look } : {}),
+		});
+		const scene = buildSceneDescription(
+			makeDoc({
+				assets: [asset],
+				clips: [
+					clip("c1", 0, { fillPosition: { x: 0.9, y: 0.5 } }),
+					clip("c2", 5, { fillPosition: null }),
+					clip("c3", 10),
+				],
+				legacyEditor: {
+					aspectRatio: "9:16",
+					padding: 50,
+					formatFollowCursor: true,
+					fillPosition: { x: 0.1, y: 0.5 },
+				},
+			}),
+		);
+		const { layout } = scene;
+		const [one, two, three] = layout.layoutByClip ?? [];
+		expect(one?.screenFixed).toEqual([0.9, 0.5]);
+		// Auto for this clip, whatever the project says.
+		expect(two && "screenFixed" in two).toBe(false);
+		expect(three?.screenFixed).toEqual([0.1, 0.5]);
+		// The scalar is the first clip's, like the face.
+		expect(layout.screenFixed).toEqual([0.9, 0.5]);
+		// Any look makes every clip a scene region, which the compositor installs over the clip's
+		// layout: each region must carry its clip's own window, face included.
+		const region = (i: number) => scene.cameraFullscreenRegions.find((r) => r.clipIndex === i);
+		expect(region(0)?.layout?.screenFixed).toEqual([0.9, 0.5]);
+		expect(region(0)?.layout?.screenRest).toEqual([0.7, 0.3]);
+		expect(region(1)?.layout && "screenFixed" in region(1)!.layout!).toBe(false);
+		expect(region(1)?.layout?.screenRest).toEqual([0.7, 0.3]);
+		expect(region(2)?.layout?.screenFixed).toEqual([0.1, 0.5]);
+		// A scene easing in from the clip before it comes from that clip's own window.
+		const from = region(1)?.fromLayout;
+		expect(from?.screenFixed).toEqual([0.9, 0.5]);
+		expect(from?.screenRest).toEqual([0.7, 0.3]);
+	});
+});
+
+describe("buildSceneDescription camera crop position", () => {
+	const camDoc = (editor: Record<string, unknown>, look?: Record<string, unknown>) =>
+		makeDoc({
+			assets: [
+				makeAsset({
+					id: "a",
+					originalPath: "/a.mp4",
+					durationSec: 5,
+					video: { codec: "h264", width: 1920, height: 1080, fps: 30 },
+					cameraTrack: { sourcePath: "/cam.mp4", startMs: 0, offsetMs: 0, visible: true },
+				}),
+			],
+			clips: [
+				{
+					...makeClip({
+						id: "c1",
+						assetId: "a",
+						sourceStartSec: 0,
+						sourceEndSec: 5,
+						timelineStartSec: 0,
+						timelineEndSec: 5,
+					}),
+					...(look ? { look } : {}),
+				},
+			],
+			legacyEditor: { aspectRatio: "9:16", ...editor },
+		});
+
+	it.each([
+		"vertical-stack",
+		"dual-frame",
+		"cutout-stack",
+	])("sends the cover pan with the full-size crop under %s", (preset) => {
+		const { layout } = buildSceneDescription(
+			camDoc({ webcamLayoutPreset: preset, webcamCoverPan: { x: 0.2, y: 0.8 } }),
+		);
+		expect(layout.webcamCrop.width).toBe(1);
+		expect(layout.webcamCrop.pan).toEqual([0.2, 0.8]);
+	});
+
+	it("sends no pan for a document that never set one, whatever its crop pan says", () => {
+		// A whole-frame crop with a stale, off-centre crop pan: the cut stays centred, as it was.
+		const stale = camDoc({
+			webcamCropRegion: { x: 0, y: 0, width: 1, height: 1 },
+			webcamCropPan: { x: 0.9, y: 0.1 },
+		});
+		expect("pan" in buildSceneDescription(stale).layout.webcamCrop).toBe(false);
+		expect("pan" in buildSceneDescription(camDoc({})).layout.webcamCrop).toBe(false);
+	});
+
+	it("takes a clip's own cover pan in its scene", () => {
+		const scene = buildSceneDescription(camDoc({}, { webcamCoverPan: { x: 0.9, y: 0.1 } }));
+		expect(scene.cameraFullscreenRegions[0]?.layout?.webcamCrop?.pan).toEqual([0.9, 0.1]);
+	});
+
+	// A screen take's position from before the move is not drawn, so it is no look: a project
+	// that still carries one keeps its timeline camera-fullscreen moments.
+	it("keeps camera-fullscreen regions over a clip whose only look is an ignored position", () => {
+		const scene = buildSceneDescription(
+			camDoc(
+				{
+					webcamLayoutPreset: "picture-in-picture",
+					formatFollowCursor: true,
+					cameraFullscreenRegions: [{ id: "cf1", startMs: 1000, endMs: 4000 }],
+				},
+				{ fillPosition: { x: 0.9, y: 0.5 } },
+			),
+		);
+		expect(scene.cameraFullscreenRegions).toHaveLength(1);
+		expect(scene.cameraFullscreenRegions[0]).toMatchObject({ startSec: 1, endSec: 4 });
+	});
+
+	// Frame position, in the camera pane, writes the cover pan for the camera of a 9:16 screen
+	// take. Both ways the camera fills the frame must carry it, and leave the screen's cut alone.
+	it("reaches a timeline camera-fullscreen region under picture-in-picture, through the scalar", () => {
+		const scene = buildSceneDescription(
+			camDoc({
+				webcamLayoutPreset: "picture-in-picture",
+				webcamMaskShape: "rectangle",
+				formatFollowCursor: true,
+				webcamCoverPan: { x: 0.15, y: 0.5 },
+				cameraFullscreenRegions: [{ id: "cf1", startMs: 1000, endMs: 4000 }],
+			}),
+		);
+		expect(scene.layout.webcamCrop).toMatchObject({ width: 1, height: 1, pan: [0.15, 0.5] });
+		const region = scene.cameraFullscreenRegions[0];
+		expect(region).toMatchObject({ startSec: 1, endSec: 4 });
+		// The region has no crop of its own: the compositor keeps the scene's, pan included.
+		expect(region?.layout?.webcamCrop).toBeUndefined();
+		expect("screenFixed" in scene.layout).toBe(false);
+	});
+
+	it("reaches the Camera layout of a clip, through its look", () => {
+		const scene = buildSceneDescription(
+			camDoc(
+				{ webcamLayoutPreset: "picture-in-picture", formatFollowCursor: true },
+				{ segmentScene: "camera", webcamCoverPan: { x: 0.85, y: 0.5 } },
+			),
+		);
+		const region = scene.cameraFullscreenRegions[0];
+		expect(region?.fullCamera).toBe(true);
+		expect(region?.layout?.webcamCrop?.pan).toEqual([0.85, 0.5]);
+		expect(region?.layout && "screenFixed" in region.layout).toBe(false);
 	});
 });
 
@@ -3125,5 +3380,172 @@ describe("buildSceneDescription.shaderEffects", () => {
 			],
 		});
 		expect(buildSceneDescription(doc).shaderEffects).toBeUndefined();
+	});
+});
+
+describe("buildSceneDescription camera zoom lane", () => {
+	const camTrack = { sourcePath: "/cam.mp4", startMs: 0, offsetMs: 0, visible: true };
+	const clipOf = (assetId: string) =>
+		makeClip({
+			id: "c1",
+			assetId,
+			sourceStartSec: 0,
+			sourceEndSec: 10,
+			timelineStartSec: 0,
+			timelineEndSec: 10,
+		});
+	const zoom = (id: string, extra: Partial<AxcutZoomRegion> = {}) =>
+		makeZoom({ id, startMs: 1000, endMs: 3000, depth: 3, focus: { cx: 0.3, cy: 0.4 }, ...extra });
+
+	it("projects camera zooms into cameraZoomRegions for a screen take with its camera", () => {
+		const asset = makeAsset({
+			id: "a",
+			originalPath: "/screen.mp4",
+			cameraTrack: camTrack,
+			faceTrack: [
+				{ t: 0, x: 0.4, y: 0.3 },
+				{ t: 2, x: 0.5, y: 0.35 },
+			],
+		});
+		const scene = buildSceneDescription(
+			makeDoc({
+				assets: [asset],
+				clips: [clipOf("a")],
+				zoomRanges: [zoom("s")],
+				cameraZoomRanges: [
+					zoom("cz", { focusMode: "auto" }),
+					zoom("cm", { focusMode: "manual", depth: 6 }),
+				],
+			}),
+		);
+		expect(scene.zoomRegions.map((r) => r.id)).toEqual(["s"]);
+		expect(scene.cameraZoomRegions).toHaveLength(2);
+		const [auto, manual] = scene.cameraZoomRegions;
+		expect(auto).toMatchObject({
+			startSec: 1,
+			endSec: 3,
+			scale: ZOOM_DEPTH_SCALES[3],
+			focusMode: "face",
+			rotation: null,
+			clipIndex: 0,
+		});
+		expect(manual).toMatchObject({ focusMode: "manual", focusX: 0.3, focusY: 0.4 });
+		expect(manual.scale).toBeLessThanOrEqual(5);
+		expect(scene.clips[0].faceTrack).toEqual([
+			[0, 0.4, 0.3],
+			[2, 0.5, 0.35],
+		]);
+	});
+
+	it("falls back to the single face point, then to nothing", () => {
+		const withFace = makeAsset({ id: "a", originalPath: "/a.mp4", face: { x: 0.6, y: 0.2 } });
+		const bare = makeAsset({ id: "b", originalPath: "/b.mp4", faceTrack: null });
+		const mk = (a: AxcutAsset) =>
+			buildSceneDescription(makeDoc({ assets: [a], clips: [clipOf(a.id)] })).clips[0].faceTrack;
+		expect(mk(withFace)).toEqual([[0, 0.6, 0.2]]);
+		expect(mk(bare)).toEqual([]);
+	});
+
+	it("a talking head's camera zoom zooms its own picture, following the face", () => {
+		const head = makeAsset({
+			id: "h",
+			originalPath: "/h.mp4",
+			face: { x: 0.5, y: 0.3 },
+			faceTrack: [{ t: 0, x: 0.5, y: 0.3 }],
+		});
+		const scene = buildSceneDescription(
+			makeDoc({
+				assets: [head],
+				clips: [clipOf("h")],
+				cameraZoomRanges: [zoom("cz", { focusMode: "auto" })],
+			}),
+		);
+		expect(scene.cameraZoomRegions).toEqual([]);
+		expect(scene.zoomRegions).toHaveLength(1);
+		expect(scene.zoomRegions[0]).toMatchObject({ id: "cz", focusMode: "face", rotation: null });
+		expect(scene.clips[0].faceTrack).toEqual([[0, 0.5, 0.3]]);
+	});
+
+	it("a screen zoom over a talking head is dropped", () => {
+		const head = makeAsset({ id: "h", originalPath: "/h.mp4", face: null });
+		const scene = buildSceneDescription(
+			makeDoc({ assets: [head], clips: [clipOf("h")], zoomRanges: [zoom("s")] }),
+		);
+		expect(scene.zoomRegions).toEqual([]);
+	});
+
+	it("a migrated talking head renders the zooms it had", () => {
+		// Before the split this zoom sat in `zoomRanges` and became a scene zoom region.
+		const head = makeAsset({ id: "h", originalPath: "/h.mp4", face: { x: 0.5, y: 0.3 } });
+		const z = zoom("z", { focusMode: "manual" });
+		const clips = [clipOf("h")];
+		const before = buildSceneDescription(
+			makeDoc({ assets: [head], clips, zoomRanges: [z] }),
+		).zoomRegions;
+		const after = buildSceneDescription(
+			makeDoc({ assets: [head], clips, cameraZoomRanges: [z] }),
+		).zoomRegions;
+		expect(after).toHaveLength(1);
+		// Over a talking head the screen lane drops it; the camera lane is what renders it.
+		expect(before).toEqual([]);
+		expect(after[0].scale).toBe(ZOOM_DEPTH_SCALES[3]);
+		expect([after[0].startSec, after[0].endSec]).toEqual([1, 3]);
+		expect([after[0].focusX, after[0].focusY]).toEqual([0.3, 0.4]);
+		expect(after[0].focusMode).toBe("manual");
+	});
+
+	it("a legacy talking-head zoom (focusMode unset) keeps its hand-placed point through the split", () => {
+		const head = makeAsset({ id: "h", originalPath: "/h.mp4", face: { x: 0.5, y: 0.3 } });
+		const legacy = makeDoc({
+			assets: [head],
+			clips: [clipOf("h")],
+			zoomRanges: [
+				zoom("z", { rotationPreset: "left", hideCursor: true } as Partial<AxcutZoomRegion>),
+			],
+		});
+		const { cameraZoomRanges: _drop, ...raw } = legacy as unknown as Record<string, unknown>;
+		const migrated = splitZoomsIntoCameraLane(raw) as unknown as AxcutDocument;
+		expect(migrated.zoomRanges).toEqual([]);
+		const [r] = buildSceneDescription(migrated).zoomRegions;
+		expect(r.scale).toBe(ZOOM_DEPTH_SCALES[3]);
+		expect([r.startSec, r.endSec]).toEqual([1, 3]);
+		// Unset, as it was in `zoomRanges`: the old pin semantics, not "manual".
+		expect(r.focusMode).toBeNull();
+		expect([r.focusX, r.focusY]).toEqual([0.3, 0.4]);
+		expect(r.rotation).toBe("left");
+		expect(r.hideCursor).toBe(true);
+	});
+
+	it("an Auto camera-layer zoom falls back on the upper middle, never on its stored point", () => {
+		// A screen take with its camera and no face track: Auto closes in on [0.5, 0.4], as the full
+		// camera did before the split, whatever point (often a click) the zoom carries.
+		const asset = makeAsset({ id: "a", originalPath: "/screen.mp4", cameraTrack: camTrack });
+		const scene = buildSceneDescription(
+			makeDoc({
+				assets: [asset],
+				clips: [clipOf("a")],
+				cameraZoomRanges: [
+					zoom("auto", { focusMode: "auto", focus: { cx: 0.9, cy: 0.1 } }),
+					zoom("unset", { startMs: 4000, endMs: 6000, focus: { cx: 0.9, cy: 0.1 } }),
+				],
+			}),
+		);
+		expect(scene.clips[0].faceTrack).toEqual([]);
+		const [auto, unset] = scene.cameraZoomRegions;
+		expect(auto).toMatchObject({ focusMode: "face", focusX: 0.5, focusY: 0.4 });
+		// Unset on the camera layer is manual, on its own point.
+		expect(unset).toMatchObject({ focusMode: "manual", focusX: 0.9, focusY: 0.1 });
+	});
+
+	it("an Auto talking-head zoom follows the face from its own point", () => {
+		const head = makeAsset({ id: "h", originalPath: "/h.mp4", face: null });
+		const [r] = buildSceneDescription(
+			makeDoc({
+				assets: [head],
+				clips: [clipOf("h")],
+				cameraZoomRanges: [zoom("cz", { focusMode: "auto", focus: { cx: 0.6, cy: 0.3 } })],
+			}),
+		).zoomRegions;
+		expect(r).toMatchObject({ focusMode: "face", focusX: 0.6, focusY: 0.3 });
 	});
 });

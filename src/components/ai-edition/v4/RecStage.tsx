@@ -480,27 +480,29 @@ export function RecStage({
 							</div>
 						)}
 
-						{cameraOnly ? null : <div className={styles.recRow}>
-							<div id={rowLabelId("systemAudio")} className={styles.recRowLabel}>
-								{prefs.systemAudioEnabled ? <Volume2 size={15} /> : <VolumeX size={15} />}
-								{t("rec.systemAudio")}
-							</div>
-							{/* "System audio" is jargon for what the computer plays: the one row whose label
+						{cameraOnly ? null : (
+							<div className={styles.recRow}>
+								<div id={rowLabelId("systemAudio")} className={styles.recRowLabel}>
+									{prefs.systemAudioEnabled ? <Volume2 size={15} /> : <VolumeX size={15} />}
+									{t("rec.systemAudio")}
+								</div>
+								{/* "System audio" is jargon for what the computer plays: the one row whose label
 						    alone does not say what it records. The row tooltips open above their pill: to
 						    the left they would sit on the label being read, and below the last row they
 						    would cover Start recording. */}
-							<Tooltip content={t("rec.systemAudioTip")} side="top">
-								<button
-									type="button"
-									className={`${styles.recToggleBtn}${prefs.systemAudioEnabled ? ` ${styles.on}` : ""}`}
-									aria-labelledby={rowLabelId("systemAudio")}
-									aria-pressed={prefs.systemAudioEnabled}
-									onClick={() => updatePrefs({ systemAudioEnabled: !prefs.systemAudioEnabled })}
-								>
-									{prefs.systemAudioEnabled ? t("rec.on") : t("rec.off")}
-								</button>
-							</Tooltip>
-						</div>}
+								<Tooltip content={t("rec.systemAudioTip")} side="top">
+									<button
+										type="button"
+										className={`${styles.recToggleBtn}${prefs.systemAudioEnabled ? ` ${styles.on}` : ""}`}
+										aria-labelledby={rowLabelId("systemAudio")}
+										aria-pressed={prefs.systemAudioEnabled}
+										onClick={() => updatePrefs({ systemAudioEnabled: !prefs.systemAudioEnabled })}
+									>
+										{prefs.systemAudioEnabled ? t("rec.on") : t("rec.off")}
+									</button>
+								</Tooltip>
+							</div>
+						)}
 
 						{canRecordMicrophone() ? (
 							<div className={styles.recRow}>
@@ -611,7 +613,11 @@ export function RecStage({
 						{prefs.camEnabled ? (
 							<div className={styles.recRow}>
 								<div className={styles.recRowLabel}>{t("studio.cameraQuality")}</div>
-								<div className={styles.recQuality} role="group" aria-label={t("studio.cameraQuality")}>
+								<div
+									className={styles.recQuality}
+									role="group"
+									aria-label={t("studio.cameraQuality")}
+								>
 									{(["1080p", "1440p", "2160p"] as const).map((quality) => (
 										<button
 											type="button"

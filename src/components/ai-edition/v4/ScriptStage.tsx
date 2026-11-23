@@ -1,6 +1,6 @@
-import { useScopedT } from "@/contexts/I18nContext";
 import { Plus, X } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useScopedT } from "@/contexts/I18nContext";
 import { createId } from "@/lib/ai-edition/document/ids";
 import { type Scene, scenesOf, splitPastedScript } from "@/lib/ai-edition/document/script";
 import { useProjectStore } from "@/lib/ai-edition/store/projectStore";

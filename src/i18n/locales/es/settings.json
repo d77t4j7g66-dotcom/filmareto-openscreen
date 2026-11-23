@@ -164,7 +164,18 @@
 		"shadowLight": "Suave",
 		"shadowMedium": "Media",
 		"shadowStrong": "Fuerte",
-		"formatFillCover": "Fill"
+		"formatFillCover": "Fill",
+		"framePosition": "Frame position",
+		"framePositionAuto": "Auto",
+		"framePositionHorizontal": "Left to right",
+		"framePositionVertical": "Top to bottom",
+		"framePositionScope": "Apply to",
+		"framePositionWhole": "Whole project",
+		"framePositionClip": "This clip",
+		"framePositionOwnOne": "1 clip has its own position",
+		"framePositionOwnMany": "{{count}} clips have their own position",
+		"framePositionUseProject": "Use project position",
+		"framePositionCameraHint": "Places your camera when it fills the frame."
 	},
 	"stylePresets": {
 		"button": "Preajustes",
@@ -451,6 +462,7 @@
 		"reactiveWebcamTip": "La cámara se reduce mientras el vídeo está ampliado",
 		"webcamBackground": "Fondo de la cámara",
 		"helpNoWebcam": "Este proyecto no tiene cámara, así que los controles de diseño están desactivados y el preajuste muestra «Sin cámara». Tu diseño guardado se conserva para cuando añadas una cámara.",
+		"helpCameraOnly": "This take is your camera alone. Choose where its cut sits when the format is narrower than the take.",
 		"title": "Disposición de cámara",
 		"noWebcam": "Sin cámara"
 	},

@@ -11,6 +11,11 @@ export interface ProjectMedia {
 	 */
 	webcamOffsetMs?: number;
 	cursorCaptureMode?: CursorCaptureMode;
+	/**
+	 * 1.2.0: the take's microphone as a 48 kHz 24-bit WAV at unity, `<take>.mic.wav`. The
+	 * take's own audio track still carries the mix for preview; this is the master.
+	 */
+	micAudioPath?: string;
 }
 
 export type CursorCaptureMode = "editable-overlay" | "system";
@@ -66,6 +71,7 @@ export function normalizeProjectMedia(candidate: unknown): ProjectMedia | null {
 	}
 
 	const webcamVideoPath = normalizePath(raw.webcamVideoPath);
+	const micAudioPath = normalizePath(raw.micAudioPath);
 	const cursorCaptureMode = normalizeCursorCaptureMode(raw.cursorCaptureMode);
 	const webcamOffsetMs =
 		typeof raw.webcamOffsetMs === "number" && Number.isFinite(raw.webcamOffsetMs)
@@ -77,6 +83,7 @@ export function normalizeProjectMedia(candidate: unknown): ProjectMedia | null {
 		...(webcamVideoPath ? { webcamVideoPath } : {}),
 		...(webcamOffsetMs !== undefined ? { webcamOffsetMs } : {}),
 		...(cursorCaptureMode ? { cursorCaptureMode } : {}),
+		...(micAudioPath ? { micAudioPath } : {}),
 	};
 }
 

@@ -24,7 +24,7 @@ async function writeProject(relative: string, data: PackedProjectData): Promise<
 }
 
 /**
- * A project file as the editor saves it: the AxcutDocument itself, one zoom on the timeline, an
+ * A project file as the editor saves it: the AxcutDocument itself, one zoom on each lane, an
  * export format a migrated v2 project left in `legacyEditor`, a speed region where the editor
  * keeps them (`legacyEditor.speedRegions`), and one shader effect.
  */
@@ -52,6 +52,9 @@ async function writeDocument(relative: string, screenVideoPath: string): Promise
 				},
 			],
 			shaderEffectRanges: [{ id: "fxr1", startMs: 0, endMs: 500, effectId: "fx1" }],
+			cameraZoomRanges: [
+				{ id: "cz1", startMs: 0, endMs: 1000, depth: 2, focus: { cx: 0.5, cy: 0.4 } },
+			],
 		}),
 	);
 }
@@ -189,7 +192,8 @@ describe("a project the editor saved", () => {
 			screenVideoPath: screen,
 			screenVideoExists: true,
 			exportFormat: "gif",
-			zoomRegions: 1,
+			// The screen's zoom and the camera's.
+			zoomRegions: 2,
 			trimRegions: 0,
 			speedRegions: 1,
 			shaderEffectRegions: 1,

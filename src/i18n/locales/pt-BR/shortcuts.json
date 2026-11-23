@@ -35,6 +35,7 @@
 		"cycleAnnotationsForward": "Alternar Anotações (Próximo)",
 		"cycleAnnotationsBackward": "Alternar Anotações (Anterior)",
 		"deleteSelectedAlt": "Excluir Selecionado (alt)",
+		"addCameraZoom": "Add Camera Zoom",
 		"panTimeline": "Mover Linha do Tempo",
 		"zoomTimeline": "Zoom na Linha do Tempo",
 		"frameBack": "Quadro Anterior",

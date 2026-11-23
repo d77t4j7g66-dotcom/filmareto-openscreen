@@ -154,6 +154,7 @@ function createShimElectronAPI() {
 		getCurrentRecordingSession: () => Promise.resolve({ success: false, session: null }),
 		switchToHud: () => Promise.resolve({ success: true }),
 		switchToEditor: () => Promise.resolve({ success: true }),
+		openScriptEditor: () => Promise.resolve(),
 		startNewRecording: () => Promise.resolve({ success: true }),
 		openSourceSelector: () => Promise.resolve({ success: true }),
 		setHasUnsavedChanges: () => undefined,

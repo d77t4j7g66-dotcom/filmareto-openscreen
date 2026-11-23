@@ -721,7 +721,7 @@ mod tests {
     }
 
     fn whole(track: &CursorTrack) -> CameraFrame<'_> {
-        CameraFrame { track: Some(track), crop: [0.0, 0.0, 1.0, 1.0], window: [0.0, 100.0] }
+        CameraFrame { track: Some(track), crop: [0.0, 0.0, 1.0, 1.0], window: [0.0, 100.0], face: &[] }
     }
 
     /// Lecture, seek arrière, sauts : même cadrage pour le même `t`, et aucune frame ne saute.

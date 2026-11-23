@@ -59,6 +59,9 @@ public final class AudioTrackMixer {
 		case microphone = 1
 	}
 
+	/// Samples per frame in the chunks `onChunk` receives (the mix is always stereo).
+	public static let chunkChannelCount = MixFormat.channelCount
+
 	/// The AAC-friendly mix format, mirroring `makeAacCompatibleAudioFormat` on Windows.
 	/// Mixing happens in Float and quantizes to Int16 once, at the very end.
 	private enum MixFormat {
@@ -114,6 +117,13 @@ public final class AudioTrackMixer {
 	private let includesSystemAudio: Bool
 	private let includesMicrophone: Bool
 	private let microphoneGain: Float
+	/// Whether the track is soft-limited before it is quantized. Only a mix of two sources needs
+	/// it: they can sum past full scale. A single source, the microphone above all, is kept as it
+	/// came, level for level what another recorder (OBS) writes.
+	private let limitsPeaks: Bool
+	/// Every chunk as it goes out, in Float before any limiting or quantization: the 24-bit
+	/// microphone WAV is written from here, on the same timeline as the track.
+	private let onChunk: (([Float]) -> Void)?
 	private let outputFormatDescription: CMAudioFormatDescription?
 
 	private var sources = [SourceTimeline](repeating: SourceTimeline(), count: Source.allCases.count)
@@ -142,12 +152,16 @@ public final class AudioTrackMixer {
 		includesSystemAudio: Bool,
 		includesMicrophone: Bool,
 		microphoneGain: Double,
+		limitsPeaks: Bool? = nil,
+		onChunk: (([Float]) -> Void)? = nil,
 		clock: @escaping TimelineClock
 	) {
 		self.input = input
 		self.clock = clock
 		self.includesSystemAudio = includesSystemAudio
 		self.includesMicrophone = includesMicrophone
+		self.limitsPeaks = limitsPeaks ?? (includesSystemAudio && includesMicrophone)
+		self.onChunk = onChunk
 		// The request carries MIC_GAIN_BOOST (1.4); Windows applies it unconditionally and so
 		// does this. A non-finite or negative value would poison every mixed sample.
 		let sanitized = microphoneGain.isFinite ? max(0, microphoneGain) : 1
@@ -618,10 +632,13 @@ public final class AudioTrackMixer {
 			return nil
 		}
 
-		// The one and only quantization: sum in Float, clip once, then land on Int16.
+		onChunk?(mix)
+		// The one and only quantization: sum in Float, then land on Int16. A mix of two sources is
+		// eased off full scale first; a single source is only clipped where it was clipped anyway.
 		var pcm = [Int16](repeating: 0, count: mix.count)
 		for index in mix.indices {
-			pcm[index] = Int16((softLimit(mix[index]) * 32_767).rounded())
+			let sample = limitsPeaks ? softLimit(mix[index]) : min(1, max(-1, mix[index]))
+			pcm[index] = Int16((sample * 32_767).rounded())
 		}
 
 		let byteCount = pcm.count * MemoryLayout<Int16>.size
@@ -925,4 +942,24 @@ func softLimit(_ sample: Float) -> Float {
 	if magnitude <= knee { return sample }
 	let eased = knee + (1 - knee) * tanh((magnitude - knee) / (1 - knee))
 	return sample < 0 ? -eased : eased
+}
+
+/// A sink that takes every chunk and keeps none: for a mixer that exists only for its
+/// `onChunk` tap (the microphone WAV, 1.2.0).
+public final class DiscardingAudioSink: MixedAudioSink {
+	public init() {}
+	public var isReadyForMoreMediaData: Bool { true }
+	@discardableResult
+	public func append(_ sampleBuffer: CMSampleBuffer) -> Bool { true }
+}
+
+/// A sink whose writer input arrives later: a camera-only take's AAC track belongs to the
+/// camera's file, which opens at the camera's first frame. Not ready until then, so the mixer
+/// holds its chunks; the mixer's timeline also starts at that frame, so nothing waits long.
+public final class ForwardingAudioSink: MixedAudioSink {
+	public var target: AVAssetWriterInput?
+	public init() {}
+	public var isReadyForMoreMediaData: Bool { target?.isReadyForMoreMediaData ?? false }
+	@discardableResult
+	public func append(_ sampleBuffer: CMSampleBuffer) -> Bool { target?.append(sampleBuffer) ?? false }
 }

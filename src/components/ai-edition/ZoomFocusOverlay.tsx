@@ -24,6 +24,16 @@ interface ZoomFocusOverlayProps {
 	 * recording (Follow cursor): the drag then pans that window over the whole recording.
 	 */
 	window?: { w: number; h: number };
+	/**
+	 * Set when the box is the camera's, not the screen's. A camera zoom's focus is a point of the
+	 * whole camera picture (un-mirrored), while the pointer is in the box as drawn: these two carry
+	 * a point from one space to the other (`boxPointToCameraPicture` and its inverse).
+	 * Auto then follows the face, with no pointer data involved.
+	 */
+	camera?: {
+		toFocus: (point: { x: number; y: number }) => ZoomFocus;
+		fromFocus: (focus: ZoomFocus) => { x: number; y: number };
+	};
 	/** Called on every pointermove while dragging — must be cheap/local-only. */
 	onFocusChange: (id: string, focus: ZoomFocus) => void;
 	/** Called once on pointer release to persist the final position. */
@@ -34,12 +44,13 @@ export function ZoomFocusOverlay({
 	region,
 	isPlaying,
 	window: windowShare,
+	camera,
 	onFocusChange,
 	onFocusCommit,
 }: ZoomFocusOverlayProps) {
 	// With no recorded pointer there is nothing to follow, whatever the region was set to.
 	const hasCursor = useHasRecordedCursor() === true;
-	const followsCursor = region.focusMode === "auto" && hasCursor;
+	const followsCursor = region.focusMode === "auto" && (hasCursor || camera !== undefined);
 	const overlayRef = useRef<HTMLDivElement | null>(null);
 	const draggingRef = useRef(false);
 	const lastPointRef = useRef<{ x: number; y: number } | null>(null);
@@ -73,23 +84,36 @@ export function ZoomFocusOverlay({
 			const cx = clamp01((clientX - rect.left) / rect.width);
 			const cy = clamp01((clientY - rect.top) / rect.height);
 
+			if (camera) {
+				// The box is clamped like the screen's, then carried into the picture.
+				onFocusChange(
+					region.id,
+					camera.toFocus({
+						x: Math.min(bounds.maxX, Math.max(bounds.minX, cx)),
+						y: Math.min(bounds.maxY, Math.max(bounds.minY, cy)),
+					}),
+				);
+				return;
+			}
 			onFocusChange(region.id, {
 				cx: Math.min(bounds.maxX, Math.max(bounds.minX, cx)),
 				cy: Math.min(bounds.maxY, Math.max(bounds.minY, cy)),
 			});
 		},
-		[region, onFocusChange, windowShare],
+		[region, onFocusChange, windowShare, camera],
 	);
 
 	const handlePointerDown = useCallback(
 		(event: ReactPointerEvent<HTMLDivElement>) => {
 			if (isPlaying || followsCursor) return;
 			event.preventDefault();
+			// Inside the camera box a drag places the focus, it does not drag the box along.
+			if (camera) event.stopPropagation();
 			draggingRef.current = true;
 			event.currentTarget.setPointerCapture(event.pointerId);
 			updateFromClientPoint(event.clientX, event.clientY);
 		},
-		[isPlaying, followsCursor, updateFromClientPoint],
+		[isPlaying, followsCursor, camera, updateFromClientPoint],
 	);
 
 	const handlePointerMove = useCallback(
@@ -122,8 +146,11 @@ export function ZoomFocusOverlay({
 	const zoomScale = getZoomScale(region);
 	const widthPercent = Math.min(100, (1 / zoomScale) * 100);
 	const heightPercent = Math.min(100, (1 / zoomScale) * 100);
-	const rawLeft = clamp01(region.focus.cx) * 100 - widthPercent / 2;
-	const rawTop = clamp01(region.focus.cy) * 100 - heightPercent / 2;
+	const shown = camera
+		? camera.fromFocus(region.focus)
+		: { x: region.focus.cx, y: region.focus.cy };
+	const rawLeft = clamp01(shown.x) * 100 - widthPercent / 2;
+	const rawTop = clamp01(shown.y) * 100 - heightPercent / 2;
 	const left = windowShare
 		? (100 - widthPercent) / 2
 		: Math.min(100 - widthPercent, Math.max(0, rawLeft));

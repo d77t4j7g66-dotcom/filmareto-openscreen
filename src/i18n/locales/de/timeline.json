@@ -1,6 +1,8 @@
 {
 	"buttons": {
 		"addZoom": "Zoom zum aktuellen Zeitpunkt hinzufügen",
+		"addCameraZoom": "Add camera zoom",
+		"autoCameraZooms": "Auto camera zooms",
 		"autoFocusAll": "Auto-Fokus für alle Zooms",
 		"autoFocusAllTip": "Alle Zooms folgen dem Cursor. Aus: Du wählst den Fokus jedes Zooms selbst.",
 		"clearTimeline": "Alle Zooms, Trims, Tempowechsel, Anmerkungen und Vollbild-Kameras entfernen. Clips, Audio und Untertitel bleiben.",
@@ -11,6 +13,7 @@
 	},
 	"hints": {
 		"pressZoom": "Drücke {{key}}, um einen Zoom hinzuzufügen",
+		"pressCameraZoom": "Press Shift+Z to zoom the camera",
 		"pressTrim": "Drücke {{key}}, um einen Trim hinzuzufügen",
 		"pressAnnotation": "Drücke {{key}}, um eine Anmerkung hinzuzufügen",
 		"pressAudio": "Drücke {{audioKey}} für Audio, {{voiceoverKey}} für ein Voiceover",
@@ -25,6 +28,7 @@
 		"trim": "Trim",
 		"speed": "Tempo",
 		"zoomItem": "Zoom {{index}}",
+		"cameraZoom": "Camera zoom",
 		"trimItem": "Trim {{index}}",
 		"speedItem": "Tempo {{index}}",
 		"annotationItem": "Anmerkung",
@@ -86,6 +90,8 @@
 		"importRecordingFirst": "Importiere zuerst eine Aufnahme",
 		"noAutoZoomMoments": "Keine Auto-Zoom-Momente gefunden",
 		"noAutoZoomMomentsDescription": "Diese Aufnahme enthält keine aufgezeichneten Klicks oder keinen, der Platz für einen Zoom lässt.",
+		"noAutoCameraZooms": "No cuts to punch in on",
+		"noAutoCameraZoomsDescription": "Needs two or more touching clips where the camera fills the frame.",
 		"addedAutoZoom": "{{count}} automatischer Zoom hinzugefügt",
 		"addedAutoZoomPlural": "{{count}} automatische Zooms hinzugefügt",
 		"autoZoomFailed": "Auto-Zoom fehlgeschlagen",

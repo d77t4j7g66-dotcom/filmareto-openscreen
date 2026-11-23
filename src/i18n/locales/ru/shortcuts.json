@@ -35,6 +35,7 @@
 		"cycleAnnotationsForward": "Циклически переключить аннотации вперёд",
 		"cycleAnnotationsBackward": "Циклически переключить аннотации назад",
 		"deleteSelectedAlt": "Удалить выбранное (альт)",
+		"addCameraZoom": "Add Camera Zoom",
 		"panTimeline": "Панорамирование таймлайна",
 		"zoomTimeline": "Масштабирование таймлайна",
 		"frameBack": "Кадр назад",

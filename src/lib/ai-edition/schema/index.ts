@@ -18,6 +18,8 @@ import { z } from "zod";
 // vite-plugin-electron builds it without the root resolve.alias.
 import { toAspectRatioToken } from "../../../utils/aspectRatioUtils";
 import { clampToBound } from "../../projectDefaults";
+// `document/cameraZooms` reaches only `document/cameraTake`, which imports this module's types.
+import { splitZoomsIntoCameraLane } from "../document/cameraZooms";
 // Cycle-safe: `document/ids` only pulls `uuid`, and `timeline/timelineMap`'s
 // transitive value-imports (region-ventilation, virtual-preview) import from this
 // module TYPE-ONLY, so requiring them here never re-enters schema at runtime.
@@ -193,6 +195,13 @@ export const assetSchema = z.object({
 	// The eye line in a take with no pointer to follow, 0-1 from the top left. Null: looked, none
 	// there. Absent: not looked yet. Additive, as above.
 	face: z.object({ x: z.number(), y: z.number(), h: z.number().optional() }).nullish(),
+	// Where the face is over the take, for a camera zoom to follow. `t` is the take's source
+	// seconds; x, y (and h) are 0-1 of the camera picture: the asset's own picture for a talking
+	// head, the `cameraTrack` file for a screen take. Null: looked, no face found. Absent: not
+	// looked yet. Additive, as above.
+	faceTrack: z
+		.array(z.object({ t: z.number(), x: z.number(), y: z.number(), h: z.number().optional() }))
+		.nullish(),
 	// When the user deleted the last clip of this take (`markDiscardedTakes`). Only a take marked
 	// so leaves the disk at the next start (`electron/media-cleanup`); Undo takes the mark back
 	// with the clip. Additive, as above.
@@ -806,6 +815,10 @@ const documentSchemaShape = z.object({
 	}),
 	annotations: z.array(annotationRegionSchema).default([]),
 	zoomRanges: z.array(zoomRegionSchema).default([]),
+	// The camera lane's zooms, apart from the screen lane's: a zoom is one or the other. Additive,
+	// like `audioTracks`: a document that predates it gets its camera zooms split out of
+	// `zoomRanges` once, on load (`splitZoomsIntoCameraLane`).
+	cameraZoomRanges: z.array(zoomRegionSchema).default([]),
 	// What is going to be said, scene by scene, before anything is recorded.
 	script: z
 		.object({
@@ -1276,14 +1289,21 @@ function readFollowCursorAsAutoOrbit(raw: unknown): unknown {
 	return renamed ? { ...doc, zoomRanges } : raw;
 }
 
+function splitRawZoomsIntoCameraLane(raw: unknown): unknown {
+	if (!raw || typeof raw !== "object" || Array.isArray(raw)) return raw;
+	return splitZoomsIntoCameraLane(raw as Record<string, unknown>);
+}
+
 export function migrateRawDocumentToCurrent(raw: unknown): unknown {
-	return readFollowCursorAsAutoOrbit(
-		raiseInvertedTranscriptEnds(
-			dropAudioAnchoredTrims(
-				liftZoomClickImpact(
-					upgradeV7DocumentToV8(
-						upgradeV6DocumentToV7(
-							upgradeV5DocumentToV6(upgradeV4DocumentToV5(upgradeV3DocumentToV4(raw))),
+	return splitRawZoomsIntoCameraLane(
+		readFollowCursorAsAutoOrbit(
+			raiseInvertedTranscriptEnds(
+				dropAudioAnchoredTrims(
+					liftZoomClickImpact(
+						upgradeV7DocumentToV8(
+							upgradeV6DocumentToV7(
+								upgradeV5DocumentToV6(upgradeV4DocumentToV5(upgradeV3DocumentToV4(raw))),
+							),
 						),
 					),
 				),
@@ -1489,6 +1509,7 @@ export function createEmptyDocument(
 		},
 		annotations: [],
 		zoomRanges: [],
+		cameraZoomRanges: [],
 		audioTracks: [],
 		legacyEditor: null,
 	});

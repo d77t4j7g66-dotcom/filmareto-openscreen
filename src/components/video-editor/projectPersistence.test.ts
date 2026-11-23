@@ -106,6 +106,21 @@ describe("projectPersistence media compatibility", () => {
 		expect("formatFollowCursor" in normalizeProjectEditor({})).toBe(false);
 	});
 
+	it("keeps a placed cut for the CLI export, held to 0..1, and drops a malformed one", () => {
+		expect(normalizeProjectEditor({ fillPosition: { x: 0.3, y: 0.6 } }).fillPosition).toEqual({
+			x: 0.3,
+			y: 0.6,
+		});
+		expect(normalizeProjectEditor({ fillPosition: { x: -1, y: 4 } }).fillPosition).toEqual({
+			x: 0,
+			y: 1,
+		});
+		expect("fillPosition" in normalizeProjectEditor({})).toBe(false);
+		expect(
+			"fillPosition" in normalizeProjectEditor({ fillPosition: { x: "a", y: 1 } as never }),
+		).toBe(false);
+	});
+
 	it("omits cursor tuning keys that are absent or malformed", () => {
 		const editor = normalizeProjectEditor({
 			cursorSize: Number.NaN,

@@ -6,15 +6,14 @@
 export const MIC_GAIN_BOOST = 1.4;
 
 /**
- * The mic gain the native capture helpers should receive: boosted above unity
- * only when the mic has to sit over system audio, at unity on its own so a mic
- * that already runs hot does not get +2.9 dB it cannot spend — the native
- * mixers hard-clamp at full scale. This is the same rule mixAudioTracks applies
- * from track presence, expressed from the system-audio toggle the native
- * request builders know.
+ * The mic gain the capture paths apply: the user's own gain and nothing else. Until 1.2.0 it was
+ * boosted by MIC_GAIN_BOOST over system audio; Kostas wants the level OBS records, and a hot mic
+ * had +2.9 dB it could not spend. Kept as a function so every request builder asks one place.
  */
-export function nativeMicrophoneGain(systemAudioEnabled: boolean, userGainDb = 0): number {
-	return (systemAudioEnabled ? MIC_GAIN_BOOST : 1) * dbToGain(userGainDb);
+export function nativeMicrophoneGain(_systemAudioEnabled: boolean, userGainDb = 0): number {
+	// 1.2.0: the microphone at unity, "the same level as OBS". The boost over system audio is
+	// gone: the mix of the two is soft-limited instead, and the WAV master is never touched.
+	return dbToGain(userGainDb);
 }
 
 /** A level in decibels as the factor the samples are multiplied by. */

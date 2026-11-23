@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { recordingHasCursor } from "@/components/ai-edition/recordedCursorTypes";
 import { I18nProvider } from "@/contexts/I18nContext";
 import { DEFAULT_TEXT_PLATE } from "../annotations/background";
 import { type RegionKind, readSpeedRegions } from "../document/timeline";
@@ -55,8 +56,12 @@ const bridgeMocks = vi.hoisted(() => ({
 	listProjects: vi.fn(),
 }));
 
+// Rejects unless a test says what the recording's pointer file holds: "not read yet" otherwise.
+const cursorDataMock = vi.hoisted(() => vi.fn());
+
 vi.mock("@/native/client", () => ({
 	nativeBridgeClient: {
+		cursor: { getRecordingData: cursorDataMock },
 		aiEdition: {
 			get: bridgeMocks.get,
 			create: bridgeMocks.create,
@@ -2980,5 +2985,670 @@ describe("useTimeline.addZoomsBulk reads the document at write time", () => {
 
 		expect(added).toBe(0);
 		expect(bridgeMocks.save).not.toHaveBeenCalled();
+	});
+});
+
+describe("useTimeline camera zoom lane", () => {
+	const screenDoc: AxcutDocument = {
+		...sampleDoc,
+		zoomRanges: [],
+		cameraZoomRanges: [],
+	};
+	const talkingHeadDoc: AxcutDocument = {
+		...sampleDoc,
+		assets: [
+			{
+				...sampleDoc.assets[0],
+				originalPath: "/tmp/recording-7.mov",
+				face: null,
+			},
+		],
+	};
+	const seed = (doc: AxcutDocument, playheadSec = 2) => {
+		useProjectStore.setState({
+			projectId: "proj_test",
+			document: doc,
+			revision: 1,
+			status: "ready",
+			error: null,
+			currentTimeSec: playheadSec,
+		});
+	};
+	const doc = () => useProjectStore.getState().document as AxcutDocument;
+
+	beforeEach(() => {
+		useProjectStore.getState().clear();
+		clearHistory();
+		cursorDataMock.mockRejectedValue(new Error("not read"));
+		for (const mock of Object.values(bridgeMocks)) mock.mockReset();
+		bridgeMocks.save.mockImplementation(async (d: typeof sampleDoc) => ({
+			success: true,
+			document: d,
+		}));
+	});
+
+	it("adds a camera zoom at the playhead, in its own lane", async () => {
+		seed(screenDoc, 2);
+		const { result } = renderTimeline();
+		let id: string | null = null;
+		await act(async () => {
+			id = result.current.addCameraZoom(2);
+		});
+		expect(id).toEqual(expect.any(String));
+		expect(doc().zoomRanges).toHaveLength(0);
+		expect(doc().cameraZoomRanges).toHaveLength(1);
+		expect(doc().cameraZoomRanges?.[0]).toMatchObject({
+			id,
+			startMs: 2000,
+			endMs: 4000,
+			depth: 3,
+			focus: { cx: 0.5, cy: 0.4 },
+			focusMode: "auto",
+			source: "manual",
+		});
+		expect(result.current.cameraZoomRegions).toHaveLength(1);
+	});
+
+	it("a camera zoom and a screen zoom may overlap; two camera zooms may not", async () => {
+		seed(screenDoc, 2);
+		const { result } = renderTimeline();
+		await act(async () => {
+			await result.current.addZoom(2);
+		});
+		expect(doc().zoomRanges).toHaveLength(1);
+		await act(async () => {
+			expect(result.current.addCameraZoom(2)).not.toBeNull();
+		});
+		expect(doc().cameraZoomRanges).toHaveLength(1);
+		useProjectStore.setState({ currentTimeSec: 3 });
+		await act(async () => {
+			expect(result.current.addCameraZoom(2)).toBeNull();
+		});
+		expect(doc().cameraZoomRanges).toHaveLength(1);
+	});
+
+	it("moves a zoom to the camera lane and back, one undo each, id kept", async () => {
+		seed(screenDoc, 2);
+		const { result } = renderTimeline();
+		await act(async () => {
+			await result.current.addZoom(2);
+		});
+		const id = doc().zoomRanges[0].id;
+		const depthBefore = doc().zoomRanges[0].depth;
+		clearHistory();
+
+		let moved = false;
+		await act(async () => {
+			moved = await result.current.moveZoomToLane(id, "camera");
+		});
+		expect(moved).toBe(true);
+		expect(doc().zoomRanges).toHaveLength(0);
+		// Its point was the screen's: on the camera it follows the face, else the upper middle.
+		expect(doc().cameraZoomRanges?.[0]).toMatchObject({
+			id,
+			depth: depthBefore,
+			startMs: 2000,
+			endMs: 4000,
+			focus: { cx: 0.5, cy: 0.4 },
+			focusMode: "auto",
+		});
+
+		await act(async () => {
+			moved = await result.current.moveZoomToLane(id, "screen");
+		});
+		expect(moved).toBe(true);
+		expect(doc().cameraZoomRanges).toHaveLength(0);
+		expect(doc().zoomRanges[0].id).toBe(id);
+
+		await act(async () => {
+			await undo();
+		});
+		expect(doc().cameraZoomRanges?.[0]?.id).toBe(id);
+		expect(doc().zoomRanges).toHaveLength(0);
+		await act(async () => {
+			await undo();
+		});
+		expect(doc().zoomRanges[0].id).toBe(id);
+		expect(doc().cameraZoomRanges).toHaveLength(0);
+	});
+
+	it("a camera zoom moved to a screen without a pointer rests on the centre", async () => {
+		cursorDataMock.mockResolvedValue({ samples: [] });
+		await recordingHasCursor("/tmp/recording-7.mov");
+		seed(talkingHeadDoc, 2);
+		const { result } = renderTimeline();
+		let id: string | null = null;
+		await act(async () => {
+			id = result.current.addCameraZoom(2);
+		});
+		await act(async () => {
+			await result.current.moveZoomToLane(id as unknown as string, "screen");
+		});
+		expect(doc().zoomRanges[0]).toMatchObject({
+			focus: { cx: 0.5, cy: 0.5 },
+			focusMode: "manual",
+		});
+	});
+
+	it("refuses a move that would overlap", async () => {
+		seed(screenDoc, 2);
+		const { result } = renderTimeline();
+		await act(async () => {
+			await result.current.addZoom(2);
+			result.current.addCameraZoom(2);
+		});
+		const id = doc().zoomRanges[0].id;
+		const before = doc();
+		let moved = true;
+		await act(async () => {
+			moved = await result.current.moveZoomToLane(id, "camera");
+		});
+		expect(moved).toBe(false);
+		expect(doc()).toBe(before);
+	});
+
+	it("Z on a talking head adds a camera zoom", async () => {
+		seed(talkingHeadDoc, 2);
+		const { result } = renderTimeline();
+		await act(async () => {
+			await result.current.addZoom(2);
+		});
+		expect(doc().zoomRanges).toHaveLength(0);
+		expect(doc().cameraZoomRanges).toHaveLength(1);
+	});
+
+	it("resizing a camera zoom clamps against its own lane only", async () => {
+		seed(screenDoc, 5);
+		const { result } = renderTimeline();
+		await act(async () => {
+			// A screen zoom at 2..4 s and one at 5..7 s; the camera zooms at 5..7 s.
+			useProjectStore.setState({ currentTimeSec: 2 });
+			await result.current.addZoom(2);
+			useProjectStore.setState({ currentTimeSec: 5 });
+			result.current.addCameraZoom(2);
+		});
+		const id = doc().cameraZoomRanges?.[0].id as string;
+		await act(async () => {
+			// Over the screen zoom at 2..4: no wall, it is the other lane.
+			await result.current.updateZoomSpan(id, 3000, 7000);
+		});
+		expect(doc().cameraZoomRanges?.[0]).toMatchObject({ startMs: 3000, endMs: 7000 });
+		expect(doc().zoomRanges[0]).toMatchObject({ startMs: 2000, endMs: 4000 });
+	});
+
+	it("patches a camera zoom's depth and focus mode in its own lane", async () => {
+		seed(screenDoc, 2);
+		const { result } = renderTimeline();
+		let id = "";
+		await act(async () => {
+			id = result.current.addCameraZoom(2) as string;
+		});
+		await act(async () => {
+			await result.current.updateZoomDepth(id, 5);
+			await result.current.updateZoomFocusMode(id, "manual");
+		});
+		expect(doc().cameraZoomRanges?.[0]).toMatchObject({ depth: 5, focusMode: "manual" });
+		expect(doc().zoomRanges).toHaveLength(0);
+	});
+
+	it("deletes camera zooms, one and many", async () => {
+		seed(screenDoc, 2);
+		const { result } = renderTimeline();
+		let id = "";
+		await act(async () => {
+			id = result.current.addCameraZoom(1) as string;
+		});
+		await act(async () => {
+			await result.current.removeRegions([{ kind: "cameraZoom", id }]);
+		});
+		expect(doc().cameraZoomRanges).toHaveLength(0);
+	});
+});
+
+describe("useTimeline face track", () => {
+	const point = { t: 1, x: 0.4, y: 0.3 };
+	const seedDoc = (asset: Record<string, unknown>) => {
+		useProjectStore.setState({
+			projectId: "proj_test",
+			document: { ...sampleDoc, assets: [{ ...sampleDoc.assets[0], ...asset }] },
+			revision: 1,
+			status: "ready",
+			error: null,
+		});
+	};
+	const findFaceTrack = vi.fn();
+	const faceTrackOf = () => useProjectStore.getState().document?.assets[0]?.faceTrack;
+
+	beforeEach(() => {
+		useProjectStore.getState().clear();
+		clearHistory();
+		cursorDataMock.mockRejectedValue(new Error("not read"));
+		for (const mock of Object.values(bridgeMocks)) mock.mockReset();
+		bridgeMocks.save.mockImplementation(async (d: typeof sampleDoc) => ({
+			success: true,
+			document: d,
+		}));
+		findFaceTrack.mockReset();
+		Object.defineProperty(window, "electronAPI", {
+			configurable: true,
+			value: { findFaceTrack, findFace: vi.fn() },
+		});
+	});
+
+	it("looks once in a talking head's own file and keeps the track", async () => {
+		findFaceTrack.mockResolvedValue([point]);
+		seedDoc({ originalPath: "/tmp/recording-7.mov", face: null });
+		renderTimeline();
+		await waitFor(() => expect(faceTrackOf()).toEqual([point]));
+		expect(findFaceTrack).toHaveBeenCalledTimes(1);
+		expect(findFaceTrack).toHaveBeenCalledWith("/tmp/recording-7.mov", 30, 0);
+	});
+
+	it("looks in a screen take's camera file, shifted by the camera's offset", async () => {
+		findFaceTrack.mockResolvedValue(null);
+		seedDoc({
+			cameraTrack: {
+				sourcePath: "/tmp/recording-7-webcam.mov",
+				startMs: 0,
+				offsetMs: -1500,
+				visible: true,
+				width: 1280,
+				height: 720,
+			},
+		});
+		renderTimeline();
+		await waitFor(() => expect(faceTrackOf()).toBeNull());
+		expect(findFaceTrack).toHaveBeenCalledWith("/tmp/recording-7-webcam.mov", 31.5, -1.5);
+	});
+
+	it("writes nothing when the look could not be made", async () => {
+		findFaceTrack.mockResolvedValue(undefined);
+		seedDoc({ originalPath: "/tmp/recording-7.mov", face: null });
+		renderTimeline();
+		await waitFor(() => expect(findFaceTrack).toHaveBeenCalledTimes(1));
+		await new Promise((resolve) => setTimeout(resolve, 20));
+		expect(faceTrackOf()).toBeUndefined();
+	});
+
+	it("puts the track back after an undo across its landing, without looking again", async () => {
+		let land: (track: unknown) => void = () => undefined;
+		findFaceTrack.mockImplementation(
+			() =>
+				new Promise((resolve) => {
+					land = resolve;
+				}),
+		);
+		seedDoc({ originalPath: "/tmp/recording-7.mov", face: null });
+		const { result } = renderTimeline();
+		await waitFor(() => expect(findFaceTrack).toHaveBeenCalledTimes(1));
+		// An edit made while the look runs, then the track lands.
+		await act(async () => {
+			result.current.addCameraZoom(2);
+		});
+		await waitFor(() =>
+			expect(useProjectStore.getState().document?.cameraZoomRanges).toHaveLength(1),
+		);
+		await act(async () => {
+			land([point]);
+		});
+		await waitFor(() => expect(faceTrackOf()).toEqual([point]));
+		// Undoing the edit restores the snapshot from before it, which has no track.
+		act(() => {
+			expect(undo()).toBe(true);
+		});
+		expect(useProjectStore.getState().document?.cameraZoomRanges ?? []).toHaveLength(0);
+		await waitFor(() => expect(faceTrackOf()).toEqual([point]));
+		expect(useProjectStore.getState().document?.cameraZoomRanges ?? []).toHaveLength(0);
+		expect(findFaceTrack).toHaveBeenCalledTimes(1);
+		// The put-back is not an edit: redo is still there.
+		expect(future.length).toBe(1);
+	});
+
+	it("leaves the picture queued and writes nothing while a take is recording", async () => {
+		findFaceTrack.mockResolvedValueOnce("busy").mockResolvedValue([point]);
+		seedDoc({ originalPath: "/tmp/recording-7.mov", face: null });
+		renderTimeline();
+		await waitFor(() => expect(findFaceTrack).toHaveBeenCalledTimes(1));
+		await new Promise((resolve) => setTimeout(resolve, 20));
+		expect(faceTrackOf()).toBeUndefined();
+		// Any later run of the effect (a document change) asks again.
+		act(() => {
+			const current = useProjectStore.getState().document;
+			if (current)
+				useProjectStore.setState({ document: { ...current, zoomRanges: [] }, revision: 2 });
+		});
+		await waitFor(() => expect(faceTrackOf()).toEqual([point]));
+		expect(findFaceTrack).toHaveBeenCalledTimes(2);
+	});
+});
+
+describe("useTimeline a take's first face moves its screen zooms to the camera lane", () => {
+	const yours = {
+		id: "zoom_yours",
+		startMs: 1000,
+		endMs: 2000,
+		depth: 3 as const,
+		focus: { cx: 0.7, cy: 0.2 },
+		focusMode: "manual" as const,
+		clipId: "clip_a",
+	};
+	// A camera take imported as a file: nothing says it is a talking head until its face is found.
+	const cameraFileDoc: AxcutDocument = {
+		...sampleDoc,
+		assets: [{ ...sampleDoc.assets[0], originalPath: "/tmp/me-talking.mp4" }],
+		zoomRanges: [yours],
+		cameraZoomRanges: [],
+	};
+	const doc = () => useProjectStore.getState().document as AxcutDocument;
+	const seed = (document: AxcutDocument) =>
+		useProjectStore.setState({
+			projectId: "proj_test",
+			document,
+			revision: 1,
+			status: "ready",
+			error: null,
+			currentTimeSec: 0,
+		});
+
+	beforeEach(() => {
+		useProjectStore.getState().clear();
+		clearHistory();
+		cursorDataMock.mockRejectedValue(new Error("not read"));
+		for (const mock of Object.values(bridgeMocks)) mock.mockReset();
+		bridgeMocks.save.mockImplementation(async (d: typeof sampleDoc) => ({
+			success: true,
+			document: d,
+		}));
+	});
+
+	it("in the background face write, which undo skips", async () => {
+		const findFace = vi.fn().mockResolvedValue({ x: 0.5, y: 0.3, h: 0.2 });
+		Object.defineProperty(window, "electronAPI", {
+			configurable: true,
+			value: { findFace, findFaceTrack: vi.fn().mockResolvedValue(undefined) },
+		});
+		seed(cameraFileDoc);
+		renderTimeline();
+		await waitFor(() => expect(doc().assets[0].face).toEqual({ x: 0.5, y: 0.3, h: 0.2 }));
+		expect(doc().zoomRanges).toEqual([]);
+		// Its own focus: it already framed that picture.
+		expect(doc().cameraZoomRanges).toEqual([yours]);
+		expect(past.length).toBe(0);
+	});
+
+	it("in the yapping edit's own save", async () => {
+		Object.defineProperty(window, "electronAPI", {
+			configurable: true,
+			value: { findFace: vi.fn(), findFaceTrack: vi.fn().mockResolvedValue(undefined) },
+		});
+		seed(cameraFileDoc);
+		const { result } = renderTimeline();
+		clearHistory();
+		await act(async () => {
+			await result.current.applyYapping([
+				{
+					assetId: "asset_1",
+					face: { x: 0.5, y: 0.35 },
+					talkingHeadOnly: true,
+					transcript: null,
+					plan: {
+						cuts: [],
+						zooms: [{ start: 5, end: 7, scale: 1.3, motion: "hold" }],
+						stats: { cutSec: 0, badPieces: 0, pieces: 1 },
+					},
+				},
+			]);
+		});
+		expect(doc().zoomRanges).toEqual([]);
+		expect(doc().cameraZoomRanges?.map((z) => z.id)).toContain("zoom_yours");
+		expect(doc().cameraZoomRanges?.find((z) => z.id === "zoom_yours")).toEqual(yours);
+		expect(past.length).toBe(1);
+	});
+});
+
+describe("useTimeline auto camera zooms and the yapping punch-ins", () => {
+	const clipOf = (id: string, startSec: number, endSec: number) => ({
+		id,
+		assetId: "asset_1",
+		sourceStartSec: startSec,
+		sourceEndSec: endSec,
+		timelineStartSec: startSec,
+		timelineEndSec: endSec,
+		wordRefs: [],
+		origin: "user" as const,
+		reason: "",
+	});
+	const headDoc = (extra: Partial<AxcutDocument> = {}): AxcutDocument => ({
+		...sampleDoc,
+		assets: [{ ...sampleDoc.assets[0], originalPath: "/tmp/recording-7.mov", face: null }],
+		timeline: {
+			...sampleDoc.timeline,
+			clips: [clipOf("c1", 0, 4), clipOf("c2", 4, 8), clipOf("c3", 8, 12), clipOf("c4", 12, 16)],
+		},
+		zoomRanges: [],
+		cameraZoomRanges: [],
+		...extra,
+	});
+	const seed = (document: AxcutDocument) => {
+		useProjectStore.setState({
+			projectId: "proj_test",
+			document,
+			revision: 1,
+			status: "ready",
+			error: null,
+			currentTimeSec: 0,
+		});
+	};
+	const doc = () => useProjectStore.getState().document as AxcutDocument;
+
+	beforeEach(() => {
+		useProjectStore.getState().clear();
+		clearHistory();
+		cursorDataMock.mockRejectedValue(new Error("not read"));
+		for (const mock of Object.values(bridgeMocks)) mock.mockReset();
+		bridgeMocks.save.mockImplementation(async (d: typeof sampleDoc) => ({
+			success: true,
+			document: d,
+		}));
+		// The face look of a talking head would write the asset in the middle of these tests.
+		Object.defineProperty(window, "electronAPI", {
+			configurable: true,
+			value: { findFaceTrack: vi.fn().mockResolvedValue(undefined), findFace: vi.fn() },
+		});
+	});
+
+	it("addAutoCameraZooms pushes in clip 2, clip 4 being yours in one undo step, and a re-run replaces only its own", async () => {
+		const manual = {
+			id: "camzoom_mine",
+			startMs: 12_500,
+			endMs: 13_500,
+			depth: 3 as const,
+			focus: { cx: 0.5, cy: 0.4 },
+			source: "manual" as const,
+		};
+		seed(headDoc({ cameraZoomRanges: [manual] }));
+		const { result } = renderTimeline();
+		clearHistory();
+		let count = 0;
+		await act(async () => {
+			count = await result.current.addAutoCameraZooms();
+		});
+		expect(count).toBe(1);
+		const ids = () => (doc().cameraZoomRanges ?? []).map((z) => z.id);
+		const punched = () => (doc().cameraZoomRanges ?? []).filter((z) => z.id.startsWith("cpunch_"));
+		expect(punched().map((z) => z.startMs)).toEqual([4000]);
+		expect(ids()).toContain("camzoom_mine");
+		expect(past.length).toBe(1);
+
+		const firstRun = punched().map((z) => z.id);
+		// Its punch-in was changed since (deepened): a re-run puts back its own, under a new id.
+		act(() => {
+			useProjectStore.setState({
+				document: {
+					...doc(),
+					cameraZoomRanges: (doc().cameraZoomRanges ?? []).map((z) =>
+						z.id.startsWith("cpunch_") ? { ...z, depth: 4 as const } : z,
+					),
+				},
+			});
+		});
+		await act(async () => {
+			count = await result.current.addAutoCameraZooms();
+		});
+		expect(count).toBe(1);
+		expect(punched()).toHaveLength(1);
+		expect(punched()[0].depth).toBe(2);
+		expect(punched().map((z) => z.id)).not.toEqual(firstRun);
+		expect(ids()).toContain("camzoom_mine");
+
+		await act(async () => {
+			await undo();
+		});
+		expect(punched().map((z) => z.id)).toEqual(firstRun);
+	});
+
+	it("yapping writes its punch-ins on the talking head to the camera lane, and replaces its own on both", async () => {
+		const old = (id: string) => ({
+			id,
+			startMs: 1000,
+			endMs: 2000,
+			depth: 1 as const,
+			focus: { cx: 0.5, cy: 0.5 },
+			source: "auto" as const,
+		});
+		seed(headDoc({ zoomRanges: [old("yap_old_screen")], cameraZoomRanges: [old("yap_old_cam")] }));
+		const { result } = renderTimeline();
+		let ok = false;
+		await act(async () => {
+			ok = await result.current.applyYapping([
+				{
+					assetId: "asset_1",
+					face: { x: 0.5, y: 0.4 },
+					talkingHeadOnly: true,
+					transcript: null,
+					plan: {
+						cuts: [],
+						zooms: [{ start: 5, end: 7, scale: 1.5, motion: "hold" }],
+						stats: { cutSec: 0, badPieces: 0, pieces: 1 },
+					},
+				},
+			]);
+		});
+		expect(ok).toBe(true);
+		expect(doc().zoomRanges).toEqual([]);
+		expect(doc().cameraZoomRanges).toHaveLength(1);
+		expect(doc().cameraZoomRanges?.[0]).toMatchObject({
+			startMs: 5000,
+			endMs: 7000,
+			customScale: 1.5,
+			motion: "hold",
+			source: "auto",
+		});
+		expect(doc().cameraZoomRanges?.[0].id.startsWith("yap_")).toBe(true);
+	});
+
+	it("yapping puts a talking head's zooms on the camera lane even when no face was found", async () => {
+		seed(headDoc());
+		const { result } = renderTimeline();
+		await act(async () => {
+			await result.current.applyYapping([
+				{
+					assetId: "asset_1",
+					face: null,
+					talkingHeadOnly: true,
+					transcript: null,
+					plan: {
+						cuts: [],
+						zooms: [{ start: 5, end: 7, scale: 1.2, motion: "in" }],
+						stats: { cutSec: 0, badPieces: 0, pieces: 1 },
+					},
+				},
+			]);
+		});
+		expect(doc().zoomRanges).toHaveLength(0);
+		expect(doc().cameraZoomRanges).toHaveLength(1);
+	});
+
+	it("addAutoCameraZooms saves nothing and records no undo step when nothing would change", async () => {
+		seed(headDoc());
+		const { result } = renderTimeline();
+		clearHistory();
+		let count: number | null = null;
+		await act(async () => {
+			count = await result.current.addAutoCameraZooms();
+		});
+		expect(count).toBe(2);
+		expect(past.length).toBe(1);
+		const saves = bridgeMocks.save.mock.calls.length;
+		const before = doc();
+		await act(async () => {
+			count = await result.current.addAutoCameraZooms();
+		});
+		// The same two punch-ins: answered as such, with no save and no empty undo step.
+		expect(count).toBe(2);
+		expect(doc()).toBe(before);
+		expect(bridgeMocks.save.mock.calls.length).toBe(saves);
+		expect(past.length).toBe(1);
+	});
+
+	it("addAutoCameraZooms punches in between the trim holes of one talking-head clip", async () => {
+		const trim = (id: string, startSec: number, endSec: number) => ({
+			id,
+			assetId: "asset_1",
+			clipId: "c1",
+			startSec,
+			endSec,
+			reason: "",
+			origin: "user" as const,
+		});
+		seed(
+			headDoc({
+				timeline: {
+					...sampleDoc.timeline,
+					clips: [clipOf("c1", 0, 20)],
+					trimRanges: [trim("t1", 5, 7), trim("t2", 12, 14)],
+				},
+			}),
+		);
+		const { result } = renderTimeline();
+		await act(async () => {
+			await result.current.addAutoCameraZooms();
+		});
+		expect((doc().cameraZoomRanges ?? []).map((z) => [z.startMs, z.endMs, z.clipId])).toEqual([
+			[7000, 12_000, "c1"],
+		]);
+	});
+
+	it("addAutoCameraZooms answers null when the save fails, not 0", async () => {
+		seed(headDoc());
+		const { result } = renderTimeline();
+		bridgeMocks.save.mockResolvedValue({ success: false, error: "disk" });
+		let count: number | null = 0;
+		await act(async () => {
+			count = await result.current.addAutoCameraZooms();
+		});
+		expect(count).toBeNull();
+	});
+
+	it("yapping keeps a screen take's zooms on the screen lane", async () => {
+		seed({ ...sampleDoc, cameraZoomRanges: [] });
+		const { result } = renderTimeline();
+		await act(async () => {
+			await result.current.applyYapping([
+				{
+					assetId: "asset_1",
+					face: null,
+					talkingHeadOnly: false,
+					transcript: null,
+					plan: {
+						cuts: [],
+						zooms: [{ start: 2, end: 4, scale: 1.2, motion: "in" }],
+						stats: { cutSec: 0, badPieces: 0, pieces: 1 },
+					},
+				},
+			]);
+		});
+		expect(doc().zoomRanges).toHaveLength(1);
+		expect(doc().cameraZoomRanges).toHaveLength(0);
 	});
 });

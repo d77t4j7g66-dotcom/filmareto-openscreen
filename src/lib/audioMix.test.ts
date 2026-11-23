@@ -65,8 +65,13 @@ const stubMediaStream = () => {
 const track = (id: string) => ({ kind: "audio", id }) as unknown as MediaStreamTrack;
 
 describe("nativeMicrophoneGain", () => {
-	it("boosts the mic only when it has to sit over system audio", () => {
-		expect(nativeMicrophoneGain(true)).toBe(MIC_GAIN_BOOST);
+	it("keeps the mic at unity over system audio too (1.2.0: the level OBS records)", () => {
+		expect(nativeMicrophoneGain(true)).toBe(1);
+		expect(MIC_GAIN_BOOST).toBeGreaterThan(1);
+	});
+
+	it("still applies the user's own mic gain", () => {
+		expect(nativeMicrophoneGain(true, 6)).toBeCloseTo(1.995, 3);
 	});
 
 	it("rides at unity for mic-only recordings so a hot mic cannot clip in the native mixer", () => {
@@ -125,7 +130,7 @@ describe("mixAudioTracks", () => {
 		expect(result.track).toBeNull();
 	});
 
-	it("creates an AudioContext, fades the mic gain from 0 to MIC_GAIN_BOOST over MIC_FADE_IN_S, and returns the destination track when both inputs are present", () => {
+	it("creates an AudioContext, fades the mic gain from 0 to unity over MIC_FADE_IN_S, and returns the destination track when both inputs are present", () => {
 		const fakeCtx = stubAudioContext(0.5);
 
 		const system = track("sys");
@@ -139,10 +144,7 @@ describe("mixAudioTracks", () => {
 
 		const [gain] = fakeCtx.createGain.mock.results.map((r) => r.value) as FakeGainNode[];
 		expect(gain.gain.setValueAtTime).toHaveBeenCalledWith(0, 0.5);
-		expect(gain.gain.linearRampToValueAtTime).toHaveBeenCalledWith(
-			MIC_GAIN_BOOST,
-			0.5 + MIC_FADE_IN_S,
-		);
+		expect(gain.gain.linearRampToValueAtTime).toHaveBeenCalledWith(1, 0.5 + MIC_FADE_IN_S);
 
 		const [systemSource, micSource] = fakeCtx.createMediaStreamSource.mock.results.map(
 			(r) => r.value,
@@ -162,7 +164,7 @@ describe("mixAudioTracks", () => {
 		const result = mixAudioTracks({ systemAudioTrack: track("sys"), micAudioTrack: track("mic") });
 		const [gain] = fakeCtx.createGain.mock.results.map((r) => r.value) as FakeGainNode[];
 		expect(gain.gain.setValueAtTime).toHaveBeenCalledWith(0, 0);
-		expect(gain.gain.linearRampToValueAtTime).toHaveBeenCalledWith(MIC_GAIN_BOOST, MIC_FADE_IN_S);
+		expect(gain.gain.linearRampToValueAtTime).toHaveBeenCalledWith(1, MIC_FADE_IN_S);
 		expect(result.context).toBe(fakeCtx);
 	});
 });

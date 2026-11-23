@@ -123,6 +123,7 @@ function renderBars(atGainDb: number): string[] {
 		shaderEffectRanges: [],
 		shaderEffects: [],
 		zoomRegions: [],
+		cameraZoomRegions: [],
 		trimRanges: [],
 		selection: null,
 		multiSelection: [],

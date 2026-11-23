@@ -79,6 +79,8 @@ export interface AppSettingsSnapshot {
 	recording: RecordingPreferences;
 	lastSource: RecordingSourceDescriptor | null;
 	starPrompt: StarPromptPreferences;
+	/** Shows "Export for Resolve" in the menus. Off by default. */
+	resolveExportEnabled: boolean;
 }
 
 type RawSettings = Record<string, unknown>;
@@ -215,7 +217,14 @@ export class AppSettingsStore {
 			recording: parseRecording(raw),
 			lastSource: parseSource(raw.lastSource),
 			starPrompt: parseStarPrompt(raw.starPrompt),
+			resolveExportEnabled: raw.resolveExportEnabled === true,
 		};
+	}
+
+	setResolveExportEnabled(enabled: boolean): AppSettingsSnapshot {
+		if (typeof enabled !== "boolean") throw new TypeError("resolveExportEnabled must be a boolean");
+		atomicWrite(this.userData, { ...readRaw(this.userData), resolveExportEnabled: enabled });
+		return this.getSnapshot();
 	}
 
 	setRecordingPreferences(patch: Partial<RecordingPreferences>): AppSettingsSnapshot {

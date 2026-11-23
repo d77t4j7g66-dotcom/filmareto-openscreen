@@ -51,7 +51,9 @@
 		"unhide": "Tümünü Göster",
 		"saveDiagnostics": "Teşhis Verilerini Kaydet",
 		"permissions": "İzinler…",
-		"closeNotification": "Bildirimi kapat"
+		"closeNotification": "Bildirimi kapat",
+		"exportForResolve": "Export for Resolve…",
+		"resolveExportSetting": "Export for DaVinci Resolve (open timeline)"
 	},
 	"updates": {
 		"available": "Filmareto {{latestVersion}} kullanılabilir. Mevcut sürümünüz {{currentVersion}}.",

@@ -42,6 +42,9 @@ import {
 import type { CaptionTextRegion } from "@/lib/ai-edition/captions/cues";
 import { clickSoundForDocument } from "@/lib/ai-edition/clickSound";
 import { collapseTracksToPills, trackGroupId } from "@/lib/ai-edition/document/audioTracks";
+import { mainTakeIsCamera } from "@/lib/ai-edition/document/cameraTake";
+import { cameraZoomDefaultFocus } from "@/lib/ai-edition/document/cameraZooms";
+import { fillPositionApplies } from "@/lib/ai-edition/document/framePosition";
 import { createId } from "@/lib/ai-edition/document/ids";
 import {
 	isFormatFillActive,
@@ -125,8 +128,9 @@ export interface SceneZoomRegion {
 	/** Focus point, 0..1 of the frame. */
 	focusX: number;
 	focusY: number;
-	/** "auto" follows cursor telemetry instead of the fixed focus point. */
-	focusMode: "manual" | "auto" | null;
+	/** "auto" follows cursor telemetry instead of the fixed focus point; "face" follows the
+	 *  clip's face track (`faceTrack`), the focus point being where it looks without one. */
+	focusMode: "manual" | "auto" | "face" | null;
 	/** The zoom's 3D camera: a fixed angle or a moving camera (`regions.rs::camera_for`).
 	 *  `null` = flat; the native side also renders an unknown value flat. */
 	rotation: Rotation3DPreset | null;
@@ -366,7 +370,7 @@ export interface SceneLayout {
 	 */
 	webcamAnchor: WebcamAnchor;
 	/** User-authored webcam framing, as fractions of the camera source. */
-	webcamCrop: { x: number; y: number; width: number; height: number };
+	webcamCrop: SceneWebcamCrop;
 	/**
 	 * Webcam rect resolved by the app (= `computeCompositeLayout(...).webcamRect`, pixels
 	 * → fractions of the output frame, parity EXACTE entre preview et natif). When set, the
@@ -412,6 +416,11 @@ export interface SceneLayout {
 	/** Where the filled window rests with no pointer to follow: the first clip's `screenRest`. */
 	screenRest?: [number, number];
 	/**
+	 * Where the filled window sits when the user placed it (0..1 of the recording, its centre):
+	 * the first clip's `screenFixed`. It replaces the cursor and the face; absent is Auto.
+	 */
+	screenFixed?: [number, number];
+	/**
 	 * One resolved layout per visible clip, index-aligned with `SceneDescription.clips`
 	 * and `cropByClip`. The scalar fields above are the FIRST clip's entry (fallback for
 	 * older payloads and the value native uses before a clip is active).
@@ -448,6 +457,26 @@ export interface SceneLayout {
 }
 
 /**
+ * The camera's crop as the compositor takes it: the window, and `pan`, where the cover cut sits
+ * (0..1, 0.5 centred) when the window is the whole frame and has no room of its own.
+ */
+export interface SceneWebcamCrop {
+	x: number;
+	y: number;
+	width: number;
+	height: number;
+	/** Absent: centred, as before. Only `webcamCoverPan` sets it, never the crop's own pan. */
+	pan?: [number, number];
+}
+
+const webcamCropOf = (s: EditorSettingsSnapshot): SceneWebcamCrop => ({
+	...s.webcamCropRegion,
+	...(s.webcamCoverPan
+		? { pan: [s.webcamCoverPan.x, s.webcamCoverPan.y] as [number, number] }
+		: {}),
+});
+
+/**
  * The shape-dependent half of a layout, resolved for one clip. See `layoutByClip`.
  *
  * Radii are fractions of their own box's short side, exactly as the scalar
@@ -457,6 +486,8 @@ export interface SceneLayout {
 export interface ResolvedClipLayout {
 	/** Where the filled window rests with no pointer to follow: this take's face. */
 	screenRest?: [number, number];
+	/** Where this clip's filled window sits when placed by hand. Absent: Auto. */
+	screenFixed?: [number, number];
 	// A segment's own look, on a scene region. Absent: the scene's value stands.
 	screenShadow?: number;
 	roundnessFrac?: number;
@@ -465,7 +496,7 @@ export interface ResolvedClipLayout {
 	webcamShadow?: number;
 	webcamMirror?: boolean;
 	webcamReactiveZoom?: boolean;
-	webcamCrop?: { x: number; y: number; width: number; height: number };
+	webcamCrop?: SceneWebcamCrop;
 	webcamEffect?: string;
 	webcamBlur?: number;
 	webcamCutoutOverScreen?: boolean;
@@ -568,6 +599,10 @@ export interface SceneDescription {
 	effects: SceneEffects;
 	background: SceneBackground;
 	zoomRegions: SceneZoomRegion[];
+	/** The camera picture's own zooms (`document.cameraZoomRanges`), projected like `zoomRegions`.
+	 *  Focus is 0..1 of the whole camera picture; `rotation` is always null. A talking head's
+	 *  camera zooms are in `zoomRegions` instead (its main picture is the camera). */
+	cameraZoomRegions: SceneZoomRegion[];
 	/**
 	 * Annotations projected onto each clip's source time, ascending by `zIndex` so the
 	 * compositor can draw them in order without re-sorting. Empty when none set.
@@ -798,6 +833,13 @@ export function resolveVisibleClips(document: AxcutDocument): PlaybackSegment[] 
 	return resolvePlaybackSegments(document.timeline.clips, document.timeline.trimRanges)
 		.sort((a, b) => a.timelineStartSec - b.timelineStartSec)
 		.filter((clip) => clipAssetIsResolvable(clip, assetById));
+}
+
+/** `[t, x, y]` triples for the compositor; one point at 0 when only the single `face` is known. */
+function faceTrackOf(asset: AxcutDocument["assets"][number]): Array<[number, number, number]> {
+	if (asset.faceTrack?.length) return asset.faceTrack.map((p) => [p.t, p.x, p.y]);
+	if (asset.face) return [[0, asset.face.x, asset.face.y]];
+	return [];
 }
 
 /**
@@ -1152,6 +1194,7 @@ export function buildSceneDescription(
 				sourceEndSec: resolveClipSourceEndSec(clip, asset),
 				webcamOffsetSec: camera.offsetSec,
 				hasAudio: clip.audioMuted !== true,
+				faceTrack: faceTrackOf(asset),
 				// A held segment has an empty source window and exists only for the frames it
 				// holds; every other clip holds nothing.
 			},
@@ -1199,6 +1242,12 @@ export function buildSceneDescription(
 		visibleClips,
 		document.timeline.clips,
 		() => createId("zoom"),
+	);
+	const projectedCameraZoomRegions = projectRegionsToSource(
+		document.cameraZoomRanges ?? [],
+		visibleClips,
+		document.timeline.clips,
+		() => createId("camzoom"),
 	);
 	// Same raw→source projection as the zoom regions above, for the same reason: annotations are
 	// authored in RAW document time and the compositor matches each frame's SOURCE time.
@@ -1493,8 +1542,17 @@ export function buildSceneDescription(
 	// draw path keeps reading a single `layout` and needs no per-clip branch of its own.
 	const layoutByClip = visibleClips.map((clip, index): ResolvedClipLayout | null => {
 		const own = clipSettingsOf(clip);
-		const face = formatFill ? assetById.get(clip.assetId)?.face : null;
+		const asset = assetById.get(clip.assetId);
+		const face = formatFill ? asset?.face : null;
 		const rest = face ? { screenRest: [face.x, face.y] as [number, number] } : null;
+		// The clip's own look decides, over the project's (`getClipEditorSettings`): null is Auto.
+		// Only a camera take's cut is placed by hand: a screen's follows the pointer or the face,
+		// and a position one still carries from before Frame position moved to the camera is not
+		// drawn, since nothing is left to reset it (`fillPositionApplies`).
+		const placed =
+			formatFill && own.fillPosition && fillPositionApplies(asset)
+				? { screenFixed: [own.fillPosition.x, own.fillPosition.y] as [number, number] }
+				: null;
 		const resolved = resolvedLayoutOf(
 			layoutForClip(
 				screenSourceSizeOf(clip, index),
@@ -1505,12 +1563,21 @@ export function buildSceneDescription(
 			),
 			own,
 		);
-		return resolved && rest ? { ...resolved, ...rest } : resolved;
+		return resolved ? { ...resolved, ...rest, ...placed } : resolved;
 	});
 	// Clips with looks of their own: each one is a scene, so the compositor eases from one to the next.
+	// A position a screen take still carries from before Frame position moved to the camera is
+	// not drawn (`fillPositionApplies`), so on its own it is no look either: it must not switch
+	// the timeline's camera-fullscreen moments off.
 	const looksInUse =
 		settings.segmentScene !== null ||
-		visibleClips.some((clip) => clip.look && Object.keys(clip.look).length > 0);
+		visibleClips.some(
+			(clip) =>
+				clip.look &&
+				Object.keys(clip.look).some(
+					(key) => key !== "fillPosition" || fillPositionApplies(assetById.get(clip.assetId)),
+				),
+		);
 	const effectOf = (s: EditorSettingsSnapshot) => {
 		if (s.segmentScene) return { mode: "none" as const, overScreen: false };
 		const overScreen = s.webcamLayoutPreset === "cutout-stack" && s.webcamBackgroundMode === "none";
@@ -1527,7 +1594,7 @@ export function buildSceneDescription(
 			webcamShadow: s.webcamShadow / 100,
 			webcamMirror: s.webcamMirrored,
 			webcamReactiveZoom: resolveWebcamReactiveZoom(s.webcamLayoutPreset, s.webcamReactiveZoom),
-			webcamCrop: s.webcamCropRegion,
+			webcamCrop: webcamCropOf(s),
 			webcamEffect: effect.mode,
 			webcamBlur: s.webcamBlurIntensity,
 			webcamCutoutOverScreen: effect.overScreen,
@@ -1560,10 +1627,15 @@ export function buildSceneDescription(
 			s,
 		);
 		if (!resolved) return null;
+		// Where this take's window rests, and where the user put it: the compositor installs the
+		// region's layout over the clip's, so both ride along or Auto loses the face.
+		const { screenRest, screenFixed } = layoutByClip[clipIndex ?? 0] ?? {};
 		return {
 			fullCamera: choice === "camera" && hasCamera,
 			layout: {
 				...resolved,
+				...(screenRest ? { screenRest } : {}),
+				...(screenFixed ? { screenFixed } : {}),
 				...(own ? lookFieldsOf(s) : {}),
 				// Dodging is a picture-in-picture behaviour, set for the project's own layout.
 				webcamDodgeRect:
@@ -1644,6 +1716,52 @@ export function buildSceneDescription(
 		),
 	);
 
+	// A talking head's main picture IS the camera, so its camera zooms zoom that picture (same
+	// `zoomRegions` the screen lane uses, with the face as the focus) and a screen zoom over it
+	// means nothing. A screen take's camera zooms go to the camera layer.
+	const isTalkingHeadClip = (clipIndex: number | undefined): boolean =>
+		clipIndex !== undefined &&
+		mainTakeIsCamera(assetById.get(visibleClips[clipIndex]?.assetId ?? ""));
+	// Only an explicit `"auto"` follows the face (`"face"`); a hand-placed focus stays put. The
+	// focus is 0..1 of the whole camera picture.
+	const cameraZoomScene = (
+		region: (typeof projectedCameraZoomRegions)[number],
+		scaleLimit: number,
+		mainPicture: boolean,
+	): SceneZoomRegion => {
+		const followsFace = region.focusMode === "auto";
+		// On the camera layer, Auto with no face found closes in on the upper middle, as the full
+		// camera did before it had a lane of its own; the stored point is not looked at.
+		const point = followsFace && !mainPicture ? cameraZoomDefaultFocus().focus : region.focus;
+		return {
+			id: region.id,
+			startSec: region.startMs / 1000,
+			endSec: region.endMs / 1000,
+			scale: Math.min(getZoomScale(region), scaleLimit),
+			...(region.motion ? { motion: region.motion } : {}),
+			focusX: point.cx,
+			focusY: point.cy,
+			// Unset on the main picture is what it was before the lanes split (`null`: the old pin
+			// semantics); unset on the camera layer is manual, its stored point.
+			focusMode: followsFace ? "face" : mainPicture ? (region.focusMode ?? null) : "manual",
+			// The webcam layer has no rotation (it would recentre the focus); a talking head's zoom
+			// renders on the main picture and keeps its rotation and hidden cursor as before the split.
+			rotation: mainPicture ? (region.rotationPreset ?? null) : null,
+			clipIndex: region.clipIndex,
+			...(region.underTrim ? { underTrim: true } : {}),
+			...(mainPicture && region.hideCursor ? { hideCursor: true } : {}),
+		};
+	};
+	const talkingHeadZooms = projectedCameraZoomRegions
+		.filter((region) => isTalkingHeadClip(region.clipIndex))
+		.map((region) =>
+			// The main picture: bounded like every zoom of it was before the lanes split.
+			cameraZoomScene(region, zoomLimitByClip[region.clipIndex ?? 0] ?? MAX_ZOOM_SCALE, true),
+		);
+	const screenCameraZooms = projectedCameraZoomRegions
+		.filter((region) => !isTalkingHeadClip(region.clipIndex))
+		.map((region) => cameraZoomScene(region, MAX_ZOOM_SCALE, false));
+
 	const cutoutOverScreen =
 		settings.webcamLayoutPreset === "cutout-stack" && settings.webcamBackgroundMode === "none";
 
@@ -1689,7 +1807,7 @@ export function buildSceneDescription(
 				settings.webcamReactiveZoom,
 			),
 			webcamAnchor: settings.webcamAnchor,
-			webcamCrop: settings.webcamCropRegion,
+			webcamCrop: webcamCropOf(settings),
 			webcamRect,
 			webcamDodgeRect: dodgeRectOf(computedLayout),
 			webcamCutoutLine:
@@ -1705,6 +1823,7 @@ export function buildSceneDescription(
 				? { screenFollow: true as const }
 				: {}),
 			...(layoutByClip[0]?.screenRest ? { screenRest: layoutByClip[0].screenRest } : {}),
+			...(layoutByClip[0]?.screenFixed ? { screenFixed: layoutByClip[0].screenFixed } : {}),
 			webcamRadiusFrac: radiusFractionOf(
 				computedLayout?.webcamRect,
 				computedLayout?.webcamRect?.borderRadius,
@@ -1767,45 +1886,52 @@ export function buildSceneDescription(
 			: {}),
 		...(clickSound ? { clickSound } : {}),
 		background: sceneBackground(settings.wallpaper, settings.wallpaperMotion),
-		zoomRegions: projectedZoomRegions.map((region) => ({
-			id: region.id,
-			startSec: region.startMs / 1000,
-			endSec: region.endMs / 1000,
-			// `ZOOM_DEPTH_SCALES` et rien d'autre. Cette ligne portait sa propre formule,
-			// `depth / 2 + 0.5`, qui ne coïncide avec la table qu'à la profondeur 2 — et le focus,
-			// lui, est borné avec la table (`getFocusBoundsForScale`, via `getZoomScale`). Les deux
-			// échelles se contredisaient donc : à la profondeur 3 le gimbal butait à 1/(2×1.8) =
-			// 0.2778 pendant que le compositeur découpait une demi-fenêtre de 1/(2×2.0) = 0.25, si
-			// bien que la fenêtre source s'arrêtait 2.78 % avant le bord — 53 px sur 1920
-			// définitivement hors d'atteinte, gimbal à fond dans le coin. Le symptôme rapporté :
-			// « le zoom coupe les bords extérieurs ».
-			//
-			// ponytail: et c'est `getZoomScale` en entier, pas la table seule. La ligne
-			// lisait `region.customScale ?? ZOOM_DEPTH_SCALES[depth]`, donc sans le clamp
-			// [1.0, 5.0] que l'UI applique. Or `zoomRegionSchema` n'exige de `customScale`
-			// que d'être positif : un document portant `customScale: 12` est valide, rendait
-			// 5× dans l'aperçu web et 12× ici. Même désaccord que ci-dessus, un cran plus bas.
-			//
-			// Bounded per clip: crop and zoom multiply, and past `MAX_SOURCE_MAGNIFICATION` the
-			// recording blurs. The inspector greys those levels out; this catches a level set
-			// before a crop or a format change made it too deep.
-			scale: Math.min(
-				getZoomScale(region),
-				zoomLimitByClip[region.clipIndex ?? 0] ?? MAX_ZOOM_SCALE,
-			),
-			...(region.motion ? { motion: region.motion } : {}),
-			focusX: region.focus.cx,
-			focusY: region.focus.cy,
-			// The global Auto-Focus toggle OVERRIDES each region's own mode rather than merely
-			// seeding it — that's what `settings.zoom.focusMode.lockedDisclaimer` promises the
-			// user ("turn it off to set focus mode per zoom"), and it's what makes the toolbar
-			// button a one-click "make every zoom follow the cursor".
-			focusMode: settings.autoFocusAll ? "auto" : (region.focusMode ?? null),
-			rotation: region.rotationPreset ?? null,
-			clipIndex: region.clipIndex,
-			...(region.underTrim ? { underTrim: true } : {}),
-			...(region.hideCursor ? { hideCursor: true } : {}),
-		})),
+		zoomRegions: [
+			...projectedZoomRegions
+				// A talking head's picture is the camera: its zooms are the camera lane's.
+				.filter((region) => !isTalkingHeadClip(region.clipIndex))
+				.map((region) => ({
+					id: region.id,
+					startSec: region.startMs / 1000,
+					endSec: region.endMs / 1000,
+					// `ZOOM_DEPTH_SCALES` et rien d'autre. Cette ligne portait sa propre formule,
+					// `depth / 2 + 0.5`, qui ne coïncide avec la table qu'à la profondeur 2 — et le focus,
+					// lui, est borné avec la table (`getFocusBoundsForScale`, via `getZoomScale`). Les deux
+					// échelles se contredisaient donc : à la profondeur 3 le gimbal butait à 1/(2×1.8) =
+					// 0.2778 pendant que le compositeur découpait une demi-fenêtre de 1/(2×2.0) = 0.25, si
+					// bien que la fenêtre source s'arrêtait 2.78 % avant le bord — 53 px sur 1920
+					// définitivement hors d'atteinte, gimbal à fond dans le coin. Le symptôme rapporté :
+					// « le zoom coupe les bords extérieurs ».
+					//
+					// ponytail: et c'est `getZoomScale` en entier, pas la table seule. La ligne
+					// lisait `region.customScale ?? ZOOM_DEPTH_SCALES[depth]`, donc sans le clamp
+					// [1.0, 5.0] que l'UI applique. Or `zoomRegionSchema` n'exige de `customScale`
+					// que d'être positif : un document portant `customScale: 12` est valide, rendait
+					// 5× dans l'aperçu web et 12× ici. Même désaccord que ci-dessus, un cran plus bas.
+					//
+					// Bounded per clip: crop and zoom multiply, and past `MAX_SOURCE_MAGNIFICATION` the
+					// recording blurs. The inspector greys those levels out; this catches a level set
+					// before a crop or a format change made it too deep.
+					scale: Math.min(
+						getZoomScale(region),
+						zoomLimitByClip[region.clipIndex ?? 0] ?? MAX_ZOOM_SCALE,
+					),
+					...(region.motion ? { motion: region.motion } : {}),
+					focusX: region.focus.cx,
+					focusY: region.focus.cy,
+					// The global Auto-Focus toggle OVERRIDES each region's own mode rather than merely
+					// seeding it — that's what `settings.zoom.focusMode.lockedDisclaimer` promises the
+					// user ("turn it off to set focus mode per zoom"), and it's what makes the toolbar
+					// button a one-click "make every zoom follow the cursor".
+					focusMode: settings.autoFocusAll ? "auto" : (region.focusMode ?? null),
+					rotation: region.rotationPreset ?? null,
+					clipIndex: region.clipIndex,
+					...(region.underTrim ? { underTrim: true } : {}),
+					...(region.hideCursor ? { hideCursor: true } : {}),
+				})),
+			...talkingHeadZooms,
+		],
+		cameraZoomRegions: screenCameraZooms,
 		annotations: projectedAnnotations
 			.map((region) => {
 				const style = region.style;

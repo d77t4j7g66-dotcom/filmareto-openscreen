@@ -2,6 +2,7 @@
 import "@testing-library/jest-dom";
 import {
 	act,
+	cleanup,
 	fireEvent,
 	type RenderOptions,
 	render as renderWithoutTooltips,
@@ -365,6 +366,141 @@ describe("FloatingInspector", () => {
 		});
 	});
 
+	describe("camera zoom pane", () => {
+		const cameraTl = (over: Record<string, unknown> = {}, region: Record<string, unknown> = {}) => {
+			const tl = {
+				...defaultProps.tl,
+				selection: { kind: "cameraZoom", id: "c" },
+				zoomRegions: [],
+				cameraZoomRegions: [
+					{ id: "c", startMs: 0, endMs: 1000, depth: 3, focus: { cx: 0.5, cy: 0.5 }, ...region },
+				],
+				moveZoomToLane: vi.fn().mockResolvedValue(true),
+				selectRegion: vi.fn(),
+				updateZoomFocusMode: vi.fn(),
+				assets: [],
+				clips: [],
+				...over,
+			};
+			return tl as unknown as React.ComponentProps<typeof FloatingInspector>["tl"];
+		};
+
+		it("a camera zoom shows Move to screen zoom and no 3D camera", () => {
+			forcedCursor.value = true;
+			render(<FloatingInspector {...defaultProps} tl={cameraTl()} />);
+			expect(
+				screen.getByRole("button", { name: "editor.inspector.moveToScreenZoom" }),
+			).toBeInTheDocument();
+			expect(screen.queryByRole("group", { name: "settings.zoom.camera.title" })).toBeNull();
+			expect(screen.queryByRole("group", { name: "settings.zoom.cursor.title" })).toBeNull();
+			expect(
+				screen.queryByRole("button", { name: "editor.inspector.moveToCameraZoom" }),
+			).toBeNull();
+		});
+
+		it("hides Move to screen zoom on a talking head, where a screen zoom would not show", () => {
+			const onHead = cameraTl({
+				assets: [{ id: "h", kind: "video", originalPath: "/x/recording-3.mov", face: null }],
+				clips: [{ id: "k", assetId: "h", timelineStartSec: 0, timelineEndSec: 10 }],
+			});
+			const head = render(<FloatingInspector {...defaultProps} tl={onHead} />);
+			expect(
+				screen.queryByRole("button", { name: "editor.inspector.moveToScreenZoom" }),
+			).toBeNull();
+			head.unmount();
+			// Its anchor decides, not the playhead: the same zoom anchored on a screen take offers it.
+			const onScreen = cameraTl(
+				{
+					assets: [
+						{ id: "h", kind: "video", originalPath: "/x/recording-3.mov", face: null },
+						{
+							id: "s",
+							kind: "video",
+							originalPath: "/x/screen.mp4",
+							cameraTrack: { sourcePath: "/x/c.mov" },
+						},
+					],
+					clips: [
+						{ id: "k", assetId: "h", timelineStartSec: 0, timelineEndSec: 10 },
+						{ id: "m", assetId: "s", timelineStartSec: 10, timelineEndSec: 20 },
+					],
+				},
+				{ clipId: "m", startMs: 11_000, endMs: 12_000 },
+			);
+			render(<FloatingInspector {...defaultProps} tl={onScreen} />);
+			expect(
+				screen.getByRole("button", { name: "editor.inspector.moveToScreenZoom" }),
+			).toBeInTheDocument();
+		});
+
+		it("offers Auto as following the face, or Manual", () => {
+			const tl = cameraTl({}, { focusMode: "auto" });
+			render(<FloatingInspector {...defaultProps} tl={tl} />);
+			const row = screen.getByRole("group", { name: "settings.zoom.focusMode.title" });
+			expect(
+				within(row).getByRole("button", { name: "editor.inspector.cameraFocusAuto" }),
+			).toHaveAttribute("aria-pressed", "true");
+			fireEvent.click(within(row).getByRole("button", { name: "settings.zoom.focusMode.manual" }));
+			expect(tl.updateZoomFocusMode).toHaveBeenCalledWith("c", "manual");
+		});
+
+		it("reads a zoom with no focus mode as Manual, as the scene does", () => {
+			render(<FloatingInspector {...defaultProps} tl={cameraTl()} />);
+			const row = screen.getByRole("group", { name: "settings.zoom.focusMode.title" });
+			expect(
+				within(row).getByRole("button", { name: "settings.zoom.focusMode.manual" }),
+			).toHaveAttribute("aria-pressed", "true");
+		});
+
+		it("moves it to the screen lane and selects it there", async () => {
+			const tl = cameraTl();
+			render(<FloatingInspector {...defaultProps} tl={tl} />);
+			fireEvent.click(screen.getByRole("button", { name: "editor.inspector.moveToScreenZoom" }));
+			await waitFor(() => expect(tl.selectRegion).toHaveBeenCalledWith("zoom", "c"));
+			expect(tl.moveZoomToLane).toHaveBeenCalledWith("c", "screen");
+		});
+
+		it("keeps the selection and says so when the move is refused", async () => {
+			const tl = cameraTl({ moveZoomToLane: vi.fn().mockResolvedValue(false) });
+			render(<FloatingInspector {...defaultProps} tl={tl} />);
+			fireEvent.click(screen.getByRole("button", { name: "editor.inspector.moveToScreenZoom" }));
+			await waitFor(() => expect(tl.moveZoomToLane).toHaveBeenCalled());
+			expect(tl.selectRegion).not.toHaveBeenCalled();
+		});
+
+		it("offers Move to camera zoom on a screen zoom only when the project has a camera", async () => {
+			const screenTl = (hasCamera: boolean) =>
+				({
+					...defaultProps.tl,
+					selection: { kind: "zoom", id: "z" },
+					zoomRegions: [
+						{ id: "z", startMs: 0, endMs: 1000, depth: 3, focus: { cx: 0.5, cy: 0.5 } },
+					],
+					cameraZoomRegions: [],
+					moveZoomToLane: vi.fn().mockResolvedValue(true),
+					selectRegion: vi.fn(),
+					assets: [
+						{
+							id: "a",
+							kind: "video",
+							originalPath: "/x/screen.mp4",
+							...(hasCamera ? { cameraTrack: { sourcePath: "/x/cam.mov" } } : {}),
+						},
+					],
+					clips: [{ id: "k", assetId: "a" }],
+				}) as unknown as React.ComponentProps<typeof FloatingInspector>["tl"];
+			const without = render(<FloatingInspector {...defaultProps} tl={screenTl(false)} />);
+			expect(
+				screen.queryByRole("button", { name: "editor.inspector.moveToCameraZoom" }),
+			).toBeNull();
+			without.unmount();
+			const tl = screenTl(true);
+			render(<FloatingInspector {...defaultProps} tl={tl} />);
+			fireEvent.click(screen.getByRole("button", { name: "editor.inspector.moveToCameraZoom" }));
+			await waitFor(() => expect(tl.selectRegion).toHaveBeenCalledWith("cameraZoom", "z"));
+		});
+	});
+
 	describe("zoom pane rows", () => {
 		const zoomTl = (region: Record<string, unknown>) => {
 			const updateZoomRotation = vi.fn();
@@ -645,6 +781,69 @@ describe("FloatingInspector", () => {
 			expect((await screen.findByRole("tooltip")).textContent).toBe("settings.facets.tips.cursor");
 			expect(facet).not.toHaveAttribute("title");
 			vi.unstubAllGlobals();
+		});
+	});
+
+	// The camera pane arranges a screen take's camera. A talking head has none to arrange, yet in
+	// a vertical format its cut is placed there ("Frame position"), so the pane is offered for it.
+	describe("camera facet", () => {
+		const cameraFacet = () => screen.queryByRole("button", { name: "settings.layout.title" });
+
+		function openProject(take: Record<string, unknown>, editor: Record<string, unknown>) {
+			vi.spyOn(nativeBridgeClient.cursor, "getRecordingData").mockResolvedValue({
+				version: 2,
+				provider: "native",
+				assets: [],
+				samples: [],
+			});
+			const asset = assetSchema.parse({
+				id: "a0",
+				label: "take",
+				originalPath: `/recordings/${crypto.randomUUID()}.mov`,
+				video: { codec: "hevc", width: 1920, height: 1080, fps: 30 },
+				...take,
+			});
+			const clip = clipSchema.parse({
+				id: "c0",
+				assetId: "a0",
+				sourceStartSec: 0,
+				sourceEndSec: 10,
+				timelineStartSec: 0,
+				timelineEndSec: 10,
+				origin: "user",
+			});
+			const document = createEmptyDocument({ projectId: "p", title: "t" });
+			useProjectStore.setState({
+				projectId: "p",
+				document: {
+					...document,
+					assets: [asset],
+					timeline: { ...document.timeline, clips: [clip] },
+					legacyEditor: editor,
+				},
+			});
+		}
+
+		afterEach(() => {
+			vi.restoreAllMocks();
+			useProjectStore.setState({ document: null });
+		});
+
+		it("is offered for a talking head whose cut a vertical format places", () => {
+			openProject({ face: { x: 0.5, y: 0.4 } }, { aspectRatio: "9:16", formatFollowCursor: true });
+			render(<FloatingInspector {...defaultProps} />);
+			expect(cameraFacet()).toBeVisible();
+			expect(screen.getByTestId("layout-pane")).toBeInTheDocument();
+		});
+
+		it("is left out for a talking head shown whole, or a screen recording with no camera", () => {
+			openProject({ face: null }, { aspectRatio: "9:16", formatFollowCursor: false });
+			render(<FloatingInspector {...defaultProps} />);
+			expect(cameraFacet()).toBeNull();
+			cleanup();
+			openProject({}, { aspectRatio: "9:16", formatFollowCursor: true });
+			render(<FloatingInspector {...defaultProps} />);
+			expect(cameraFacet()).toBeNull();
 		});
 	});
 });

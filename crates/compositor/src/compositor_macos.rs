@@ -98,7 +98,34 @@ extern "C" {
     fn CVPixelBufferGetWidthOfPlane(p: *mut std::ffi::c_void, plane_index: usize) -> usize;
     fn CVPixelBufferGetHeightOfPlane(p: *mut std::ffi::c_void, plane_index: usize) -> usize;
     fn CVPixelBufferGetWidth(p: *mut std::ffi::c_void) -> usize;
+    fn CVPixelBufferGetPixelFormatType(p: *mut std::ffi::c_void) -> u32;
     fn CVPixelBufferGetHeight(p: *mut std::ffi::c_void) -> usize;
+}
+
+/// The Metal formats of the two planes of a decoded frame, from its CoreVideo pixel format.
+///
+/// VideoToolbox hands a 10-bit stream (the 1.2.0 camera is HEVC Main 10) back as a 16-bit
+/// biplanar buffer (`x420` and kin), the 10 bits in the high bits of each 16-bit sample. Read as
+/// `R8Unorm`/`RG8Unorm` every sample was split in two and the picture came out as vertical noise.
+/// Read as `R16Unorm`/`RG16Unorm` the normalised values match the 8-bit ones (video range 64/1023
+/// against 16/255), so the shaders need no change. Anything else is the 8-bit NV12 it always was.
+pub(crate) fn plane_formats(cv_pixel_format: u32) -> (metal::MTLPixelFormat, metal::MTLPixelFormat) {
+    const fn four_cc(code: &[u8; 4]) -> u32 {
+        ((code[0] as u32) << 24) | ((code[1] as u32) << 16) | ((code[2] as u32) << 8) | code[3] as u32
+    }
+    const TEN_BIT_BIPLANAR: [u32; 6] = [
+        four_cc(b"x420"), // 420YpCbCr10BiPlanarVideoRange
+        four_cc(b"xf20"), // 420YpCbCr10BiPlanarFullRange
+        four_cc(b"x422"), // 422YpCbCr10BiPlanarVideoRange
+        four_cc(b"xf22"), // 422YpCbCr10BiPlanarFullRange
+        four_cc(b"x444"), // 444YpCbCr10BiPlanarVideoRange
+        four_cc(b"xf44"), // 444YpCbCr10BiPlanarFullRange
+    ];
+    if TEN_BIT_BIPLANAR.contains(&cv_pixel_format) {
+        (metal::MTLPixelFormat::R16Unorm, metal::MTLPixelFormat::RG16Unorm)
+    } else {
+        (metal::MTLPixelFormat::R8Unorm, metal::MTLPixelFormat::RG8Unorm)
+    }
 }
 
 /// `retain` ObjC sur un `id`. `CVMetalTextureGetTexture` rend une référence
@@ -1264,8 +1291,9 @@ impl Compositor {
             )
         })?;
         let cache = &self.metal_texture_cache;
-        let y = cache.make_texture_from_pixel_buffer(pb, 0, metal::MTLPixelFormat::R8Unorm)?;
-        let uv = cache.make_texture_from_pixel_buffer(pb, 1, metal::MTLPixelFormat::RG8Unorm)?;
+        let (y_format, uv_format) = plane_formats(CVPixelBufferGetPixelFormatType(pb));
+        let y = cache.make_texture_from_pixel_buffer(pb, 0, y_format)?;
+        let uv = cache.make_texture_from_pixel_buffer(pb, 1, uv_format)?;
         Ok((y, uv))
     }
 
@@ -3144,6 +3172,7 @@ impl Compositor {
                 g.webcam_crop,
                 g.w_px[0] / g.w_px[1].max(0.0001),
                 g.webcam_zoom,
+                g.webcam_focus,
             );
             let mirror = g.segment_look.as_ref().map_or(lp.webcam_mirror, |l| l.webcam_mirror);
             let (u0, u1) = if mirror { (cu1, cu0) } else { (cu0, cu1) };
@@ -3583,6 +3612,27 @@ impl Compositor {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn ten_bit_frames_get_sixteen_bit_planes() {
+        let fourcc = |c: &[u8; 4]| u32::from_be_bytes(*c);
+        // The 1.2.0 camera (HEVC Main 10) decodes to `x420`.
+        for ten in [b"x420", b"xf20", b"x422", b"xf22", b"x444", b"xf44"] {
+            assert_eq!(
+                plane_formats(fourcc(ten)),
+                (metal::MTLPixelFormat::R16Unorm, metal::MTLPixelFormat::RG16Unorm),
+                "{}",
+                String::from_utf8_lossy(ten)
+            );
+        }
+        // NV12 video and full range stay 8-bit, as does anything unknown.
+        for eight in [b"420v", b"420f", b"BGRA"] {
+            assert_eq!(
+                plane_formats(fourcc(eight)),
+                (metal::MTLPixelFormat::R8Unorm, metal::MTLPixelFormat::RG8Unorm)
+            );
+        }
+    }
 
     // -----------------------------------------------------------------------
     // Segmentation du sujet webcam

@@ -965,6 +965,43 @@
 	scrollbar-width: thin;
 	scrollbar-color: var(--border-hi) transparent;
 }
+/* One media item: the card, its hover "⋯" and the menu that opens from it. */
+.mediaCardWrap {
+	position: relative;
+	display: flex;
+	flex-direction: column;
+}
+.mediaCardWrap > .mediaCard {
+	flex: 1;
+	width: 100%;
+}
+.mediaMore {
+	position: absolute;
+	top: 6px;
+	right: 6px;
+	display: grid;
+	place-items: center;
+	width: 26px;
+	height: 26px;
+	border: 0;
+	border-radius: 8px;
+	background: color-mix(in oklab, var(--bg) 72%, transparent);
+	color: var(--fg);
+	cursor: pointer;
+	opacity: 0;
+	transition: opacity var(--motion-fast) var(--ease);
+}
+.mediaCardWrap:hover .mediaMore,
+.mediaCardWrap:focus-within .mediaMore,
+.mediaMore[aria-expanded="true"] {
+	opacity: 1;
+}
+.mediaMenu {
+	top: 36px;
+	right: 6px;
+	left: auto;
+	min-width: 190px;
+}
 .mediaCard {
 	display: flex;
 	flex-direction: column;
@@ -1923,6 +1960,9 @@
 }
 .laneZoom {
 	--_c: var(--zoom);
+}
+.laneCameraZoom {
+	--_c: var(--camera-zoom);
 }
 .laneCameraFullscreen {
 	--_c: #a855f7;

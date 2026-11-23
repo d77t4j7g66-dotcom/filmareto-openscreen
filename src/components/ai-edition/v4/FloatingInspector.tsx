@@ -19,6 +19,7 @@ import {
 	MousePointer2,
 	Pencil,
 	PictureInPicture2,
+	ScanFace,
 	Scissors,
 	SlidersHorizontal,
 	Sparkles,
@@ -64,6 +65,8 @@ import {
 	TEXT_ANIMATION_VALUES,
 } from "@/lib/ai-edition/annotations/textAnimation";
 import { TITLE_STYLE_IDS, titleStylePatch } from "@/lib/ai-edition/captions";
+import { regionOnTalkingHead } from "@/lib/ai-edition/document/cameraTake";
+import { hasTakeFramePosition } from "@/lib/ai-edition/document/framePosition";
 import { referenceClipDims, resolveAspectRatioValue } from "@/lib/ai-edition/document/outputFormat";
 import { clipLabel } from "@/lib/ai-edition/document/script";
 import type {
@@ -79,7 +82,7 @@ import { useProjectStore } from "@/lib/ai-edition/store/projectStore";
 import { rafCoalesce } from "@/lib/ai-edition/store/rafCoalesce";
 import { useEditorSettings } from "@/lib/ai-edition/store/useEditorSettings";
 import type { ShaderEffectPatch, useTimeline } from "@/lib/ai-edition/store/useTimeline";
-import { hasAnyClipWithCamera } from "@/lib/ai-edition/timeline/camera";
+import { hasAnyCameraPicture, hasAnyClipWithCamera } from "@/lib/ai-edition/timeline/camera";
 import { formatSeconds } from "@/lib/ai-edition/timeline/format";
 import { sceneForFormat, sceneOf, scenesForFormat } from "@/lib/ai-edition/timeline/scenes";
 import { coalescedTrimGroups } from "@/lib/ai-edition/timeline/trim-mapping";
@@ -168,9 +171,13 @@ export function FloatingInspector({
 	// unknown, and a choice of it that lost its footing falls back to the first facet.
 	const hasCursor = useHasRecordedCursor() === true;
 	// The same for the camera pane: it arranges a camera beside the screen, and a take of the camera
-	// alone has none to arrange.
+	// alone has none to arrange. It is offered for one all the same when a vertical format cuts
+	// it, since where that cut sits ("Frame position") is placed there, with the camera.
 	const hasCamera = useProjectStore((s) =>
-		s.document ? hasAnyClipWithCamera(s.document.assets, s.document.timeline.clips) : true,
+		s.document
+			? hasAnyClipWithCamera(s.document.assets, s.document.timeline.clips) ||
+				hasTakeFramePosition(s.document)
+			: true,
 	);
 	const facets = FACETS.filter(
 		({ id }) => (id !== "cursor" || hasCursor) && (id !== "layout" || hasCamera),
@@ -923,6 +930,15 @@ function SelectionPane({ tl, onClose }: { tl: TimelineApi; onClose: () => void }
 		scrollbarColor: "var(--border) transparent",
 	};
 
+	// Take a zoom to the other lane and keep it selected there: the id stays, the selection's kind
+	// does not follow, so it is picked again under the new one. A zoom that would land on another
+	// is refused, and says so.
+	const moveToLane = async (id: string, lane: "screen" | "camera") => {
+		const moved = await tl.moveZoomToLane(id, lane);
+		if (moved) tl.selectRegion(lane === "camera" ? "cameraZoom" : "zoom", id);
+		else toast.error(te("inspector.moveZoomBlocked"));
+	};
+
 	if (selection.kind === "zoom") {
 		const region = tl.zoomRegions.find((z) => z.id === selection.id);
 		if (!region) return null;
@@ -1053,6 +1069,15 @@ function SelectionPane({ tl, onClose }: { tl: TimelineApi; onClose: () => void }
 							{te("inspector.resetFocusPoint")}
 						</button>
 					)}
+					{hasAnyCameraPicture(tl.assets ?? [], tl.clips ?? []) ? (
+						<button
+							type="button"
+							onClick={() => void moveToLane(region.id, "camera")}
+							className={PANE_BUTTON}
+						>
+							{te("inspector.moveToCameraZoom")}
+						</button>
+					) : null}
 					<button type="button" onClick={deleteAndClose} className={PANE_BUTTON}>
 						<Trash2 size={16} style={{ color: "var(--danger)" }} />
 						{ts("zoom.deleteZoom")}
@@ -1669,6 +1694,79 @@ function SelectionPane({ tl, onClose }: { tl: TimelineApi; onClose: () => void }
 				onDelete={deleteAndClose}
 				bodyStyle={bodyStyle}
 			/>
+		);
+	}
+
+	// A camera zoom frames the camera picture, so its focus is a point on that picture, never on
+	// the screen: Auto follows the face, Manual is a point picked on the camera box. There is no
+	// 3D camera and no cursor here, both act on the screen.
+	if (selection.kind === "cameraZoom") {
+		const region = tl.cameraZoomRegions.find((z) => z.id === selection.id);
+		if (!region) return null;
+		const mode = region.focusMode ?? "manual";
+		return (
+			<div style={{ display: "flex", flexDirection: "column", minHeight: 0 }}>
+				{paneHeader(<ScanFace size={16} />, tt("labels.cameraZoom"), onClose, tc("actions.close"))}
+				<div style={bodyStyle}>
+					<ZoomLevelControl key={region.id} region={region} tl={tl} />
+					<ChoiceRow<ZoomMotion | "usual">
+						label={te("studio.motion")}
+						options={[
+							{ value: "usual", label: te("studio.motionSmooth") },
+							{ value: "hold", label: te("studio.motionHold") },
+							{ value: "in", label: te("studio.motionIn") },
+							{ value: "out", label: te("studio.motionOut") },
+							{ value: "emphasis", label: te("studio.motionEmphasis") },
+						]}
+						value={region.motion ?? "usual"}
+						onChange={(motion) =>
+							void tl.updateZoomMotion(region.id, motion === "usual" ? undefined : motion)
+						}
+					/>
+					{paneStack(
+						ts("zoom.focusMode.title"),
+						<ChoiceRow<"manual" | "auto">
+							label={ts("zoom.focusMode.title")}
+							options={[
+								{ value: "auto", label: te("inspector.cameraFocusAuto") },
+								{ value: "manual", label: ts("zoom.focusMode.manual") },
+							]}
+							value={mode}
+							// Manual keeps the zoom's stored focus point; the reset button below recentres it.
+							onChange={(next) => void tl.updateZoomFocusMode(region.id, next)}
+						/>,
+					)}
+					{mode === "manual" ? (
+						<button
+							type="button"
+							onClick={() => {
+								tl.updateZoomFocusLive(region.id, { cx: 0.5, cy: 0.5 });
+								void tl.commitZoomFocus();
+							}}
+							className={PANE_BUTTON}
+						>
+							{te("inspector.resetFocusPoint")}
+						</button>
+					) : null}
+					{/* On a talking head the picture is the camera: a screen zoom there would not show. */}
+					{regionOnTalkingHead(
+						{ assets: tl.assets ?? [], timeline: { clips: tl.clips ?? [] } },
+						region,
+					) ? null : (
+						<button
+							type="button"
+							onClick={() => void moveToLane(region.id, "screen")}
+							className={PANE_BUTTON}
+						>
+							{te("inspector.moveToScreenZoom")}
+						</button>
+					)}
+					<button type="button" onClick={deleteAndClose} className={PANE_BUTTON}>
+						<Trash2 size={16} style={{ color: "var(--danger)" }} />
+						{te("inspector.deleteRegion")}
+					</button>
+				</div>
+			</div>
 		);
 	}
 

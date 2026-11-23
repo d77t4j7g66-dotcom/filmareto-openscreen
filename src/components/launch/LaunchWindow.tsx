@@ -28,6 +28,7 @@ import {
 	HudCursorButton,
 	HudDivider,
 	HudDragHandle,
+	HudEditScriptButton,
 	HudKeysButton,
 	HudLanguageButton,
 	HudLanguageMenu,
@@ -35,6 +36,7 @@ import {
 	HudMicButton,
 	HudNotesButton,
 	HudNotice,
+	HudPrompterControls,
 	HudRecordButton,
 	HudRecordingControls,
 	HudSceneRunControls,
@@ -145,9 +147,12 @@ export function LaunchWindow() {
 	const [cameraOnly, setCameraOnly] = useState(readCameraOnly);
 	const cameraTake = useCameraOnlyTake({
 		webcamDeviceId,
+		webcamDeviceName,
 		webcamQuality,
 		microphoneEnabled,
 		microphoneDeviceId,
+		microphoneDeviceName,
+		onBrowserFallback: () => toast.warning(tEditor("recording.cameraNotBroadcast")),
 	});
 	const recording = screenRecording || cameraTake.active;
 	const saving = screenSaving || cameraTake.saving;
@@ -179,6 +184,8 @@ export function LaunchWindow() {
 	}, [recording]);
 
 	// Recording the scenes of a project: after a Stop the next one waits here, with no review.
+	// Whether the prompter is open (before a take too), for its controls on the bar.
+	const [prompter, setPrompter] = useState<{ playing: boolean; speed: number | null } | null>(null);
 	const [sceneRun, setSceneRun] = useState<{
 		ready: boolean;
 		next: string | null;
@@ -186,14 +193,39 @@ export function LaunchWindow() {
 		nextNumber: number | null;
 		count: number;
 	} | null>(null);
+	// The main process broadcasts the prompter's state on every change; the bar listens to that.
+	// A poll stays as the fallback only until the first broadcast arrives (or where there is none).
 	useEffect(() => {
-		const read = async () => {
-			const state = await window.electronAPI.teleprompter?.state().catch(() => null);
+		type PrompterState = Awaited<
+			ReturnType<NonNullable<Window["electronAPI"]["teleprompter"]>["state"]>
+		>;
+		const apply = (state: PrompterState | null) => {
 			setSceneRun(state?.run ?? null);
+			setPrompter((previous) => {
+				if (!state?.open) return previous === null ? previous : null;
+				const next = { playing: state.playing === true, speed: state.settings?.speed ?? null };
+				return previous && previous.playing === next.playing && previous.speed === next.speed
+					? previous
+					: next;
+			});
 		};
+		let broadcast = false;
+		const read = async () => {
+			apply(await window.electronAPI.teleprompter?.state().catch(() => null));
+		};
+		const unsubscribe = window.electronAPI.teleprompter?.onState?.((state) => {
+			broadcast = true;
+			apply(state);
+		});
 		void read();
-		const timer = setInterval(() => void read(), 500);
-		return () => clearInterval(timer);
+		const timer = setInterval(() => {
+			if (broadcast) clearInterval(timer);
+			else void read();
+		}, 500);
+		return () => {
+			clearInterval(timer);
+			unsubscribe?.();
+		};
 	}, []);
 	const betweenScenes = sceneRun?.ready === true && !recording && !saving;
 
@@ -963,6 +995,9 @@ export function LaunchWindow() {
 	const openStudio = useCallback(() => {
 		if (!saving) window.electronAPI.switchToEditor();
 	}, [saving]);
+	const editScript = useCallback(() => {
+		if (!saving) void window.electronAPI.openScriptEditor();
+	}, [saving]);
 	const openNotes = useCallback(() => {
 		if (!saving) window.electronAPI.openNotes();
 	}, [saving]);
@@ -1504,6 +1539,15 @@ export function LaunchWindow() {
 							/>
 						) : null}
 
+						{prompter ? (
+							<HudPrompterControls
+								vertical={isVertical}
+								playing={prompter.playing}
+								speed={prompter.speed}
+								onAction={(action) => void window.electronAPI.teleprompter.perform(action)}
+							/>
+						) : null}
+
 						{screenRecording && (
 							<HudRecordingControls
 								vertical={isVertical}
@@ -1524,6 +1568,14 @@ export function LaunchWindow() {
 								disabled={saving}
 								label={t("tooltips.openNotes")}
 								onClick={openNotes}
+							/>
+						)}
+
+						{!isLinuxHud && !recording && !sceneRun && (
+							<HudEditScriptButton
+								disabled={saving}
+								label={t("tooltips.editScript")}
+								onClick={editScript}
 							/>
 						)}
 

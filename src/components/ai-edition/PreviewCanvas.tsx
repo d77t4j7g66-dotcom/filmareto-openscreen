@@ -45,6 +45,7 @@ import type {
 	AxcutTrimRange,
 	AxcutZoomRegion,
 } from "@/lib/ai-edition/schema";
+import { getClipEditorSettings } from "@/lib/ai-edition/store/editorSettings";
 import { useProjectStore } from "@/lib/ai-edition/store/projectStore";
 import { useEditorSettings } from "@/lib/ai-edition/store/useEditorSettings";
 import { resolveActiveCameraTrack } from "@/lib/ai-edition/timeline/camera";
@@ -62,7 +63,12 @@ import {
 import { webcamAnchorAt } from "@/lib/projectDefaults";
 import { wallpaperStyle } from "@/lib/wallpaper";
 import { getCssClipPath } from "@/lib/webcamMaskShapes";
+import { boxPointToCameraPicture, cameraPictureToBoxPoint } from "@/lib/zoomMath/cameraFocus";
 import { computeCameraFullscreenProgress } from "@/lib/zoomMath/cameraFullscreenUtils";
+import {
+	cameraZoomOnMainPicture as cameraZoomOnMainPictureOf,
+	cameraZoomPicking,
+} from "@/lib/zoomMath/cameraZoomPicking";
 import { webcamBoxSourceSize } from "@/native/sceneDescription";
 import {
 	getWebcamNativeSize,
@@ -93,6 +99,9 @@ interface PreviewCanvasProps {
 	/** Relayed to `VirtualPreview` so a clip carrying added words plays their extensions. */
 	transcripts?: AxcutTranscript[];
 	selectedZoomRegionId?: string | null;
+	/** Camera-lane zooms, and the one selected: its manual focus is picked on the camera. */
+	cameraZoomRegions?: AxcutZoomRegion[];
+	selectedCameraZoomId?: string | null;
 	onZoomFocusChange?: (id: string, focus: ZoomFocus) => void;
 	onZoomFocusCommit?: () => void;
 	annotationRegions?: AxcutAnnotationRegion[];
@@ -510,9 +519,56 @@ export function PreviewCanvas(props: PreviewCanvasProps) {
 		return box < footage ? { w: box / footage, h: 1 } : { w: 1, h: footage / box };
 	})();
 
-	const selectedZoomRegion = props.selectedZoomRegionId
+	const selectedScreenZoom = props.selectedZoomRegionId
 		? (props.zoomRegions?.find((z) => z.id === props.selectedZoomRegionId) ?? null)
 		: null;
+	const selectedCameraZoom = props.selectedCameraZoomId
+		? (props.cameraZoomRegions?.find((z) => z.id === props.selectedCameraZoomId) ?? null)
+		: null;
+	// A camera zoom on a talking head zooms the main picture (the take is the camera), so its
+	// manual focus is picked on the screen box, in the main picture's 0..1, like a screen zoom's.
+	// The zoom's own clip decides, as in the scene, not the one under the playhead.
+	const cameraZoomOnMainPicture = cameraZoomOnMainPictureOf(
+		assets,
+		document?.timeline.clips ?? [],
+		selectedCameraZoom,
+		activeClip,
+	);
+	const picking = cameraZoomPicking(selectedCameraZoom, cameraZoomOnMainPicture);
+	const selectedZoomRegion = selectedScreenZoom ?? picking.onScreen;
+	// Otherwise it is picked on the camera box, through the same crop, Frame position and mirror
+	// the compositor draws it with.
+	const cameraFocusMap = useMemo(() => {
+		const rect = effectiveLayout?.webcamRect;
+		if (!document || !rect || !activeCameraTrack || cameraZoomOnMainPicture) return null;
+		const look = getClipEditorSettings(document, activeClip);
+		const picture = webcamBoxSourceSize(
+			activeCameraTrack,
+			activeCameraTrack.sourcePath ? getWebcamNativeSize(activeCameraTrack.sourcePath) : null,
+			{ width: 1, height: 1 },
+		);
+		const boxAspect = rect.width / Math.max(1, rect.height);
+		const cameraAspect = picture.width / Math.max(1, picture.height);
+		const crop = look.webcamCropRegion;
+		const pan = look.webcamCoverPan;
+		const mirrored = look.webcamMirrored;
+		return {
+			toFocus: (p: { x: number; y: number }) => {
+				const at = boxPointToCameraPicture(p, crop, pan, boxAspect, cameraAspect, mirrored);
+				return { cx: at.x, cy: at.y };
+			},
+			fromFocus: (f: { cx: number; cy: number }) =>
+				cameraPictureToBoxPoint({ x: f.cx, y: f.cy }, crop, pan, boxAspect, cameraAspect, mirrored),
+		};
+		// biome-ignore lint/correctness/useExhaustiveDependencies: the revision re-reads the probed-size cache
+	}, [
+		document,
+		activeClip,
+		activeCameraTrack,
+		effectiveLayout?.webcamRect,
+		cameraZoomOnMainPicture,
+		webcamSizeRevision,
+	]);
 
 	return (
 		<div
@@ -577,6 +633,15 @@ export function PreviewCanvas(props: PreviewCanvasProps) {
 					aria-label={te("preview.webcamPreview")}
 				>
 					<WebcamOverlay clips={props.clips} currentTimeSec={props.currentTimeSec} />
+					{picking.onCamera && cameraFocusMap && props.onZoomFocusChange ? (
+						<ZoomFocusOverlay
+							region={picking.onCamera}
+							isPlaying={isPlaying}
+							camera={cameraFocusMap}
+							onFocusChange={props.onZoomFocusChange}
+							onFocusCommit={props.onZoomFocusCommit}
+						/>
+					) : null}
 				</div>
 			) : null}
 			{canGrab &&
@@ -584,6 +649,7 @@ export function PreviewCanvas(props: PreviewCanvasProps) {
 			layout?.screenRect &&
 			layout.webcamRect &&
 			showWebcamSlot &&
+			!picking.blocksLayoutHandles &&
 			!isPlaying ? (
 				<FreeLayoutHandles
 					frameSize={frameSize}

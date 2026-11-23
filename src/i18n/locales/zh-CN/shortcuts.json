@@ -35,6 +35,7 @@
 		"cycleAnnotationsForward": "向前切换标注",
 		"cycleAnnotationsBackward": "向后切换标注",
 		"deleteSelectedAlt": "删除所选（替代）",
+		"addCameraZoom": "Add Camera Zoom",
 		"panTimeline": "平移时间轴",
 		"zoomTimeline": "缩放时间轴",
 		"frameBack": "上一帧",

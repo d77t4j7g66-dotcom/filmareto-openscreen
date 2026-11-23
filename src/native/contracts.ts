@@ -221,6 +221,10 @@ export interface CompositorClipInput {
 	 *  convention). Populated by `buildSceneDescription` and `buildNativeClipList`;
 	 *  see the comment on the producer side for the exact rule. */
 	hasAudio: boolean;
+	/** Where the face is over this clip's take, `[t, x, y]` triples: `t` on the clip's source clock
+	 *  (the one the projected zoom regions use, no webcam offset), x/y 0..1 of the whole camera
+	 *  picture. Empty when none is known. Read by `focusMode "face"`. */
+	faceTrack?: Array<[number, number, number]>;
 }
 
 /** Bilan d'un export natif (mesure enveloppante §10 : frames, durée, fps). */

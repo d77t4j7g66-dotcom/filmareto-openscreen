@@ -53,7 +53,8 @@
 		"restartFailed": "새 녹화를 시작할 수 없습니다. 이전 녹화는 삭제되었습니다.",
 		"accessibilityAllowAndRetry": "Filmareto의 손쉬운 사용 접근을 허용한 다음, 카운트다운을 시작하려면 다시 녹화를 누르세요.",
 		"cursorAccessibilityUnavailable": "손쉬운 사용 권한이 꺼져 있습니다. 녹화는 계속되지만 커서 효과가 제한될 수 있습니다. 모든 커서 효과를 사용하려면 시스템 설정에서 권한을 켜세요.",
-		"selectSource": "녹화할 소스를 선택해 주세요"
+		"selectSource": "녹화할 소스를 선택해 주세요",
+		"cameraNotBroadcast": "카메라가 표준 화질로 녹화됩니다. 방송용 녹화기가 카메라를 열지 못했습니다."
 	},
 	"emptyState": {
 		"title": "열린 프로젝트 없음",
@@ -81,6 +82,7 @@
 		"nothingToPaste": "복사된 속성이 없습니다",
 		"pasteAssetMissing": "이 오디오 트랙의 파일이 이 프로젝트에 없습니다",
 		"pasteEffectOverlap": "그 위치에 이미 다른 효과가 있습니다. 효과는 한 번에 하나만 사용할 수 있습니다",
+		"pasteCameraZoomOverlap": "Another camera zoom already plays there: one camera zoom at a time",
 		"kinds": {
 			"zoom": "줌",
 			"speed": "속도",
@@ -109,7 +111,8 @@
 			"script": "Script",
 			"edit": "편집",
 			"rec": "녹화"
-		}
+		},
+		"exportForResolve": "Export for Resolve…"
 	},
 	"rec": {
 		"source": "소스",
@@ -155,6 +158,17 @@
 		"recordingsFolderFailed": "해당 폴더로 전환하지 못했습니다"
 	},
 	"mediaStage": {
+		"moreActions": "More actions",
+		"removeFromProject": "Remove from project",
+		"deleteFromDisk": "Delete from disk…",
+		"removedFromProject": "Removed {{label}} from the project",
+		"deleteDialogTitle": "Delete {{name}} from disk?",
+		"deleteDialogBody": "These files move to the Trash, and every clip that uses {{name}} is removed from this project. Undo brings the clips back, not the files: restore them from the Trash.",
+		"cannotDelete": "{{label}} can't be deleted from the disk here",
+		"deleteDialogConfirm": "Move to the Trash",
+		"movedToTrash": "Moved {{label}} to the Trash — restore it from the Trash",
+		"removedStillUsed": "Removed {{label}} from this project. A project still uses the file, so it stays on disk.",
+		"trashFailed": "Removed {{label}} from the project, but the file could not be moved to the Trash",
 		"openProjectFirst": "먼저 프로젝트를 여세요",
 		"couldNotAddAsset": "자산을 추가할 수 없습니다",
 		"searchPlaceholder": "미디어 검색…",
@@ -230,6 +244,10 @@
 	},
 	"inspector": {
 		"resetFocusPoint": "포커스 지점 재설정",
+		"moveToCameraZoom": "Move to camera zoom",
+		"moveToScreenZoom": "Move to screen zoom",
+		"cameraFocusAuto": "Follows your face",
+		"moveZoomBlocked": "There is already a zoom there. Move or shorten one first.",
 		"setColor": "색상 설정 {{color}}",
 		"trimHiddenDuration": "편집된 타임라인에서 {{duration}}초의 원본 미디어가 숨겨졌습니다.",
 		"restoreDeleteTrim": "복원(트림 삭제)",
@@ -346,6 +364,16 @@
 			"screenRecordingDesc": "시스템 캡처 시작",
 			"importMediaDesc": "디스크에서 동영상, 오디오, 이미지"
 		}
+	},
+	"recordingKindDialog": {
+		"title": "What are you recording?",
+		"subtitle": "Sets the camera, screen and microphone for the recording bar",
+		"talkingHead": "Talking head",
+		"talkingHeadDesc": "Camera only, with your microphone",
+		"screenCamera": "Screen + camera",
+		"screenCameraDesc": "Your screen with you on camera",
+		"screenOnly": "Screen only",
+		"screenOnlyDesc": "Your screen and microphone, no camera"
 	},
 	"openProjectDialog": {
 		"title": "프로젝트 열기",
@@ -538,5 +566,19 @@
 		"unsafePath": "프로젝트의 일부 경로가 폴더 밖을 가리켜 패키징하지 않았습니다.",
 		"notFound": "프로젝트를 찾을 수 없습니다. 저장한 뒤 다시 시도하세요.",
 		"reloadFailed": "패키지를 연 후 프로젝트를 다시 불러오지 못했습니다."
+	},
+	"resolveExport": {
+		"runningTitle": "Exporting for DaVinci Resolve",
+		"runningBody": "Preparing the media and the framing data. This can take a few minutes.",
+		"doneTitle": "Ready for DaVinci Resolve",
+		"doneBody": "The export is in {{path}}.",
+		"reveal": "Show in Finder",
+		"restartNeeded": "Restart DaVinci Resolve once first, so it loads the Filmareto Screen effect.",
+		"nextStep": "In DaVinci Resolve: Workspace → Scripts → Filmareto Import.",
+		"errorTitle": "Export for Resolve failed",
+		"notFound": "The project could not be found.",
+		"disabled": "Export for DaVinci Resolve is switched off in the app menu.",
+		"noFfmpeg": "ffmpeg was not found, so the media cannot be prepared.",
+		"noClips": "The project has no clip to export."
 	}
 }

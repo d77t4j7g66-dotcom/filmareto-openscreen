@@ -10,6 +10,8 @@ final class ReadingView: NSView {
     var topInset: CGFloat = 0 { didSet { rebuildLayout() } }
     var showsResizeGrip = false { didSet { needsDisplay = true } }
     var status: String? { didSet { needsDisplay = true } }
+    /// False while the camera sits behind the text: the black ground is then the camera's.
+    var drawsBackground = true { didSet { needsDisplay = true } }
 
     private(set) var settings = PrompterSettings.default
     private var stage: PrompterStage?
@@ -76,7 +78,7 @@ final class ReadingView: NSView {
     private var isPacing: Bool { settings.mode == .voice && playing && overlay == nil && countdownLeft <= 0 }
     private var isUserScrolling: Bool { scrollDebounce != nil }
     private var gripRect: NSRect { NSRect(x: bounds.maxX - 18, y: bounds.maxY - 18, width: 16, height: 16) }
-    private var allowsDragging: Bool { settings.position != .notch && settings.position != .fullscreen }
+    private var allowsDragging: Bool { settings.position == .free }
 
     // MARK: - API
 
@@ -414,8 +416,10 @@ final class ReadingView: NSView {
 
     override func draw(_ dirtyRect: NSRect) {
         let bg = settings.position == .screen ? settings.screenOpacity : settings.opacity
-        NSColor.black.withAlphaComponent(CGFloat(bg)).setFill()
-        backgroundPath().fill()
+        if drawsBackground {
+            NSColor.black.withAlphaComponent(CGFloat(bg)).setFill()
+            backgroundPath().fill()
+        }
         guard let stage else { return }
 
         NSGraphicsContext.saveGraphicsState()

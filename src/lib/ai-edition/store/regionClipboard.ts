@@ -9,6 +9,7 @@ import type { AxcutShaderEffect } from "../schema";
 
 export type RegionSnapshot =
 	| { kind: "zoom"; region: Record<string, unknown> }
+	| { kind: "cameraZoom"; region: Record<string, unknown> }
 	| { kind: "annotation"; region: Record<string, unknown> }
 	| { kind: "speed"; region: Record<string, unknown> }
 	| { kind: "cameraFullscreen"; region: Record<string, unknown> }

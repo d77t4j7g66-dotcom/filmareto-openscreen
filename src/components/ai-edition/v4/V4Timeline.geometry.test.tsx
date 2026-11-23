@@ -128,6 +128,7 @@ function renderTimeline(
 		shaderEffectRanges: [],
 		shaderEffects: [],
 		zoomRegions: [],
+		cameraZoomRegions: [],
 		trimRanges: [],
 		hasEditRegions: true,
 		selection: null,
@@ -707,6 +708,7 @@ describe("V4Timeline audio lane drag", () => {
 			shaderEffectRanges: [],
 			shaderEffects: [],
 			zoomRegions: [],
+			cameraZoomRegions: [],
 			trimRanges: [],
 			selection: null,
 			multiSelection: [],
@@ -1165,5 +1167,97 @@ describe("V4Timeline zoom trails", () => {
 			"Zoom-out: the view moves back out after the zoom ends",
 		);
 		expect(trail("out").querySelector("[data-zoom-trail-cut]")).toBeNull();
+	});
+});
+
+// The camera has a zoom lane of its own, under the screen's.
+describe("V4Timeline camera zoom lane", () => {
+	const TALKING_HEAD = {
+		id: "a1",
+		kind: "video",
+		label: "rec",
+		originalPath: "/tmp/recording-1.mov",
+		durationSec: TOTAL_SEC,
+		cameraTrack: null,
+	};
+	const lane = (name: "zoom" | "camera-zoom") =>
+		document.querySelector<HTMLElement>(`[data-lane="${name}"]`);
+	const CAMERA_ZOOM = { id: "cz1", startMs: 10_000, endMs: 12_000, depth: 3 };
+
+	it("shows the camera zoom lane only when the project has a camera", () => {
+		renderTimeline(undefined, undefined, [NO_CAMERA_ASSET]);
+		expect(lane("camera-zoom")).toBeNull();
+		expect(screen.queryByLabelText("buttons.addCameraZoom")).toBeNull();
+		expect(screen.queryByLabelText("buttons.autoCameraZooms")).toBeNull();
+		cleanup();
+		renderTimeline(undefined, undefined, [CAMERA_ASSET]);
+		expect(lane("zoom")).not.toBeNull();
+		expect(lane("camera-zoom")).not.toBeNull();
+		// Right under the screen's lane.
+		expect(lane("zoom")?.nextElementSibling).toBe(lane("camera-zoom"));
+		expect(screen.getByLabelText("buttons.addCameraZoom")).toBeInTheDocument();
+		// The Auto button is a toolbar tool, right beside it.
+		expect(screen.getByLabelText("buttons.autoCameraZooms").previousElementSibling).toBe(
+			screen.getByLabelText("buttons.addCameraZoom"),
+		);
+	});
+
+	it("hides the screen zoom lane in a talking-head-only project", () => {
+		renderTimeline(undefined, undefined, [TALKING_HEAD]);
+		expect(lane("zoom")).toBeNull();
+		expect(lane("camera-zoom")).not.toBeNull();
+	});
+
+	it("keeps the screen zoom lane in an empty project", () => {
+		renderTimeline([], undefined, []);
+		expect(lane("zoom")).not.toBeNull();
+		expect(lane("camera-zoom")).toBeNull();
+	});
+
+	it("draws a camera zoom as a pill of its own kind, with its ease trails", () => {
+		renderTimeline(undefined, undefined, [CAMERA_ASSET], undefined, {
+			cameraZoomRegions: [CAMERA_ZOOM],
+		});
+		const pill = lane("camera-zoom")?.querySelector<HTMLElement>(
+			"[class*=laneCameraZoom][role=button]",
+		);
+		expect(pill).not.toBeNull();
+		// Two seconds on a half-hour ruler leave no room for the label: it is the title.
+		expect(pill).toHaveAttribute("title", "1.80×");
+		expect(lane("camera-zoom")?.querySelectorAll("[data-zoom-trail]").length).toBeGreaterThan(0);
+	});
+
+	it("adds a camera zoom from the toolbar button", () => {
+		const { tl } = renderTimeline(undefined, undefined, [CAMERA_ASSET], undefined, {
+			addCameraZoom: vi.fn(() => "cz"),
+		});
+		fireEvent.click(screen.getByLabelText("buttons.addCameraZoom"));
+		expect(tl.addCameraZoom).toHaveBeenCalledTimes(1);
+	});
+
+	it("resizing a camera zoom pill clamps against its own lane only", () => {
+		const updateZoomSpan = vi.fn(async () => true);
+		renderTimeline(undefined, undefined, [CAMERA_ASSET], undefined, {
+			// A screen zoom sits right after the camera zoom: not a wall for it.
+			zoomRegions: [{ id: "z1", startMs: 12_000, endMs: 14_000, depth: 3 }],
+			cameraZoomRegions: [CAMERA_ZOOM],
+			updateZoomSpan,
+		});
+		const pill = lane("camera-zoom")?.querySelector<HTMLElement>(
+			"[class*=laneCameraZoom][role=button]",
+		) as HTMLElement;
+		const [, right] = Array.from(pill.querySelectorAll("span[class*=lanePillHandle]"));
+		dragHandle(right, 50);
+		expect(updateZoomSpan).toHaveBeenCalledTimes(1);
+		// The camera zoom's own id; the span asked for is the dragged one, unclamped by the
+		// screen lane (the store clamps it against the camera lane alone).
+		const [id, startMs, endMs] = updateZoomSpan.mock.calls[0] as unknown as [
+			string,
+			number,
+			number,
+		];
+		expect(id).toBe("cz1");
+		expect(startMs).toBe(10_000);
+		expect(endMs).toBeGreaterThan(12_000);
 	});
 });

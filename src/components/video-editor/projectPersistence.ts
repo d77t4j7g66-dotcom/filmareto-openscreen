@@ -131,6 +131,8 @@ export interface ProjectEditorState {
 	frame?: RecordingFrame | "window-light" | "window-dark";
 	frameTheme?: FrameTheme;
 	formatFollowCursor?: boolean;
+	/** Where the filled cut sits, 0..1; absent is Auto. `getEditorSettings` reads it. */
+	fillPosition?: { x: number; y: number };
 }
 
 export interface EditorProjectData {
@@ -541,6 +543,14 @@ export function normalizeProjectEditor(editor: Partial<ProjectEditorState>): Pro
 		...(isFrameTheme(editor.frameTheme) ? { frameTheme: editor.frameTheme } : {}),
 		...(typeof editor.formatFollowCursor === "boolean"
 			? { formatFollowCursor: editor.formatFollowCursor }
+			: {}),
+		...(isFiniteNumber(editor.fillPosition?.x) && isFiniteNumber(editor.fillPosition?.y)
+			? {
+					fillPosition: {
+						x: Math.min(1, Math.max(0, editor.fillPosition.x)),
+						y: Math.min(1, Math.max(0, editor.fillPosition.y)),
+					},
+				}
 			: {}),
 		wallpaper:
 			typeof editor.wallpaper === "string"

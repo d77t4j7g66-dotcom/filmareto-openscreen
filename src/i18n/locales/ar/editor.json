@@ -53,7 +53,8 @@
 		"permissionDenied": "تم رفض إذن التسجيل. يرجى السماح بتسجيل الشاشة.",
 		"accessibilityAllowAndRetry": "اسمح بوصول تسهيلات الاستخدام لـ Filmareto، ثم اضغط على التسجيل مرة أخرى لبدء العد التنازلي.",
 		"cursorAccessibilityUnavailable": "إمكانية الوصول غير مفعّلة. سيستمر التسجيل، لكن تأثيرات المؤشر قد تكون محدودة. فعّلها من إعدادات النظام لاستخدام تأثيرات المؤشر كاملة.",
-		"selectSource": "يرجى تحديد مصدر للتسجيل"
+		"selectSource": "يرجى تحديد مصدر للتسجيل",
+		"cameraNotBroadcast": "تم تسجيل الكاميرا بجودة عادية: تعذّر على مسجّل البث فتحها."
 	},
 	"emptyState": {
 		"title": "لا يوجد مشروع مفتوح",
@@ -81,6 +82,7 @@
 		"nothingToPaste": "لم يتم نسخ أي سمات بعد",
 		"pasteAssetMissing": "ملف هذا المسار الصوتي غير موجود في هذا المشروع",
 		"pasteEffectOverlap": "يوجد تأثير آخر هناك بالفعل: تأثير واحد في كل مرة",
+		"pasteCameraZoomOverlap": "Another camera zoom already plays there: one camera zoom at a time",
 		"kinds": {
 			"zoom": "تكبير",
 			"speed": "سرعة",
@@ -109,7 +111,8 @@
 			"script": "Script",
 			"edit": "تحرير",
 			"rec": "تسجيل"
-		}
+		},
+		"exportForResolve": "Export for Resolve…"
 	},
 	"rec": {
 		"source": "المصدر",
@@ -155,6 +158,17 @@
 		"recordingsFolderFailed": "تعذّر التبديل إلى هذا المجلد"
 	},
 	"mediaStage": {
+		"moreActions": "More actions",
+		"removeFromProject": "Remove from project",
+		"deleteFromDisk": "Delete from disk…",
+		"removedFromProject": "Removed {{label}} from the project",
+		"deleteDialogTitle": "Delete {{name}} from disk?",
+		"deleteDialogBody": "These files move to the Trash, and every clip that uses {{name}} is removed from this project. Undo brings the clips back, not the files: restore them from the Trash.",
+		"cannotDelete": "{{label}} can't be deleted from the disk here",
+		"deleteDialogConfirm": "Move to the Trash",
+		"movedToTrash": "Moved {{label}} to the Trash — restore it from the Trash",
+		"removedStillUsed": "Removed {{label}} from this project. A project still uses the file, so it stays on disk.",
+		"trashFailed": "Removed {{label}} from the project, but the file could not be moved to the Trash",
 		"openProjectFirst": "افتح مشروعًا أولاً",
 		"couldNotAddAsset": "تعذّرت إضافة الملف",
 		"searchPlaceholder": "بحث في الوسائط...",
@@ -230,6 +244,10 @@
 	},
 	"inspector": {
 		"resetFocusPoint": "إعادة تعيين نقطة التركيز",
+		"moveToCameraZoom": "Move to camera zoom",
+		"moveToScreenZoom": "Move to screen zoom",
+		"cameraFocusAuto": "Follows your face",
+		"moveZoomBlocked": "There is already a zoom there. Move or shorten one first.",
 		"setColor": "تعيين اللون {{color}}",
 		"trimHiddenDuration": "تم إخفاء {{duration}} ثانية من الوسائط المصدر عن الجدول الزمني المحرر.",
 		"restoreDeleteTrim": "استعادة (حذف القص)",
@@ -346,6 +364,16 @@
 			"screenRecordingDesc": "بدء التقاط النظام",
 			"importMediaDesc": "فيديو، صوت، صور من القرص"
 		}
+	},
+	"recordingKindDialog": {
+		"title": "What are you recording?",
+		"subtitle": "Sets the camera, screen and microphone for the recording bar",
+		"talkingHead": "Talking head",
+		"talkingHeadDesc": "Camera only, with your microphone",
+		"screenCamera": "Screen + camera",
+		"screenCameraDesc": "Your screen with you on camera",
+		"screenOnly": "Screen only",
+		"screenOnlyDesc": "Your screen and microphone, no camera"
 	},
 	"openProjectDialog": {
 		"title": "فتح مشروع",
@@ -538,5 +566,19 @@
 		"unsafePath": "تشير بعض المسارات في المشروع إلى خارج مجلده، لذلك لم يتم تجهيز الحزمة.",
 		"notFound": "تعذر العثور على المشروع. احفظه وحاول مرة أخرى.",
 		"reloadFailed": "تعذرت إعادة تحميل المشروع بعد فتح الحزمة."
+	},
+	"resolveExport": {
+		"runningTitle": "Exporting for DaVinci Resolve",
+		"runningBody": "Preparing the media and the framing data. This can take a few minutes.",
+		"doneTitle": "Ready for DaVinci Resolve",
+		"doneBody": "The export is in {{path}}.",
+		"reveal": "Show in Finder",
+		"restartNeeded": "Restart DaVinci Resolve once first, so it loads the Filmareto Screen effect.",
+		"nextStep": "In DaVinci Resolve: Workspace → Scripts → Filmareto Import.",
+		"errorTitle": "Export for Resolve failed",
+		"notFound": "The project could not be found.",
+		"disabled": "Export for DaVinci Resolve is switched off in the app menu.",
+		"noFfmpeg": "ffmpeg was not found, so the media cannot be prepared.",
+		"noClips": "The project has no clip to export."
 	}
 }

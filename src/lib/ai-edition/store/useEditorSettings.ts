@@ -22,16 +22,22 @@ import {
 	getEditorSettings,
 } from "./editorSettings";
 import { useProjectStore } from "./projectStore";
-import { applySegmentSettingsPatch } from "./settingsPatch";
+import {
+	applyScopedSettingsPatch,
+	applySegmentSettingsPatch,
+	type PatchScope,
+} from "./settingsPatch";
 
 export interface UseEditorSettingsResult {
 	settings: EditorSettingsSnapshot;
 	/** True when there's a project loaded — `set`/`setLive` are no-ops otherwise. */
 	hasDocument: boolean;
 	/** Apply a patch, persist to disk. */
-	set: (patch: EditorSettingsPatch) => Promise<boolean>;
+	set: (patch: EditorSettingsPatch, scope?: PatchScope) => Promise<boolean>;
 	/** Apply a patch, no persist. Pair with `commit` on slider release. */
-	setLive: (patch: EditorSettingsPatch) => void;
+	setLive: (patch: EditorSettingsPatch, scope?: PatchScope) => void;
+	/** Rewrite the document in one undo step (a change that spans several clips). */
+	edit: (change: (doc: AxcutDocument) => AxcutDocument) => Promise<boolean>;
 	/** Force-flush the current document to disk. */
 	commit: () => Promise<void>;
 }
@@ -55,10 +61,13 @@ export function useEditorSettings(): UseEditorSettingsResult {
 	}, [document, activeClipId]);
 
 	const set = useCallback(
-		async (patch: EditorSettingsPatch) => {
+		async (patch: EditorSettingsPatch, scope?: PatchScope) => {
 			const doc = useProjectStore.getState().document;
 			if (!doc) return false;
-			const next = applySegmentSettingsPatch(doc, patch, useProjectStore.getState().currentTimeSec);
+			const timeSec = useProjectStore.getState().currentTimeSec;
+			const next = scope
+				? applyScopedSettingsPatch(doc, patch, scope, timeSec)
+				: applySegmentSettingsPatch(doc, patch, timeSec);
 			// The optimistic write is not the edit — the save is. Only the one that can
 			// fail records, and it names `doc` as what Ctrl+Z returns to because by then
 			// the store already holds `next`.
@@ -108,10 +117,13 @@ export function useEditorSettings(): UseEditorSettingsResult {
 	}, [projectId]);
 
 	const setLive = useCallback(
-		(patch: EditorSettingsPatch) => {
+		(patch: EditorSettingsPatch, scope?: PatchScope) => {
 			const doc = useProjectStore.getState().document;
 			if (!doc) return;
-			const next = applySegmentSettingsPatch(doc, patch, useProjectStore.getState().currentTimeSec);
+			const timeSec = useProjectStore.getState().currentTimeSec;
+			const next = scope
+				? applyScopedSettingsPatch(doc, patch, scope, timeSec)
+				: applySegmentSettingsPatch(doc, patch, timeSec);
 			if (liveDocRef.current !== doc) liveBaseRef.current = doc;
 			setDocument(next, { history: false });
 			liveDocRef.current = next;
@@ -137,5 +149,17 @@ export function useEditorSettings(): UseEditorSettingsResult {
 		await saveDocument(doc, { history: true, historyBase: base });
 	}, [saveDocument]);
 
-	return { settings, hasDocument, set, setLive, commit };
+	const edit = useCallback(
+		async (change: (doc: AxcutDocument) => AxcutDocument) => {
+			const doc = useProjectStore.getState().document;
+			if (!doc) return false;
+			const next = change(doc);
+			if (next === doc) return true;
+			setDocument(next, { history: false });
+			return saveDocument(next, { history: true, historyBase: doc });
+		},
+		[setDocument, saveDocument],
+	);
+
+	return { settings, hasDocument, set, setLive, commit, edit };
 }

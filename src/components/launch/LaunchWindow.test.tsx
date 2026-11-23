@@ -2374,3 +2374,80 @@ describe("LaunchWindow toasts", () => {
 		});
 	});
 });
+
+describe("LaunchWindow prompter controls", () => {
+	beforeEach(() => {
+		platformState.value = "darwin";
+		resetLaunchMocks();
+	});
+
+	afterEach(() => {
+		cleanup();
+		vi.unstubAllGlobals();
+	});
+
+	function stubPrompter(open: boolean) {
+		const perform = vi.fn(async () => undefined);
+		(window.electronAPI as unknown as Record<string, unknown>).teleprompter = {
+			perform,
+			state: vi.fn(async () => ({
+				open,
+				playing: false,
+				settings: { speed: 6 },
+				stageIndex: 0,
+				stageCount: 3,
+				take: 1,
+				run: null,
+			})),
+		};
+		return perform;
+	}
+
+	it("shows the prompter's controls on the bar only while the prompter is open", async () => {
+		stubPrompter(false);
+		const closed = renderLaunchWindow();
+		await screen.findByTestId("launch-record-button");
+		await act(async () => {});
+		expect(screen.queryByTestId("hud-prompter-controls")).toBeNull();
+		closed.unmount();
+
+		stubPrompter(true);
+		renderLaunchWindow();
+		expect(await screen.findByTestId("hud-prompter-controls")).toBeInTheDocument();
+		expect(screen.getByTestId("hud-prompter-speed")).toHaveTextContent("6");
+	});
+
+	it("follows the prompter's state broadcast", async () => {
+		let push: ((state: unknown) => void) | undefined;
+		(window.electronAPI as unknown as Record<string, unknown>).teleprompter = {
+			perform: vi.fn(),
+			state: vi.fn(async () => ({ open: false, run: null })),
+			onState: vi.fn((listener: (state: unknown) => void) => {
+				push = listener;
+				return () => undefined;
+			}),
+		};
+		renderLaunchWindow();
+		await screen.findByTestId("launch-record-button");
+		await act(async () => {});
+		expect(screen.queryByTestId("hud-prompter-controls")).toBeNull();
+		act(() => push?.({ open: true, playing: true, settings: { speed: 7 }, run: null }));
+		expect(await screen.findByTestId("hud-prompter-speed")).toHaveTextContent("7");
+		act(() => push?.({ open: false, run: null }));
+		await waitFor(() => expect(screen.queryByTestId("hud-prompter-controls")).toBeNull());
+	});
+
+	it("sends a press to the prompter by its action, in a vertical bar too", async () => {
+		const perform = stubPrompter(true);
+		renderLaunchWindow();
+		fireEvent.click(screen.getByTestId("launch-tray-layout-button"));
+		const group = await screen.findByTestId("hud-prompter-controls");
+		expect(group.className).toContain("flex-col");
+		const buttons = within(group).getAllByRole("button");
+		expect(buttons).toHaveLength(6);
+		fireEvent.click(buttons[2]);
+		expect(perform).toHaveBeenLastCalledWith("playPause");
+		fireEvent.click(buttons[5]);
+		expect(perform).toHaveBeenLastCalledWith("faster");
+	});
+});

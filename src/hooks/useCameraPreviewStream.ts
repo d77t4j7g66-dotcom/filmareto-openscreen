@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useNativeCameraClaimed } from "./useNativeCameraClaimed";
 import { webcamVideoConstraints } from "./webcamCaptureTarget";
 
 export interface CameraPreviewStreamOptions {
@@ -12,7 +13,10 @@ export interface CameraPreviewStreamOptions {
  * private ref), so this is safe to mount anywhere that just wants to *show*
  * the camera is working, not record it.
  */
-export function useCameraPreviewStream({ enabled, deviceId }: CameraPreviewStreamOptions) {
+export function useCameraPreviewStream({ enabled: wanted, deviceId }: CameraPreviewStreamOptions) {
+	// The capture helper has the camera for a take: let it go until the take ends.
+	const claimed = useNativeCameraClaimed();
+	const enabled = wanted && !claimed;
 	const [stream, setStream] = useState<MediaStream | null>(null);
 	const [error, setError] = useState<string | null>(null);
 	const streamRef = useRef<MediaStream | null>(null);

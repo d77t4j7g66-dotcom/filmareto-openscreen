@@ -51,7 +51,9 @@
 		"unhide": "Показать все",
 		"saveDiagnostics": "Сохранить диагностику",
 		"permissions": "Разрешения…",
-		"closeNotification": "Закрыть уведомление"
+		"closeNotification": "Закрыть уведомление",
+		"exportForResolve": "Export for Resolve…",
+		"resolveExportSetting": "Export for DaVinci Resolve (open timeline)"
 	},
 	"updates": {
 		"available": "Доступен Filmareto {{latestVersion}}. Установлена версия {{currentVersion}}.",

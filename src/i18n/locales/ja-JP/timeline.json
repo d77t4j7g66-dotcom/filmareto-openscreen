@@ -1,6 +1,8 @@
 {
 	"buttons": {
 		"addZoom": "現在の再生位置にズームを追加",
+		"addCameraZoom": "Add camera zoom",
+		"autoCameraZooms": "Auto camera zooms",
 		"autoFocusAll": "すべてのズームでオートフォーカス",
 		"autoFocusAllTip": "すべてのズームがカーソルを追従します。オフ：ズームごとにフォーカスを選べます。",
 		"clearTimeline": "すべてのズーム、トリム、再生速度、注釈、フルスクリーンカメラを削除します。クリップ、音声、字幕は残ります。",
@@ -11,6 +13,7 @@
 	},
 	"hints": {
 		"pressZoom": "{{key}}キーを押してズームを追加",
+		"pressCameraZoom": "Press Shift+Z to zoom the camera",
 		"pressTrim": "{{key}}キーを押してトリムを追加",
 		"pressAnnotation": "{{key}}キーを押して注釈を追加",
 		"pressAudio": "{{audioKey}} キーで音声を追加、{{voiceoverKey}} キーでナレーションを録音",
@@ -25,6 +28,7 @@
 		"trim": "トリム",
 		"speed": "再生速度",
 		"zoomItem": "ズーム {{index}}",
+		"cameraZoom": "Camera zoom",
 		"trimItem": "トリム {{index}}",
 		"speedItem": "再生速度 {{index}}",
 		"annotationItem": "注釈",
@@ -86,6 +90,8 @@
 		"importRecordingFirst": "先に録画をインポートしてください",
 		"noAutoZoomMoments": "自動ズームの瞬間が見つかりません",
 		"noAutoZoomMomentsDescription": "この録画には記録されたクリックがないか、ズームを入れる余地のあるクリックがありません。",
+		"noAutoCameraZooms": "No cuts to punch in on",
+		"noAutoCameraZoomsDescription": "Needs two or more touching clips where the camera fills the frame.",
 		"addedAutoZoom": "自動ズームを {{count}} 件追加しました",
 		"addedAutoZoomPlural": "自動ズームを {{count}} 件追加しました",
 		"autoZoomFailed": "自動ズームに失敗しました",

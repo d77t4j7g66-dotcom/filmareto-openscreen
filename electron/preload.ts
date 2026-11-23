@@ -155,6 +155,9 @@ contextBridge.exposeInMainWorld("electronAPI", {
 	switchToEditor: () => {
 		return ipcRenderer.invoke("switch-to-editor");
 	},
+	openScriptEditor: () => {
+		return ipcRenderer.invoke("open-script-editor");
+	},
 	switchToHud: () => {
 		return ipcRenderer.invoke("switch-to-hud");
 	},
@@ -189,6 +192,13 @@ contextBridge.exposeInMainWorld("electronAPI", {
 		setText: (text: string) => ipcRenderer.invoke("teleprompter:setText", text),
 		perform: (action: string) => ipcRenderer.invoke("teleprompter:perform", action),
 		set: (patch: Record<string, unknown>) => ipcRenderer.invoke("teleprompter:set", patch),
+		setCameraPreview: (patch: Record<string, unknown>) =>
+			ipcRenderer.invoke("teleprompter:setCameraPreview", patch),
+		listMics: () => ipcRenderer.invoke("teleprompter:listMics"),
+		suspendHotkeys: (suspended: boolean) =>
+			ipcRenderer.invoke("teleprompter:suspendHotkeys", suspended),
+		setMic: (deviceId: string | null) => ipcRenderer.invoke("teleprompter:setMic", deviceId),
+		setHotkeys: (bindings: unknown) => ipcRenderer.invoke("teleprompter:setHotkeys", bindings),
 		state: () => ipcRenderer.invoke("teleprompter:state"),
 		takeMarks: () => ipcRenderer.invoke("teleprompter:takeMarks"),
 		startRun: (request: unknown) => ipcRenderer.invoke("teleprompter:startRun", request),
@@ -327,6 +337,13 @@ contextBridge.exposeInMainWorld("electronAPI", {
 	startNativeMacRecording: (request: NativeMacRecordingRequest) => {
 		return ipcRenderer.invoke("start-native-mac-recording", request);
 	},
+	/** 1.2.0: the capture helper holds the camera (true) or let it go (false). */
+	onNativeCameraClaim: (callback: (claimed: boolean) => void) => {
+		const listener = (_: unknown, claimed: boolean) => callback(Boolean(claimed));
+		ipcRenderer.on("native-camera-claim", listener);
+		return () => ipcRenderer.removeListener("native-camera-claim", listener);
+	},
+	isNativeCameraClaimed: () => ipcRenderer.invoke("is-native-camera-claimed") as Promise<boolean>,
 	onNativeMacSystemAudioUnavailable: (callback: () => void) => {
 		const listener = () => callback();
 		ipcRenderer.on("native-mac-system-audio-unavailable", listener);
@@ -337,6 +354,9 @@ contextBridge.exposeInMainWorld("electronAPI", {
 	},
 	resumeNativeMacRecording: () => {
 		return ipcRenderer.invoke("resume-native-mac-recording");
+	},
+	releaseNativeMacHold: (cancel?: boolean, recordingId?: number) => {
+		return ipcRenderer.invoke("release-native-mac-hold", cancel === true, recordingId);
 	},
 	stopNativeMacRecording: (discard?: boolean) => {
 		return ipcRenderer.invoke("stop-native-mac-recording", discard);
@@ -370,6 +390,15 @@ contextBridge.exposeInMainWorld("electronAPI", {
 	},
 	writeExportToPath: (videoData: ArrayBuffer, filePath: string) => {
 		return ipcRenderer.invoke("write-export-to-path", videoData, filePath);
+	},
+	prepareMediaTrash: (projectId: string, assetId: string) => {
+		return ipcRenderer.invoke("media:prepareTrash", projectId, assetId);
+	},
+	cancelMediaTrash: (token: string) => {
+		return ipcRenderer.invoke("media:cancelTrash", token);
+	},
+	commitMediaTrash: (token: string) => {
+		return ipcRenderer.invoke("media:commitTrash", token);
 	},
 	openVideoFilePicker: () => {
 		return ipcRenderer.invoke("open-video-file-picker");
@@ -422,6 +451,13 @@ contextBridge.exposeInMainWorld("electronAPI", {
 	/** The eye line of a take, or null. */
 	findFace: (filePath: string, durationSec: number) => {
 		return ipcRenderer.invoke("find-face", filePath, durationSec);
+	},
+	/**
+	 * Where the face is over a camera picture: points with `t` in the take's seconds (the file's
+	 * seconds plus `offsetSec`). Null: none found. Undefined: could not look. "busy": a take is recording, ask again later.
+	 */
+	findFaceTrack: (filePath: string, durationSec: number, offsetSec?: number) => {
+		return ipcRenderer.invoke("find-face-track", filePath, durationSec, offsetSec);
 	},
 	/** What is said in each stretch of a take, each heard on its own. */
 	hearTalkingHead: (
@@ -511,6 +547,29 @@ contextBridge.exposeInMainWorld("electronAPI", {
 			callback(progress);
 		ipcRenderer.on("editor-package-progress", listener);
 		return () => ipcRenderer.removeListener("editor-package-progress", listener);
+	},
+	// Export for DaVinci Resolve (open timeline), behind the `resolveExportEnabled` setting.
+	onMenuExportForResolve: (callback: () => void) => {
+		const listener = () => callback();
+		ipcRenderer.on("menu-export-for-resolve", listener);
+		return () => ipcRenderer.removeListener("menu-export-for-resolve", listener);
+	},
+	exportForResolve: (projectId: string) => ipcRenderer.invoke("export-for-resolve", projectId),
+	onResolveExportProgress: (
+		callback: (progress: { step: string; done: number; total: number }) => void,
+	) => {
+		const listener = (
+			_event: Electron.IpcRendererEvent,
+			progress: { step: string; done: number; total: number },
+		) => callback(progress);
+		ipcRenderer.on("resolve-export-progress", listener);
+		return () => ipcRenderer.removeListener("resolve-export-progress", listener);
+	},
+	getResolveExportEnabled: () => ipcRenderer.invoke("get-resolve-export-enabled"),
+	onResolveExportEnabledChanged: (callback: (enabled: boolean) => void) => {
+		const listener = (_event: Electron.IpcRendererEvent, enabled: boolean) => callback(enabled);
+		ipcRenderer.on("resolve-export-enabled-changed", listener);
+		return () => ipcRenderer.removeListener("resolve-export-enabled-changed", listener);
 	},
 	// The Edit menu's Undo/Redo. On macOS this is the ONLY way Cmd+Z reaches the
 	// renderer: AppKit matches the menu's key equivalent before the key event is

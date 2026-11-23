@@ -1,0 +1,777 @@
+--[[ Filmareto Screen (Fusion Fuse), one self-contained file.
+
+Redraws a screen recording, or a camera, from per-frame framing data the Filmareto OpenScreen app exported
+(data/<segKey>.lua), live, never as per-frame keyframes. Auto follows the app's own framing, Whole screen
+shows the resting card, Manual uses the editor's own Manual centre and zoom (which they may keyframe).
+
+Layout of this file:
+  1. FilmaretoCore: a pure Lua table with all the math. No Fusion calls. Tested outside Resolve by
+     resolve/tests/core_test.lua, which stubs the Fusion globals and dofile()s this file.
+  2. The GPU kernel (DVIPComputeNode): shadow, rounded crop, cursor sprite, one pass per frame.
+  3. The Fuse (Create / Process) that reads the controls, asks the core for the framing and runs the kernel.
+
+Data conventions (see the data contract): everything in the data file is y DOWN and normalized. Fusion
+images are y UP. The flip happens once, in Process, right before the kernel parameter block.
+]]
+
+--==================================================================================================
+-- 1. FilmaretoCore (pure Lua)
+--==================================================================================================
+
+-- A factory, not a file-level `do` block: Resolve 21.2 called FilmaretoCore's functions with their upvalues
+-- gone ("attempt to index upvalue 'C' (a nil value)" in loadData, in a render thread). Process builds an
+-- instance in the thread it runs in when the shared one is not usable (see `coreForThisThread`).
+function FilmaretoMakeCore()
+	local C = {}
+	local STRIDE = 19
+
+	local function clamp(x, lo, hi)
+		if x < lo then return lo end
+		if x > hi then return hi end
+		return x
+	end
+
+	local function smoothstep(x)
+		if x <= 0 then return 0 end
+		if x >= 1 then return 1 end
+		return x * x * (3 - 2 * x)
+	end
+	C.smoothstep = smoothstep
+
+	-- Media-file frame of the clip's own time. A clip that starts at source frame 1198 has
+	-- COMPN_GlobalStart = -1198 (measured 2026-11-20), so this stays right after a cut or trim.
+	function C.frameFromTime(reqTime, globalStart)
+		return reqTime - (globalStart or 0)
+	end
+
+	-- A data table is usable when it has the right format and enough numbers.
+	function C.valid(data)
+		if type(data) ~= "table" or type(data.s) ~= "table" then return false end
+		if data.format ~= 1 or data.stride ~= STRIDE then return false end
+		if type(data.n) ~= "number" or data.n < 1 then return false end
+		return #data.s >= data.n * data.stride
+	end
+
+	-- Loading: dofile once per path, cached. A failed path is retried after RECHECK seconds (the file may
+	-- be written later); a good entry is re-validated every RECHECK seconds by file size and reloaded when
+	-- the size changes (the exporter rewrote it). It never errors. `_dofile`, `_now`, `_warn` are swappable.
+	local RECHECK = 2
+	C._dofile = dofile
+	C._now = os.time
+	C._warn = function(msg) print(msg) end
+	local cache, warned = {}, {}
+
+	-- One log line per key, e.g. a failure that would otherwise repeat every frame.
+	function C.logOnce(key, msg)
+		if warned[key] then return end
+		warned[key] = true
+		C._warn(msg)
+	end
+
+	local function fileSize(path)
+		local f = io.open(path, "rb")
+		if not f then return nil end
+		local n = f:seek("end")
+		f:close()
+		return n
+	end
+
+	local function loadEntry(path, now)
+		local ok, res = pcall(C._dofile, path)
+		if ok and C.valid(res) then
+			warned["data:" .. path] = nil
+			return { data = res, t = now, size = fileSize(path) }
+		end
+		local why = ok and "not a valid Filmareto data file" or tostring(res)
+		C.logOnce("data:" .. path, "Filmareto Screen: cannot use data file " .. tostring(path) .. " (" .. why .. ")")
+		return { err = why, t = now }
+	end
+
+	function C.loadData(path)
+		if path == nil or path == "" then return nil, "no data file set" end
+		local now = C._now()
+		local hit = cache[path]
+		if hit ~= nil and now - hit.t < RECHECK then
+			return hit.data, hit.err
+		end
+		if hit ~= nil and hit.data then
+			local size = fileSize(path)
+			if size ~= nil and size == hit.size then
+				hit.t = now
+				return hit.data
+			end
+		end
+		hit = loadEntry(path, now)
+		cache[path] = hit
+		return hit.data, hit.err
+	end
+	function C.clearCache() cache = {}; warned = {} end
+
+	-- Data without a Source picture cannot be drawn: the crop would be applied to the timeline-scaled
+	-- main input and look right while being wrong. Returns the data when `src` exists; otherwise logs
+	-- once and returns nil, which the caller treats as missing data (main input plus warning border).
+	function C.dataWithSource(data, src)
+		if data and not src then
+			C.logOnce("nosource", "Filmareto Screen: the Source input has no image (is MediaIn1 connected, MediaID set?); drawing the warning border")
+			return nil
+		end
+		return data
+	end
+
+	-- Frame-time helpers for the Fuse: kernel flip and mirror, cursor sprite uv.
+	-- Data is y DOWN; Fusion images are y UP. The flip happens here, once, before the param block.
+	-- `mirror` (camera role) swaps the cut's u0/u1 after the flip.
+	function C.toKernel(fr, mirror)
+		local b, c, k = fr.box, fr.cut, fr.cursor
+		local u0, u1 = c[1], c[3]
+		if mirror then u0, u1 = u1, u0 end
+		return {
+			box = { b[1], 1 - (b[2] + b[4]), b[3], b[4] },
+			cut = { u0, 1 - c[4], u1, 1 - c[2] },
+			cursorY = 1 - k.y,
+		}
+	end
+
+	-- Atlas sprite of a cursor kind. rect is in atlas pixels (y down); hotspot is a FRACTION (0..1) of the
+	-- sprite from its top-left. Returns uv rect (y up) inset half a texel so neighbours never bleed in.
+	-- atlasW/atlasH are the atlas image's own Width/Height.
+	function C.cursorUV(kind, atlasW, atlasH)
+		local r, hs = kind.rect, kind.hotspot
+		return {
+			rect = {
+				(r[1] + 0.5) / atlasW, 1 - (r[2] + r[4] - 0.5) / atlasH,
+				(r[1] + r[3] - 0.5) / atlasW, 1 - (r[2] + 0.5) / atlasH,
+			},
+			hot = { hs[1], 1 - hs[2] },
+			aspect = r[3] / r[4],
+		}
+	end
+
+	-- Index (1-based start of the 19 numbers) of the sample for a media frame, clamped to the ends.
+	local function baseIndex(data, frame)
+		local i = math.floor(frame + 0.5) - (data.frame0 or 0)
+		if i < 0 then i = 0 elseif i > data.n - 1 then i = data.n - 1 end
+		return i * STRIDE + 1
+	end
+
+	local function readSample(s, b)
+		return {
+			box = { s[b], s[b + 1], s[b + 2], s[b + 3] },
+			rest = { s[b + 4], s[b + 5], s[b + 6], s[b + 7] },
+			crop = { s[b + 8], s[b + 9], s[b + 10], s[b + 11] },
+			radius = s[b + 12],
+			unit = s[b + 13],
+			cursor = { x = s[b + 14], y = s[b + 15], size = s[b + 16], alpha = s[b + 17], kind = s[b + 18] },
+		}
+	end
+
+	-- The sample of a media frame, clamped to the first and last sample. nil without valid data.
+	function C.sampleAt(data, frame)
+		if not C.valid(data) then return nil end
+		return readSample(data.s, baseIndex(data, frame))
+	end
+
+	-- remap_box (Rust): rebuild the box that makes `window` (u0,v0,u1,v1, source-normalized, inside `crop`)
+	-- exactly fill the resting box `rest` (x,y,w,h). Returns the box {x,y,w,h}.
+	function C.remapBox(rest, window, crop)
+		local cw, ch = crop[3] - crop[1], crop[4] - crop[2]
+		local ww, wh = window[3] - window[1], window[4] - window[2]
+		if ww < 1e-9 then ww = 1e-9 end
+		if wh < 1e-9 then wh = 1e-9 end
+		local bw, bh = rest[3] * cw / ww, rest[4] * ch / wh
+		local ox, oy = (window[1] - crop[1]) / cw, (window[2] - crop[2]) / ch
+		return { rest[1] - ox * bw, rest[2] - oy * bh, bw, bh }
+	end
+
+	-- Inverse of remapBox: the window (u0,v0,u1,v1) a box shows, clamped inside the crop.
+	function C.windowOf(box, rest, crop)
+		local cw, ch = crop[3] - crop[1], crop[4] - crop[2]
+		local bw, bh = box[3], box[4]
+		if bw < 1e-9 then bw = 1e-9 end
+		if bh < 1e-9 then bh = 1e-9 end
+		local zx, zy = bw / rest[3], bh / rest[4]
+		local ox, oy = (rest[1] - box[1]) / bw, (rest[2] - box[2]) / bh
+		local ww, wh = cw / zx, ch / zy
+		local u0, v0 = crop[1] + ox * cw, crop[2] + oy * ch
+		return C.clampWindow({ u0, v0, u0 + ww, v0 + wh }, crop)
+	end
+
+	-- Keep a window inside the crop (size first, then position).
+	function C.clampWindow(w, crop)
+		local cw, ch = crop[3] - crop[1], crop[4] - crop[2]
+		local ww = math.min(w[3] - w[1], cw)
+		local wh = math.min(w[4] - w[2], ch)
+		local u0 = clamp(w[1], crop[1], crop[3] - ww)
+		local v0 = clamp(w[2], crop[2], crop[4] - wh)
+		return { u0, v0, u0 + ww, v0 + wh }
+	end
+
+	local function lerpWin(a, b, t)
+		return {
+			a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t,
+			a[3] + (b[3] - a[3]) * t, a[4] + (b[4] - a[4]) * t,
+		}
+	end
+
+	local function rawWindow(data, base)
+		local s = data.s
+		local box = { s[base], s[base + 1], s[base + 2], s[base + 3] }
+		local rest = { s[base + 4], s[base + 5], s[base + 6], s[base + 7] }
+		local crop = { s[base + 8], s[base + 9], s[base + 10], s[base + 11] }
+		return C.windowOf(box, rest, crop)
+	end
+
+	-- The OpenScreen window at `frame`, averaged with a CENTRED Gaussian over +/- `smoothing` seconds
+	-- (no lag: the window of a frame is the weighted mean of its neighbours' windows, sigma = smoothing/2).
+	-- 0 is the identity. Work is O(window): at most 2*smoothing*fps+1 samples. Samples beyond either end
+	-- of the data are the clamped end samples.
+	function C.smoothedAt(data, frame, smoothing)
+		if not C.valid(data) then return nil end
+		local f = math.floor(frame + 0.5)
+		if not smoothing or smoothing < 0.005 then
+			return rawWindow(data, baseIndex(data, f))
+		end
+		local fps = data.fps or 30
+		local half = math.max(1, math.ceil(smoothing * fps))
+		local sigma = math.max(smoothing * fps / 2, 1e-6)
+		local acc, wsum = { 0, 0, 0, 0 }, 0
+		for k = -half, half do
+			local wgt = math.exp(-0.5 * (k / sigma) ^ 2)
+			local r = rawWindow(data, baseIndex(data, f + k))
+			for i = 1, 4 do acc[i] = acc[i] + wgt * r[i] end
+			wsum = wsum + wgt
+		end
+		for i = 1, 4 do acc[i] = acc[i] / wsum end
+		return acc
+	end
+
+	local function defaults(ctl)
+		ctl = ctl or {}
+		local safe = ctl.safe or {}
+		local off = ctl.offset or {}
+		local mc = ctl.manualCenter or {}
+		local function d(v, def) if v == nil then return def end return v end
+		return {
+			mode = d(ctl.mode, 0),
+			smoothing = d(ctl.smoothing, 0),
+			zoomStrength = d(ctl.zoomStrength, 1),
+			offset = { x = d(off.x, 0.5), y = d(off.y, 0.5) }, -- Fusion Point: 0.5 = no shift, y UP
+			safe = { top = d(safe.top, 0), bottom = d(safe.bottom, 0), right = d(safe.right, 0), left = d(safe.left, 0) },
+			manualCenter = { x = d(mc.x, 0.5), y = d(mc.y, 0.5) }, -- crop-normalized, y UP (Fusion)
+			manualZoom = d(ctl.manualZoom, 1),
+			transitionSec = d(ctl.transitionSec, 0),
+			clipStartFrame = ctl.clipStartFrame, -- media frame where the clip starts (nil = no transition)
+			cursorOn = d(ctl.cursorOn, true),
+			cursorScale = d(ctl.cursorScale, 1),
+		}
+	end
+
+	-- Zoom strength on a window. The window shrinks geometrically (w^k) and its centre moves so the zoom's
+	-- fixed point stays put: the point that sat at the same relative place in the old window and the new.
+	local function shapeWindow(win, crop, ctl)
+		local cw, ch = crop[3] - crop[1], crop[4] - crop[2]
+		local ww, wh = win[3] - win[1], win[4] - win[2]
+		local cx, cy = (win[1] + win[3]) / 2, (win[2] + win[4]) / 2
+		local k = ctl.zoomStrength
+		if k ~= 1 then
+			local ccx, ccy = (crop[1] + crop[3]) / 2, (crop[2] + crop[4]) / 2
+			local nw, nh = cw * (ww / cw) ^ k, ch * (wh / ch) ^ k
+			local fx = (1 - ww / cw) > 1e-6 and (1 - nw / cw) / (1 - ww / cw) or 1
+			local fy = (1 - wh / ch) > 1e-6 and (1 - nh / ch) / (1 - wh / ch) or 1
+			cx = ccx + (cx - ccx) * fx
+			cy = ccy + (cy - ccy) * fy
+			ww, wh = nw, nh
+		end
+		return C.clampWindow({ cx - ww / 2, cy - wh / 2, cx + ww / 2, cy + wh / 2 }, crop)
+	end
+
+	local function manualWindow(crop, ctl)
+		local cw, ch = crop[3] - crop[1], crop[4] - crop[2]
+		local z = math.max(ctl.manualZoom, 1e-3)
+		local ww, wh = cw / z, ch / z
+		local cx = crop[1] + ctl.manualCenter.x * cw
+		local cy = crop[2] + (1 - ctl.manualCenter.y) * ch
+		return { cx - ww / 2, cy - wh / 2, cx + ww / 2, cy + wh / 2 }
+	end
+
+	-- Where the cursor sits inside the box, as fractions of the box (so it stays glued to the content).
+	local function cursorFrac(sample)
+		local b, c = sample.box, sample.cursor
+		local fx = b[3] > 1e-9 and (c.x - b[1]) / b[3] or 0.5
+		local fy = b[4] > 1e-9 and (c.y - b[2]) / b[4] or 0.5
+		return fx, fy
+	end
+
+	-- Safe zone: move the window so the cursor lands inside the zone (insets in % of the output).
+	local function applySafeZone(win, sample, crop, ctl)
+		local sf = ctl.safe
+		if sample.cursor.kind <= 0 then return win end
+		if sf.top == 0 and sf.bottom == 0 and sf.right == 0 and sf.left == 0 then return win end
+		local rest = sample.rest
+		local fx, fy = cursorFrac(sample)
+		local box = C.remapBox(rest, win, crop)
+		local px, py = box[1] + fx * box[3], box[2] + fy * box[4]
+		local xlo, xhi = sf.left / 100, 1 - sf.right / 100
+		local ylo, yhi = sf.top / 100, 1 - sf.bottom / 100
+		local dx, dy = 0, 0
+		if px < xlo then dx = xlo - px elseif px > xhi then dx = xhi - px end
+		if py < ylo then dy = ylo - py elseif py > yhi then dy = yhi - py end
+		if dx == 0 and dy == 0 then return win end
+		local ww, wh = win[3] - win[1], win[4] - win[2]
+		-- content moves by dx in the output; the window moves the other way, scaled by window/rest size
+		local du = -dx * ww / math.max(rest[3], 1e-9)
+		local dv = -dy * wh / math.max(rest[4], 1e-9)
+		return C.clampWindow({ win[1] + du, win[2] + dv, win[3] + du, win[4] + dv }, crop)
+	end
+
+	-- The Auto window at a media frame: OpenScreen's motion, smoothing, zoom strength, offset, safe zone.
+	local function autoWindow(data, frame, ctl)
+		local sample = C.sampleAt(data, frame)
+		local crop = sample.crop
+		local win = C.smoothedAt(data, frame, ctl.smoothing)
+		if ctl.zoomStrength ~= 1 then win = shapeWindow(win, crop, ctl) end
+		win = applySafeZone(win, sample, crop, ctl)
+		return win, sample
+	end
+
+	local function restResult(warn)
+		return {
+			box = { 0, 0, 1, 1 }, cut = { 0, 0, 1, 1 }, rest = { 0, 0, 1, 1 }, radius = 0, unit = 0,
+			shadow = { opacity = 0, spread = 0, offsetY = 0 },
+			cursor = { x = 0, y = 0, size = 0, alpha = 0, kind = 0 },
+			window = { 0, 0, 1, 1 }, warn = warn,
+		}
+	end
+
+	-- The framing of one frame. Modes: 0 Auto, 1 Whole screen, 2 Manual. y DOWN, output-normalized.
+	-- Returns { box, cut, rest, radius, unit, shadow, cursor, window, warn }. Without valid data: the
+	-- resting full-canvas box and warn = "missing-data".
+	function C.framing(data, frame, controls)
+		if not C.valid(data) then return restResult("missing-data") end
+		local ctl = defaults(controls)
+		local sample = C.sampleAt(data, frame)
+		local crop, rest = sample.crop, sample.rest
+		local win
+		if ctl.mode == 1 then
+			win = { crop[1], crop[2], crop[3], crop[4] }
+		elseif ctl.mode == 2 then
+			local man = C.clampWindow(manualWindow(crop, ctl), crop)
+			win = man
+			local tr = ctl.transitionSec
+			if tr > 0 and ctl.clipStartFrame then
+				local t = (frame - ctl.clipStartFrame) / (data.fps or 30)
+				if t < tr then
+					local auto0 = autoWindow(data, ctl.clipStartFrame, ctl)
+					win = lerpWin(auto0, man, smoothstep(t / tr))
+				end
+			end
+		else
+			win = autoWindow(data, frame, ctl)
+		end
+		win = C.clampWindow(win, crop)
+
+		-- Identity fast path: Auto with nothing changed is exactly the sample.
+		local box
+		local identity = ctl.mode == 0 and ctl.smoothing < 0.005 and ctl.zoomStrength == 1
+			and ctl.safe.top == 0 and ctl.safe.bottom == 0 and ctl.safe.right == 0 and ctl.safe.left == 0
+		if identity then
+			box = { sample.box[1], sample.box[2], sample.box[3], sample.box[4] }
+		else
+			box = C.remapBox(rest, win, crop)
+		end
+		-- Offset shifts the drawn BOX in output space (works at zoom 1 too; the cursor moves with it).
+		-- Fusion Point y is up, the data's is down.
+		box[1] = box[1] + (ctl.offset.x - 0.5)
+		box[2] = box[2] - (ctl.offset.y - 0.5)
+
+		local cur = sample.cursor
+		local out = { x = 0, y = 0, size = 0, alpha = 0, kind = 0 }
+		if cur.kind > 0 and ctl.cursorOn then
+			local fx, fy = cursorFrac(sample)
+			out = {
+				x = box[1] + fx * box[3], y = box[2] + fy * box[4],
+				size = cur.size * ctl.cursorScale, alpha = cur.alpha, kind = cur.kind,
+			}
+		end
+		return {
+			box = box, cut = { crop[1], crop[2], crop[3], crop[4] }, rest = rest,
+			radius = sample.radius, unit = sample.unit, shadow = data.shadow or { opacity = 0, spread = 0, offsetY = 0 },
+			cursor = out, window = win, warn = nil,
+		}
+	end
+
+	-- True while the functions of this instance can still reach their upvalues.
+	function C.alive() return C ~= nil and cache ~= nil and warned ~= nil end
+
+	return C
+end
+FilmaretoCore = FilmaretoMakeCore()
+
+--==================================================================================================
+-- 2. The GPU kernel. Written after Blackmagic's "GPU sample.fuse" (param block, DVIPComputeNode, _tex2DVecN,
+-- _tex2DVec4Write); not yet compiled in Resolve, so see the list of unverified calls in the report.
+--==================================================================================================
+
+FilmaretoParams = [[
+	int dstsize[2];
+	float box[4];      // x, y, w, h: output-normalized, y UP
+	float cut[4];      // u0, v0, u1, v1 of the Source crop, y UP
+	float radius;      // corner radius / output height
+	float shadow[4];   // opacity, spread, offsetUp, unused   (spread and offset / output height)
+	float cursor[4];   // x, y (y UP, output-normalized), longest side / output height, alpha
+	float curRect[4];  // sprite rect in the atlas: u0, v0, u1, v1 (y UP, normalized)
+	float curHot[2];   // hotspot as a fraction of the sprite, y UP
+	float curAspect;   // sprite width / height
+	int mode;          // 0 draw, 1 pass the main input through with a red border
+	int hasCursor;
+	int compOrder;
+]]
+
+FilmaretoKernel = [[
+// Signed distance to a rounded rectangle (centre c, half size h, radius r), in pixels.
+__DEVICE__ float fl_sdf(float px, float py, float cx, float cy, float hx, float hy, float r)
+{
+	float qx = _fabs(px - cx) - (hx - r);
+	float qy = _fabs(py - cy) - (hy - r);
+	float ox = _fmaxf(qx, 0.0f);
+	float oy = _fmaxf(qy, 0.0f);
+	return _sqrtf(ox * ox + oy * oy) + _fminf(_fmaxf(qx, qy), 0.0f) - r;
+}
+
+__KERNEL__ void FilmaretoKernel(__CONSTANTREF__ FilmaretoParams *params,
+	__TEXTURE2D__ mainTex,
+	__TEXTURE2D__ srcTex,
+	__TEXTURE2D__ atlasTex,
+	__TEXTURE2D_WRITE__ dst)
+{
+	DEFINE_KERNEL_ITERATORS_XY(x, y)
+	if (x < params->dstsize[0] && y < params->dstsize[1])
+	{
+		float W = (float)params->dstsize[0];
+		float H = (float)params->dstsize[1];
+		float px = (float)x + 0.5f;
+		float py = (float)y + 0.5f;
+		float4 outc = to_float4(0.0f, 0.0f, 0.0f, 0.0f);
+
+		if (params->mode == 1)
+		{
+			// Missing data: plain main input, thin red border.
+			outc = _tex2DVecN(mainTex, px / W, py / H, params->compOrder);
+			float bw = _fmaxf(2.0f, H / 270.0f);
+			if (px < bw || py < bw || px > W - bw || py > H - bw)
+				outc = to_float4(1.0f, 0.0f, 0.0f, 1.0f);
+			_tex2DVec4Write(dst, x, y, outc);
+		}
+		else
+		{
+			float bx = params->box[0] * W;
+			float by = params->box[1] * H;
+			float bw2 = params->box[2] * W;
+			float bh2 = params->box[3] * H;
+			float cx = bx + bw2 * 0.5f;
+			float cy = by + bh2 * 0.5f;
+			float r = _fminf(params->radius * H, _fminf(bw2, bh2) * 0.5f);
+
+			// 1. shadow: opacity * (1 - smoothstep(0, spread, sdf)), box shifted down by the offset
+			float sh = 0.0f;
+			float spread = params->shadow[1] * H;
+			if (params->shadow[0] > 0.0f && spread > 0.0f)
+			{
+				float ds = fl_sdf(px, py + params->shadow[2] * H, cx, cy, bw2 * 0.5f, bh2 * 0.5f, r);
+				float t = _clampf(ds / spread, 0.0f, 1.0f);
+				sh = params->shadow[0] * (1.0f - t * t * (3.0f - 2.0f * t));
+			}
+
+			// 2. the crop of Source drawn into the box, rounded, clipped to the canvas
+			float d = fl_sdf(px, py, cx, cy, bw2 * 0.5f, bh2 * 0.5f, r);
+			float cov = _clampf(0.5f - d, 0.0f, 1.0f);
+			float4 col = to_float4(0.0f, 0.0f, 0.0f, 0.0f);
+			if (cov > 0.0f)
+			{
+				float tx = _clampf((px - bx) / bw2, 0.0f, 1.0f);
+				float ty = _clampf((py - by) / bh2, 0.0f, 1.0f);
+				float u = params->cut[0] + tx * (params->cut[2] - params->cut[0]);
+				float v = params->cut[1] + ty * (params->cut[3] - params->cut[1]);
+				col = _tex2DVecN(srcTex, u, v, params->compOrder);
+			}
+			float ca = cov * col.w;
+			outc.x = col.x * cov;
+			outc.y = col.y * cov;
+			outc.z = col.z * cov;
+			outc.w = ca + sh * (1.0f - ca);
+
+			// 3. cursor sprite: hotspot on the cursor point, longest side = size
+			if (params->hasCursor != 0 && params->cursor[3] > 0.0f)
+			{
+				float L = params->cursor[2] * H;
+				float sw = L;
+				float sh2 = L;
+				if (params->curAspect >= 1.0f) sh2 = L / params->curAspect; else sw = L * params->curAspect;
+				float x0 = params->cursor[0] * W - params->curHot[0] * sw;
+				float y0 = params->cursor[1] * H - params->curHot[1] * sh2;
+				float lu = (px - x0) / sw;
+				float lv = (py - y0) / sh2;
+				if (lu >= 0.0f && lu <= 1.0f && lv >= 0.0f && lv <= 1.0f)
+				{
+					float au = params->curRect[0] + lu * (params->curRect[2] - params->curRect[0]);
+					float av = params->curRect[1] + lv * (params->curRect[3] - params->curRect[1]);
+					float4 c = _tex2DVecN(atlasTex, au, av, params->compOrder);
+					// The cursor PNG is STRAIGHT alpha (the Loader must not post-multiply): premultiply here.
+					c.x = c.x * c.w;
+					c.y = c.y * c.w;
+					c.z = c.z * c.w;
+					float a = params->cursor[3];
+					// premultiplied "over"
+					outc.x = c.x * a + outc.x * (1.0f - c.w * a);
+					outc.y = c.y * a + outc.y * (1.0f - c.w * a);
+					outc.z = c.z * a + outc.z * (1.0f - c.w * a);
+					outc.w = c.w * a + outc.w * (1.0f - c.w * a);
+				}
+			}
+			_tex2DVec4Write(dst, x, y, outc);
+		}
+	}
+}
+]]
+
+--==================================================================================================
+-- 3. The Fuse
+--==================================================================================================
+
+FuRegisterClass("FilmaretoScreen", CT_Tool, {
+	REGS_Name = "Filmareto Screen",
+	REGS_Category = "Filmareto",
+	REGS_OpIconString = "FScr",
+	REGS_OpDescription = "Live screen/camera framing from OpenScreen data: Auto, Whole screen, Manual",
+	REG_NoMotionBlurCtrls = true,
+	REG_NoBlendCtrls = true,
+	REG_NoObjMatCtrls = true,
+	REG_OpNoMask = true,
+	REG_TimeVariant = true,
+	REG_Version = 1,
+})
+
+function Create()
+	InMode = self:AddInput("Λειτουργία / Mode", "Mode", {
+		LINKID_DataType = "Number",
+		INPID_InputControl = "ComboControl",
+		INP_Default = 0.0,
+		INP_Integer = true,
+		{ CCS_AddString = "Auto" },
+		{ CCS_AddString = "Ολόκληρη οθόνη / Whole screen" },
+		{ CCS_AddString = "Manual" },
+	})
+	InSmooth = self:AddInput("Ομαλότητα / Smoothing (s)", "Smoothing", {
+		LINKID_DataType = "Number", INPID_InputControl = "SliderControl",
+		INP_Default = 0.0, INP_MinScale = 0.0, INP_MaxScale = 1.5, INP_MinAllowed = 0.0,
+	})
+	InZoom = self:AddInput("Ένταση zoom / Zoom strength", "ZoomStrength", {
+		LINKID_DataType = "Number", INPID_InputControl = "SliderControl",
+		INP_Default = 1.0, INP_MinScale = 0.0, INP_MaxScale = 2.5, INP_MinAllowed = 0.0,
+	})
+	InOffset = self:AddInput("Offset", "Offset", {
+		LINKID_DataType = "Point", INPID_InputControl = "OffsetControl", INPID_PreviewControl = "CrosshairControl",
+		INP_DefaultX = 0.5, INP_DefaultY = 0.5,
+	})
+	InSafeTop = self:AddInput("Ασφαλής ζώνη πάνω / Safe zone top (%)", "SafeTop", {
+		LINKID_DataType = "Number", INPID_InputControl = "SliderControl",
+		INP_Default = 0.0, INP_MinScale = 0.0, INP_MaxScale = 40.0, INP_MinAllowed = 0.0,
+	})
+	InSafeBottom = self:AddInput("Ασφαλής ζώνη κάτω / Safe zone bottom (%)", "SafeBottom", {
+		LINKID_DataType = "Number", INPID_InputControl = "SliderControl",
+		INP_Default = 0.0, INP_MinScale = 0.0, INP_MaxScale = 40.0, INP_MinAllowed = 0.0,
+	})
+	InSafeRight = self:AddInput("Ασφαλής ζώνη δεξιά / Safe zone right (%)", "SafeRight", {
+		LINKID_DataType = "Number", INPID_InputControl = "SliderControl",
+		INP_Default = 0.0, INP_MinScale = 0.0, INP_MaxScale = 40.0, INP_MinAllowed = 0.0,
+	})
+	InSafeLeft = self:AddInput("Ασφαλής ζώνη αριστερά / Safe zone left (%)", "SafeLeft", {
+		LINKID_DataType = "Number", INPID_InputControl = "SliderControl",
+		INP_Default = 0.0, INP_MinScale = 0.0, INP_MaxScale = 40.0, INP_MinAllowed = 0.0,
+	})
+	InManualCenter = self:AddInput("Manual κέντρο / Manual centre", "ManualCenter", {
+		LINKID_DataType = "Point", INPID_InputControl = "OffsetControl", INPID_PreviewControl = "CrosshairControl",
+		INP_DefaultX = 0.5, INP_DefaultY = 0.5,
+	})
+	InManualZoom = self:AddInput("Manual zoom", "ManualZoom", {
+		LINKID_DataType = "Number", INPID_InputControl = "SliderControl",
+		INP_Default = 1.0, INP_MinScale = 1.0, INP_MaxScale = 5.0, INP_MinAllowed = 1.0,
+	})
+	InTransition = self:AddInput("Μετάβαση από Auto / Transition from Auto (s)", "TransitionSec", {
+		LINKID_DataType = "Number", INPID_InputControl = "SliderControl",
+		INP_Default = 0.5, INP_MinScale = 0.0, INP_MaxScale = 3.0, INP_MinAllowed = 0.0,
+	})
+	InCursorOn = self:AddInput("Κέρσορας / Cursor", "CursorOn", {
+		LINKID_DataType = "Number", INPID_InputControl = "CheckboxControl",
+		INP_Integer = true, INP_Default = 1.0,
+	})
+	InCursorSize = self:AddInput("Μέγεθος κέρσορα / Cursor size (×)", "CursorSize", {
+		LINKID_DataType = "Number", INPID_InputControl = "SliderControl",
+		INP_Default = 1.0, INP_MinScale = 0.25, INP_MaxScale = 3.0, INP_MinAllowed = 0.0,
+	})
+	-- Hidden, set by the import script.
+	InData = self:AddInput("Data file", "DataFile", {
+		LINKID_DataType = "Text", INPID_InputControl = "TextEditControl", TEC_Lines = 1,
+		IC_Visible = false,
+	})
+	InFetch = self:AddInput("Fetch source by frame", "FetchByFrame", {
+		LINKID_DataType = "Number", INPID_InputControl = "CheckboxControl",
+		INP_Integer = true, INP_Default = 1.0, IC_Visible = false,
+	})
+
+	-- Hidden, set by the import script: the SOURCE frame of the clip's first frame. Resolve's effect comp has no
+	-- COMPN_GlobalStart (nil in 21.2), and its time is the clip's own (0 at the clip's first frame, measured), so
+	-- the media frame is this plus req.Time. -1 (unset) falls back to COMPN_GlobalStart.
+	InClipStart = self:AddInput("Clip start frame", "ClipStartFrame", {
+		LINKID_DataType = "Number", INP_Integer = true, INP_Default = -1.0, IC_Visible = false,
+	})
+
+	InImage = self:AddInput("Input", "Input", { LINKID_DataType = "Image", LINK_Main = 1 })
+	InSource = self:AddInput("Source", "Source", { LINKID_DataType = "Image", LINK_Main = 2, INP_Required = false })
+	InAtlas = self:AddInput("Atlas", "Atlas", { LINKID_DataType = "Image", LINK_Main = 3, INP_Required = false })
+	OutImage = self:AddOutput("Output", "Output", { LINKID_DataType = "Image", LINK_Main = 1 })
+end
+
+-- Source image: at the media frame (FetchByFrame) or at req.Time. nil if there is none.
+-- Proxy/quick flags: GetSource takes only the time here; whether it accepts req flags is unverified.
+function FilmaretoFetchSource(req, frame, byFrame)
+	if byFrame then
+		local ok, img = pcall(function() return InSource:GetSource(frame) end)
+		if ok and img then return img end
+	end
+	return InSource:GetValue(req)
+end
+
+-- The core instance for the thread this runs in: the shared one when its functions still have their
+-- upvalues, else a fresh one built here (its closures are created in this thread, so they are intact).
+function FilmaretoCoreForThisThread()
+	local core = FilmaretoLiveCore
+	if core ~= nil then
+		local ok, alive = pcall(core.alive)
+		if ok and alive then return core end
+	end
+	core = FilmaretoMakeCore()
+	FilmaretoLiveCore = core
+	return core
+end
+
+function Process(req)
+	local core = FilmaretoCoreForThisThread()
+	local img = InImage:GetValue(req)
+	local out = Image({ IMG_Like = img })
+	local dw, dh = out.DataWindow:Width(), out.DataWindow:Height()
+
+	local data = core.loadData(InData:GetValue(req).Value)
+
+	-- The media frame: the clip's source start plus the effect's own time (set by the import script), else
+	-- from COMPN_GlobalStart. Without either we cannot know the frame: warn, draw the border.
+	local ok, attrs = pcall(function() return self.Comp:GetAttrs() end)
+	if not ok or type(attrs) ~= "table" then attrs = {} end
+	local clipStartIn = InClipStart:GetValue(req).Value
+	local frame, clipStartFrame
+	if clipStartIn ~= nil and clipStartIn >= 0 then
+		frame = core.frameFromTime(req.Time, -clipStartIn)
+		clipStartFrame = clipStartIn
+	else
+		local globalStart = attrs.COMPN_GlobalStart
+		if globalStart == nil then
+			core.logOnce("globalstart", "Filmareto Screen: cannot read COMPN_GlobalStart from the comp and no clip start is set; drawing the warning border")
+			data = nil
+		end
+		frame = core.frameFromTime(req.Time, globalStart or 0)
+		clipStartFrame = (attrs.COMPN_RenderStart ~= nil and globalStart ~= nil)
+			and core.frameFromTime(attrs.COMPN_RenderStart, globalStart) or nil
+	end
+
+	local src, atlas
+	if data then
+		src = FilmaretoFetchSource(req, frame, InFetch:GetValue(req).Value > 0.5)
+		atlas = InAtlas:GetValue(req)
+		data = core.dataWithSource(data, src)
+	end
+	if not src then src = img end
+
+	local node = DVIPComputeNode(req, "FilmaretoKernel", FilmaretoKernel, "FilmaretoParams", FilmaretoParams)
+	local success = false
+	if not node then
+		core.logOnce("nonode", "Filmareto Screen: DVIPComputeNode returned nil (kernel did not compile?)")
+	else
+		local p = node:GetParamBlock(FilmaretoParams)
+		p.dstsize[0] = dw
+		p.dstsize[1] = dh
+		p.compOrder = 15
+		p.hasCursor = 0
+		p.mode = data and 0 or 1
+
+		if data then
+			local ctl = {
+				mode = InMode:GetValue(req).Value,
+				smoothing = InSmooth:GetValue(req).Value,
+				zoomStrength = InZoom:GetValue(req).Value,
+				offset = { x = InOffset:GetValue(req).X, y = InOffset:GetValue(req).Y },
+				safe = {
+					top = InSafeTop:GetValue(req).Value, bottom = InSafeBottom:GetValue(req).Value,
+					right = InSafeRight:GetValue(req).Value, left = InSafeLeft:GetValue(req).Value,
+				},
+				manualCenter = { x = InManualCenter:GetValue(req).X, y = InManualCenter:GetValue(req).Y },
+				manualZoom = InManualZoom:GetValue(req).Value,
+				transitionSec = InTransition:GetValue(req).Value,
+				clipStartFrame = clipStartFrame,
+				cursorOn = InCursorOn:GetValue(req).Value > 0.5,
+				cursorScale = InCursorSize:GetValue(req).Value,
+			}
+			local fr = core.framing(data, frame, ctl)
+			local fl = core.toKernel(fr, data.mirror)
+			for i = 1, 4 do
+				p.box[i - 1] = fl.box[i]
+				p.cut[i - 1] = fl.cut[i]
+			end
+			p.radius = fr.radius
+			local sh = fr.shadow or {}
+			p.shadow[0] = sh.opacity or 0
+			p.shadow[1] = (sh.spread or 0) * (fr.unit or 0) -- contract: spread * unit (normalized by height)
+			p.shadow[2] = (sh.offsetY or 0) * (fr.unit or 0) -- y-down offset: the kernel shifts the sample point
+			p.shadow[3] = 0
+
+			local k = data.cursor and data.cursor.kinds and data.cursor.kinds[fr.cursor.kind]
+			if fr.cursor.kind > 0 and k and atlas then
+				-- atlas image's own Width/Height (not DataWindow); the hotspot is a fraction of the sprite
+				local uv = core.cursorUV(k, atlas.Width, atlas.Height)
+				p.hasCursor = 1
+				p.cursor[0] = fr.cursor.x
+				p.cursor[1] = fl.cursorY
+				p.cursor[2] = fr.cursor.size
+				p.cursor[3] = fr.cursor.alpha
+				for i = 1, 4 do p.curRect[i - 1] = uv.rect[i] end
+				p.curHot[0] = uv.hot[1]
+				p.curHot[1] = uv.hot[2]
+				p.curAspect = uv.aspect
+			end
+		end
+
+		node:SetParamBlock(p)
+		node:AddSampler("RowSampler", TEX_FILTER_MODE_LINEAR, TEX_ADDRESS_MODE_CLAMP, TEX_NORMALIZED_COORDS_TRUE)
+		-- Each texture the kernel declares gets an Image of its own. Binding ONE Image object to several
+		-- inputs (the main input standing in for a missing Source or Atlas) crashed Resolve 21.2 right after
+		-- the effect was added (SIGBUS in the compute node's input "uncast", Fusion render thread). A missing
+		-- Source or Atlas is a 1x1 blank: the kernel never samples it in the pass-through mode.
+		local function blank()
+			local okB, b = pcall(Image, { IMG_Like = img, IMG_Width = 1, IMG_Height = 1 })
+			if okB and b then return b end
+			return Image({ IMG_Like = img })
+		end
+		local srcImg = (src and src ~= img) and src or blank()
+		local atlasImg = (atlas and atlas ~= img and atlas ~= src) and atlas or blank()
+		node:AddInput("mainTex", img)
+		node:AddInput("srcTex", srcImg)
+		node:AddInput("atlasTex", atlasImg)
+		node:AddOutput("dst", out)
+		success = node:RunSession(req)
+		if not success then
+			core.logOnce("runfail", "Filmareto Screen: the GPU kernel session failed; passing the input through")
+		end
+	end
+
+	if not success then out = img end
+	OutImage:Set(req, out)
+end

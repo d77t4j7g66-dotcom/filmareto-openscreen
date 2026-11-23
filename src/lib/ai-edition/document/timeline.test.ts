@@ -24,11 +24,13 @@ import {
 	resequenceClips,
 	resolvePlaybackSegments,
 	restoreFullTimeline,
+	SEEDED_CLIP_REASON,
 	setClipCrop,
 	setClipSourceRange,
 	subtractInterval,
 	timelineIntervals,
 	withClipsChanged,
+	withoutSeededClipsOf,
 } from "./timeline";
 
 function makeDoc(overrides: Partial<AxcutDocument> = {}): AxcutDocument {
@@ -63,6 +65,7 @@ function makeDoc(overrides: Partial<AxcutDocument> = {}): AxcutDocument {
 		},
 		annotations: [],
 		zoomRanges: [],
+		cameraZoomRanges: [],
 		audioTracks: [],
 		legacyEditor: null,
 		...overrides,
@@ -525,6 +528,75 @@ describe("timeline pure functions", () => {
 				sourceStartSec: 40,
 				sourceEndSec: 42,
 			});
+		});
+	});
+
+	describe("camera zooms are anchored like screen zooms", () => {
+		function withCameraZoom(): AxcutDocument {
+			const base = makeDoc({
+				timeline: {
+					clips: [
+						makeClip({ id: "clip_1", sourceStartSec: 0, sourceEndSec: 20, timelineEndSec: 20 }),
+						makeClip({
+							id: "clip_2",
+							sourceStartSec: 25,
+							sourceEndSec: 45,
+							timelineStartSec: 20,
+							timelineEndSec: 40,
+						}),
+					],
+					gaps: [],
+					trimRanges: [],
+					muteRanges: [],
+					speedRanges: [],
+					captionRanges: [],
+				},
+			});
+			const zooms = [
+				{
+					id: "zoom_a",
+					startMs: 35_000,
+					endMs: 40_000,
+					depth: 3,
+					focus: { cx: 0.5, cy: 0.5 },
+					clipId: "clip_2",
+					sourceStartSec: 40,
+					sourceEndSec: 45,
+				},
+				{
+					id: "zoom_gone",
+					startMs: 38_000,
+					endMs: 40_000,
+					depth: 5,
+					focus: { cx: 0.5, cy: 0.5 },
+					clipId: "clip_2",
+					sourceStartSec: 43,
+					sourceEndSec: 45,
+				},
+			] as unknown as AxcutDocument["zoomRanges"];
+			return { ...base, zoomRanges: zooms, cameraZoomRanges: zooms };
+		}
+
+		it("clamps and drops them on a trim exactly as it does screen zooms", () => {
+			const narrowed = setClipSourceRange(withCameraZoom(), "clip_2", 25, 42);
+			expect(narrowed.cameraZoomRanges).toEqual(narrowed.zoomRanges);
+			expect(narrowed.cameraZoomRanges.map((z) => z.id)).toEqual(["zoom_a"]);
+			expect(narrowed.cameraZoomRanges[0]).toMatchObject({ sourceStartSec: 40, sourceEndSec: 42 });
+		});
+
+		it("follows its clip when the clips are reordered", () => {
+			const moved = moveClip(withCameraZoom(), "clip_2", 0, "user", "");
+			expect(moved.cameraZoomRanges).toEqual(moved.zoomRanges);
+			expect(moved.cameraZoomRanges[0]).toMatchObject({ id: "zoom_a", startMs: 15_000 });
+		});
+
+		it("is removed by its own kind and not by the screen's", () => {
+			const doc = withCameraZoom();
+			expect(removeRegion(doc, "cameraZoom", "zoom_a").cameraZoomRanges.map((z) => z.id)).toEqual([
+				"zoom_gone",
+			]);
+			expect(removeRegion(doc, "cameraZoom", "zoom_a").zoomRanges).toHaveLength(2);
+			expect(removeRegion(doc, "zoom", "zoom_a").cameraZoomRanges).toHaveLength(2);
 		});
 	});
 
@@ -2371,5 +2443,65 @@ describe("setClipCrop", () => {
 		expect(setClipCrop(doc, "clip_b", crop).timeline.clips).toMatchObject([
 			{ id: "clip_a", sourceStartSec: 0, sourceEndSec: 9, cropRegion: crop },
 		]);
+	});
+});
+
+describe("withoutSeededClipsOf — a scene take never plays twice", () => {
+	const seeded = (assetId: string, end: number): AxcutClip => ({
+		id: `clip_seed_${assetId}`,
+		assetId,
+		sourceStartSec: 0,
+		sourceEndSec: end,
+		timelineStartSec: 0,
+		timelineEndSec: end,
+		wordRefs: [],
+		origin: "system",
+		reason: SEEDED_CLIP_REASON,
+	});
+	const scene = (
+		id: string,
+		assetId: string,
+		start: number,
+		end: number,
+		at: number,
+	): AxcutClip => ({
+		id,
+		assetId,
+		sourceStartSec: start,
+		sourceEndSec: end,
+		timelineStartSec: at,
+		timelineEndSec: at + (end - start),
+		wordRefs: [],
+		origin: "user",
+		reason: "",
+		sceneId: `scene_${id}`,
+		segmentId: `scene_${id}`,
+	});
+
+	it("drops the whole-take clip the editor seeded and keeps the scene clips from 0", () => {
+		const doc = makeDoc({
+			timeline: {
+				...makeDoc().timeline,
+				clips: [
+					seeded("asset_1", 24.7),
+					scene("a", "asset_1", 0, 7.64, 24.7),
+					scene("b", "asset_1", 14.77, 20.14, 32.34),
+				],
+			},
+		});
+		const next = withoutSeededClipsOf(doc, "asset_1");
+		expect(next.timeline.clips.map((c) => c.id)).toEqual(["a", "b"]);
+		expect(next.timeline.clips[0].timelineStartSec).toBe(0);
+		expect(next.timeline.clips[1].timelineStartSec).toBeCloseTo(7.64, 6);
+	});
+
+	it("leaves other assets' seeded clips, and any clip with a scene, alone", () => {
+		const doc = makeDoc({
+			timeline: {
+				...makeDoc().timeline,
+				clips: [seeded("asset_other", 10), scene("a", "asset_1", 0, 5, 10)],
+			},
+		});
+		expect(withoutSeededClipsOf(doc, "asset_1")).toBe(doc);
 	});
 });

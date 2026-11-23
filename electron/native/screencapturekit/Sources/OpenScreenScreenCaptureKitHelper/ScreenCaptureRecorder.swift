@@ -61,6 +61,11 @@ struct RecordingRequest: Decodable {
 	struct Outputs: Decodable {
 		let screenPath: String
 		let manifestPath: String?
+		/// 1.2.0: the camera's own `.mov` (HEVC Main 10, constant 30 fps). Absent, or the
+		/// webcam not enabled, records no camera here.
+		let webcamPath: String?
+		/// 1.2.0: the microphone as a 48 kHz 24-bit WAV at unity, beside the take's mix.
+		let micWavPath: String?
 	}
 
 	let schemaVersion: Int?
@@ -68,6 +73,10 @@ struct RecordingRequest: Decodable {
 	let excludedWindowIds: [UInt32]?
 	/// Display captures only. Absent in requests from apps that predate the option.
 	let hideDesktopIcons: Bool?
+	/// 1.2.0: started during the countdown and held there. Everything opens (the camera gets
+	/// its seconds to wake up and settle its exposure) but nothing is written until `resume`,
+	/// which starts the take. Absent or false: the take starts at its first frame, as before.
+	let holdUntilResume: Bool?
 	let source: Source
 	let video: Video
 	let audio: Audio
@@ -154,6 +163,9 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 	private var exclusionRefreshTask: Task<Void, Never>?
 	private var isPaused = false
 	private var pauseStartedAt: CMTime?
+	/// State queue. A take held for its countdown (`holdUntilResume`) until the `resume` that
+	/// starts it; a pause like any other, except that nothing has been written yet.
+	private var holdingStart = false
 	private var totalPausedDuration = CMTime.zero
 	/// Sample queue only. See `VideoTimestampGate` for the failure it exists to prevent.
 	private var videoTimestampGate = VideoTimestampGate()
@@ -175,6 +187,18 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 	/// queue, and a buffer it had in flight must not reach a finished writer input.
 	private var acceptsTappedAudio = true
 	private let tapControlQueue = DispatchQueue(label: "app.openscreen.sck-helper.system-audio-control")
+	/// 1.2.0: the screen at a constant 30 fps. ScreenCaptureKit writes a frame only when the
+	/// screen changes; each frame takes the slot nearest it and a slot nothing came for repeats
+	/// the frame before it. Sample queue only, like the writer.
+	private static let screenFrameRate: Int32 = 30
+	private var screenGrid = ConstantFrameRateGrid(fps: ScreenCaptureRecorder.screenFrameRate)
+	private var screenAdaptor: AVAssetWriterInputPixelBufferAdaptor?
+	private var latestScreenFrame: CVPixelBuffer?
+	/// 1.2.0: the camera, recorded here instead of by the browser. See `CameraCapture`.
+	private var cameraCapture: CameraCapture?
+	/// 1.2.0: the microphone master. Fed by its own mixer (microphone only, unity, never
+	/// limited), whatever the take's mix and stems do.
+	private var micWav: PCMWavWriter?
 
 	/// `picked` is a choice already made in Apple's system picker (`PickerSession`). The take
 	/// then records exactly that filter: no source lookup, and no Screen Recording check,
@@ -183,6 +207,13 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 	init(request: RecordingRequest, picked: PickedSource? = nil) {
 		self.request = request
 		self.picked = picked
+		// Held from the start, before any capture opens or a command can arrive: the `resume`
+		// that ends the countdown may be read before `start()` has run.
+		if request.holdUntilResume == true {
+			isPaused = true
+			pauseStartedAt = CMClockGetTime(hostClock)
+			holdingStart = true
+		}
 	}
 
 	/// Whether this take's system audio comes from a Core Audio tap instead of ScreenCaptureKit.
@@ -212,7 +243,20 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 		picked == nil && request.source.type == "window" && request.audio.system.enabled
 	}
 
+	/// A talking-head take: the camera and the microphone, no screen (1.2.0).
+	private var isCameraOnly: Bool {
+		picked == nil && request.source.type == "camera"
+	}
+
 	func start() async throws {
+		// Stopped before it started: a countdown cancelled as the take was being opened.
+		if isShuttingDown {
+			return
+		}
+		if isCameraOnly {
+			try startCameraOnly()
+			return
+		}
 		try ensureRequestedPermissions(screen: picked == nil)
 
 		let target: CaptureTarget
@@ -254,6 +298,7 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 		try setupWriter()
 		startSystemAudioTapIfNeeded()
 		try startMicrophoneCaptureIfNeeded()
+		startCameraIfNeeded()
 
 		self.stream = stream
 		systemAudioStream = audioStream
@@ -262,6 +307,13 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 			"schemaVersion": 1,
 		])
 		try await stream.startCapture()
+		// The stop ran while this was opening, before the take wrote anything: in a picker session
+		// nothing else would ever close what this opened (the single-take helper exits). A take
+		// that did write is the stop's to finish, as always.
+		if isShuttingDown, !sampleQueue.sync(execute: { didStartWriting }) {
+			abandonStart(stream)
+			return
+		}
 		if let audioStream {
 			do {
 				try await audioStream.startCapture()
@@ -276,6 +328,23 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 		}
 		if picked == nil, request.source.type == "display", let displayID = request.source.displayId {
 			startExclusionRefresh(displayID: displayID)
+		}
+	}
+
+	/// What `start()` opened after a stop that came too early to see it, files included: the
+	/// take produced none (nothing is written while it is held, and the stop answered for it).
+	private func abandonStart(_ stream: SCStream) {
+		microphoneCapture?.stop()
+		microphoneCapture = nil
+		cameraCapture?.stopCapture()
+		stopSystemAudioTap()
+		sampleQueue.sync { micWav?.finish() }
+		let outputs = [request.outputs.screenPath, request.outputs.webcamPath, request.outputs.micWavPath]
+		for path in outputs.compactMap({ $0 }) where !path.isEmpty {
+			try? FileManager.default.removeItem(atPath: path)
+		}
+		Task {
+			try? await stream.stopCapture()
 		}
 	}
 
@@ -294,6 +363,13 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 	}
 
 	private func performStop() async {
+		if isCameraOnly {
+			microphoneCapture?.stop()
+			microphoneCapture = nil
+			cameraCapture?.stopCapture()
+			await finishCameraOnly()
+			return
+		}
 		exclusionRefreshTask?.cancel()
 		do {
 			try await stream?.stopCapture()
@@ -306,12 +382,187 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 		}
 		microphoneCapture?.stop()
 		microphoneCapture = nil
+		cameraCapture?.stopCapture()
 		// Stopped before the writer finishes, like the tap: no audio after the last frame.
 		try? await systemAudioStream?.stopCapture()
 		systemAudioStream = nil
 		stopSystemAudioTap()
 
 		await finishWriter()
+	}
+
+	/// Camera-only: `outputs.screenPath` is the camera's `.mov`, the take's video, with the
+	/// microphone mixed into its own AAC track for the editor's preview, and the microphone's
+	/// WAV beside it. The take's clock starts at the camera's first frame.
+	private func startCameraOnly() throws {
+		try ensureRequestedPermissions(screen: false)
+		_ = makeStreamConfiguration() // resolves the microphone
+		let forwarding = ForwardingAudioSink()
+		if nativeMicrophoneEnabled {
+			let clock: TimelineClock = { [weak self] in self?.timelineNow() ?? .invalid }
+			audioMixers = [
+				AudioTrackMixer(
+					input: forwarding,
+					includesSystemAudio: false,
+					includesMicrophone: true,
+					microphoneGain: request.audio.microphone.gain,
+					limitsPeaks: false,
+					clock: clock
+				)
+			]
+			if let path = request.outputs.micWavPath, !path.isEmpty {
+				do {
+					let wav = try PCMWavWriter(url: URL(fileURLWithPath: path), channels: AVAudioChannelCount(AudioTrackMixer.chunkChannelCount), inputChannels: AudioTrackMixer.chunkChannelCount)
+					micWav = wav
+					audioMixers.append(
+						AudioTrackMixer(
+							input: DiscardingAudioSink(),
+							includesSystemAudio: false,
+							includesMicrophone: true,
+							microphoneGain: 1,
+							limitsPeaks: false,
+							onChunk: { chunk in wav.write(interleaved: chunk) },
+							clock: clock
+						)
+					)
+				} catch {
+					emit([
+						"event": "warning",
+						"code": "mic-wav-unavailable",
+						"message": "The microphone WAV could not be created: \(error)",
+					])
+				}
+			}
+		}
+		let outputURL = URL(fileURLWithPath: request.outputs.screenPath)
+		try FileManager.default.createDirectory(
+			at: outputURL.deletingLastPathComponent(),
+			withIntermediateDirectories: true
+		)
+		let capture = CameraCapture(
+			outputURL: outputURL,
+			sampleQueue: sampleQueue,
+			withAudio: nativeMicrophoneEnabled,
+			onFirstFrame: { [weak self] time, audioInput in
+				guard let self else { return }
+				forwarding.target = audioInput
+				self.didStartWriting = true
+				self.audioMixers.forEach { $0.beginTimeline(at: time) }
+				self.startAudioTicker()
+				self.didEmitRecordingStarted = true
+				emit([
+					"event": "recording-started",
+					"timestampMs": Int(Date().timeIntervalSince1970 * 1000),
+					"width": 0,
+					"height": 0,
+					"captureBounds": ["x": 0.0, "y": 0.0, "width": 0.0, "height": 0.0],
+				])
+			},
+			retime: { [weak self] time in
+				guard let self else { return nil }
+				let pauseState = self.currentPauseState()
+				if pauseState.paused { return nil }
+				return pauseState.offset.isValid && pauseState.offset != .zero
+					? CMTimeSubtract(time, pauseState.offset) : time
+			}
+		)
+		try startMicrophoneCaptureIfNeeded()
+		emit([
+			"event": "ready",
+			"schemaVersion": 1,
+		])
+		// Before the camera starts: its first frame starts the ticker, which reads this.
+		sampleQueue.sync { cameraCapture = capture }
+		do {
+			try capture.start(
+				deviceID: request.webcam.deviceId,
+				deviceName: request.webcam.deviceName,
+				maxWidth: request.webcam.width,
+				maxHeight: request.webcam.height
+			)
+		} catch {
+			sampleQueue.sync { cameraCapture = nil }
+			microphoneCapture?.stop()
+			microphoneCapture = nil
+			throw error
+		}
+		emit([
+			"event": "webcam-started",
+			"deviceName": capture.deviceName ?? "",
+			"format": capture.formatDescription,
+		])
+	}
+
+	private func finishCameraOnly() async {
+		var end = CMTime.invalid
+		sampleQueue.sync {
+			audioTicker?.cancel()
+			audioTicker = nil
+			if didStartWriting {
+				end = timelineNow()
+				audioMixers.forEach { $0.finish(atSourceTime: end) }
+			}
+			micWav?.finish()
+		}
+		guard let result = await finishCamera(at: end) else {
+			try? FileManager.default.removeItem(atPath: request.outputs.screenPath)
+			if let path = request.outputs.micWavPath {
+				try? FileManager.default.removeItem(atPath: path)
+			}
+			emitError(code: "writer-failed", message: "The camera recorded nothing.")
+			return
+		}
+		var stopped: [String: Any] = [
+			"event": "recording-stopped",
+			"screenPath": result.path,
+			"droppedVideoFrames": 0,
+			"webcamFrames": result.frames,
+			"webcamRepeatedFrames": result.repeats,
+		]
+		if let micWav, micWav.framesWritten > 0, micWav.lastError == nil {
+			stopped["micWavPath"] = micWav.url.path
+		}
+		emit(stopped)
+	}
+
+	/// The camera beside the screen. A camera that cannot start costs the take its camera, not
+	/// the take: the app keeps its own recording of it as a fallback.
+	private func startCameraIfNeeded() {
+		guard request.webcam.enabled, let path = request.outputs.webcamPath, !path.isEmpty else {
+			return
+		}
+		let capture = CameraCapture(
+			outputURL: URL(fileURLWithPath: path),
+			sampleQueue: sampleQueue,
+			retime: { [weak self] time in
+				guard let self else { return nil }
+				let pauseState = self.currentPauseState()
+				if pauseState.paused { return nil }
+				return pauseState.offset.isValid && pauseState.offset != .zero
+					? CMTimeSubtract(time, pauseState.offset) : time
+			}
+		)
+		sampleQueue.sync { cameraCapture = capture }
+		do {
+			try capture.start(
+				deviceID: request.webcam.deviceId,
+				deviceName: request.webcam.deviceName,
+				maxWidth: request.webcam.width,
+				maxHeight: request.webcam.height
+			)
+			emit([
+				"event": "webcam-started",
+				"deviceName": capture.deviceName ?? "",
+				"format": capture.formatDescription,
+			])
+		} catch {
+			sampleQueue.sync { cameraCapture = nil }
+			emit([
+				"event": "warning",
+				"code": "webcam-unavailable",
+				"message": "The camera could not be recorded: \(error)",
+			])
+		}
 	}
 
 	private func startSystemAudioTapIfNeeded() {
@@ -391,6 +642,19 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 			}
 		}
 		microphoneCapture = capture
+		// The WAV takes the microphone's own channel count; the mixer feeds it stereo.
+		// On the sample queue, the writer's only queue.
+		sampleQueue.sync {
+			guard let wav = micWav else { return }
+			wav.reconfigure(channels: AVAudioChannelCount(capture.inputChannelCount))
+			if wav.lastError != nil {
+				emit([
+					"event": "warning",
+					"code": "mic-wav-unavailable",
+					"message": "The microphone WAV could not be created: \(String(describing: wav.lastError))",
+				])
+			}
+		}
 		try capture.start()
 	}
 
@@ -426,13 +690,13 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 	}
 
 	func resume() {
-		let didResume = stateQueue.sync {
+		let (didResume, releasedHold, now) = stateQueue.sync { () -> (Bool, Bool, CMTime) in
+			let now = CMClockGetTime(hostClock)
 			if shutdownTask != nil || !isPaused {
-				return false
+				return (false, false, now)
 			}
 
 			if let pauseStartedAt {
-				let now = CMClockGetTime(hostClock)
 				totalPausedDuration = CMTimeAdd(
 					totalPausedDuration,
 					CMTimeSubtract(now, pauseStartedAt)
@@ -440,15 +704,49 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 			}
 			isPaused = false
 			pauseStartedAt = nil
-			return true
+			let releasedHold = holdingStart
+			holdingStart = false
+			return (true, releasedHold, now)
 		}
 
-		if didResume {
+		if releasedHold {
+			// The countdown reached zero: the take starts now. Not a resume for the app.
+			if !isCameraOnly {
+				startHeldScreenTake(releasedAt: now)
+			}
+		} else if didResume {
 			emit([
 				"event": "recording-resumed",
 				"timestampMs": Int(Date().timeIntervalSince1970 * 1000),
 			])
 		}
+	}
+
+	/// A held screen take starts at its release, from the screen as it was last seen during the
+	/// hold. ScreenCaptureKit sends a complete frame only when something on the screen changes,
+	/// so waiting for one would leave a still screen unstarted (and the app gives up on a start
+	/// after 10 s), and a start that came later than the release would put the take's t=0, its
+	/// first audio and its `recording-started` stamp after the moment the user was told to go.
+	/// The countdown is kept out of the capture, so that frame is the screen itself.
+	private func startHeldScreenTake(releasedAt release: CMTime) {
+		sampleQueue.async { [weak self] in
+			guard let self, !self.didStartWriting, let latest = self.latestScreenFrame else {
+				return
+			}
+			let pauseState = self.currentPauseState()
+			guard !pauseState.paused, !self.isShuttingDown else {
+				return
+			}
+			self.writeScreenFrame(
+				latest,
+				at: CMTimeSubtract(release, pauseState.offset),
+				pauseOffset: pauseState.offset
+			)
+		}
+	}
+
+	private var isShuttingDown: Bool {
+		stateQueue.sync { shutdownTask != nil }
 	}
 
 	func stream(_ stream: SCStream, didStopWithError error: Error) {
@@ -474,6 +772,11 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 		}
 		let pauseState = currentPauseState()
 		if pauseState.paused {
+			// Not written, but what the screen shows now: after the resume, a still screen
+			// repeats this, not the image from before the pause.
+			if type == .screen, isCompleteFrame(sampleBuffer), let image = CMSampleBufferGetImageBuffer(sampleBuffer) {
+				latestScreenFrame = image
+			}
 			return
 		}
 		guard let sampleBuffer = retimedSampleBuffer(sampleBuffer, subtracting: pauseState.offset) else {
@@ -496,10 +799,22 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 		guard isCompleteFrame(sampleBuffer) else {
 			return
 		}
-		guard let videoInput, let writer else {
+		guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else {
 			return
 		}
-		let presentationTime = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
+		writeScreenFrame(
+			pixelBuffer,
+			at: CMSampleBufferGetPresentationTimeStamp(sampleBuffer),
+			pauseOffset: pauseState.offset
+		)
+	}
+
+	/// Sample queue. One screen frame onto the take, at its time on the take's clock (pauses
+	/// already taken out); the first one starts the take.
+	private func writeScreenFrame(_ pixelBuffer: CVPixelBuffer, at presentationTime: CMTime, pauseOffset: CMTime) {
+		guard videoInput != nil, let writer else {
+			return
+		}
 		// A frame that does not move the timeline forward fails the whole writer one append
 		// later (-16364), so it is dropped here instead. After a resume that is one frame the
 		// user never sees; without the check it was the end of the recording.
@@ -507,17 +822,19 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 		case .admit:
 			break
 		case .invalid:
-			reportRefusedVideoFrame(presentationTime, previous: nil, pauseOffset: pauseState.offset)
+			reportRefusedVideoFrame(presentationTime, previous: nil, pauseOffset: pauseOffset)
 			return
 		case .notAfterPrevious(let previous):
-			reportRefusedVideoFrame(presentationTime, previous: previous, pauseOffset: pauseState.offset)
+			reportRefusedVideoFrame(presentationTime, previous: previous, pauseOffset: pauseOffset)
 			return
 		}
 		if !didStartWriting {
 			writer.startWriting()
 			writer.startSession(atSourceTime: presentationTime)
 			didStartWriting = true
+			screenGrid.begin(at: presentationTime)
 			audioMixers.forEach { $0.beginTimeline(at: presentationTime) }
+			cameraCapture?.begin(at: presentationTime)
 			startAudioTicker()
 		}
 		// Checked before the readiness gate, not only at a false append: a failed
@@ -528,24 +845,65 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 			return
 		}
 
-		if videoInput.isReadyForMoreMediaData {
-			videoTimestampGate.record(presentationTime)
-			let appended = videoInput.append(sampleBuffer)
-			if appended, !didEmitRecordingStarted {
-				didEmitRecordingStarted = true
-				emit([
-					"event": "recording-started",
-					"timestampMs": Int(Date().timeIntervalSince1970 * 1000),
-					"width": outputWidth,
-					"height": outputHeight,
-					"captureBounds": captureBoundsPayload(),
-				])
-			} else if !appended {
-				droppedVideoFrames += 1
-				reportWriterFailure("video append")
+		videoTimestampGate.record(presentationTime)
+		// On the constant 30 fps grid: the empty slots before this frame repeat the last one,
+		// then this frame takes its own slot. A slot that could not be written stops the run,
+		// so slots are only ever written in order; the next frame or tick fills from there.
+		let placed = screenGrid.place(frameAt: presentationTime)
+		var inOrder = true
+		if let repeats = placed.repeats {
+			let fill = latestScreenFrame ?? pixelBuffer
+			for slot in repeats where !appendScreenFrame(fill, slot: slot) {
+				inOrder = false
+				break
 			}
-		} else {
+		}
+		if inOrder, let slot = placed.slot {
+			appendScreenFrame(pixelBuffer, slot: slot)
+		}
+		latestScreenFrame = pixelBuffer
+	}
+
+	/// Sample queue. One slot of the screen's constant-rate track.
+	@discardableResult
+	private func appendScreenFrame(_ pixelBuffer: CVPixelBuffer, slot: Int64) -> Bool {
+		guard let videoInput, let screenAdaptor else {
+			return false
+		}
+		guard videoInput.isReadyForMoreMediaData else {
 			droppedVideoFrames += 1
+			return false
+		}
+		guard screenAdaptor.append(pixelBuffer, withPresentationTime: screenGrid.time(ofSlot: slot)) else {
+			droppedVideoFrames += 1
+			reportWriterFailure("video append")
+			return false
+		}
+		screenGrid.wrote(slot: slot)
+		if !didEmitRecordingStarted {
+			didEmitRecordingStarted = true
+			emit([
+				"event": "recording-started",
+				"timestampMs": Int(Date().timeIntervalSince1970 * 1000),
+				"width": outputWidth,
+				"height": outputHeight,
+				"captureBounds": captureBoundsPayload(),
+			])
+		}
+		return true
+	}
+
+	/// Sample queue, on the ticker: a still screen delivers no frames, so the slots the clock
+	/// has passed repeat the last one, six slots (200 ms) behind it so a frame still on its
+	/// way finds its own slot free.
+	private func tickScreen(now: CMTime) {
+		guard didStartWriting, let latest = latestScreenFrame,
+			let due = screenGrid.dueRepeats(upTo: now, latency: 6)
+		else {
+			return
+		}
+		for slot in due where !appendScreenFrame(latest, slot: slot) {
+			break
 		}
 	}
 
@@ -803,8 +1161,11 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 		// it is here so that a future source whose size we mispredict comes out scaled rather
 		// than cornered.
 		configuration.scalesToFit = true
-		configuration.minimumFrameInterval = CMTime(value: 1, timescale: CMTimeScale(max(1, request.video.fps)))
-		configuration.queueDepth = 6
+		// At most the grid's rate: a 60 fps source puts every other frame exactly between two
+		// slots of the 30 fps grid.
+		configuration.minimumFrameInterval = CMTime(value: 1, timescale: Self.screenFrameRate)
+		// One more than before: the last frame is held to repeat on the constant-rate grid.
+		configuration.queueDepth = 8
 		configuration.showsCursor = !request.video.hideSystemCursor
 		// Studio-range BT.709 YCbCr from ScreenCaptureKit itself, which the encoder takes as is
 		// and the compositor decodes (#943). BGRA left the matrix to VideoToolbox. Nothing here
@@ -885,7 +1246,7 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 				// From the size this stream really got. The renderer sends none (#924).
 				AVVideoAverageBitRateKey: request.video.bitrate
 					?? defaultVideoBitrate(width: outputWidth, height: outputHeight, fps: request.video.fps),
-				AVVideoExpectedSourceFrameRateKey: request.video.fps,
+				AVVideoExpectedSourceFrameRateKey: Int(Self.screenFrameRate),
 				// Without this the encoder defaults to B-frames, and a reordered
 				// stream needs a composition offset per sample. AVAssetWriter emits
 				// those in a version 0 `trun`, where ISO/IEC 14496-12 8.8.8.2 defines
@@ -916,7 +1277,7 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 				// A keyframe every second, by frame count and by time: a still screen
 				// delivers fewer frames than the fps, and the count alone would then
 				// stretch the GOP, which is the editor's scrub cost (#937).
-				AVVideoMaxKeyFrameIntervalKey: videoKeyFrameInterval(fps: request.video.fps),
+				AVVideoMaxKeyFrameIntervalKey: videoKeyFrameInterval(fps: Int(Self.screenFrameRate)),
 				AVVideoMaxKeyFrameIntervalDurationKey: 1,
 			],
 		]
@@ -930,6 +1291,7 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 		writer.add(input)
 		self.writer = writer
 		self.videoInput = input
+		screenAdaptor = AVAssetWriterInputPixelBufferAdaptor(assetWriterInput: input, sourcePixelBufferAttributes: nil)
 
 		// Track 0: one mixed AAC track at the bitrate Windows encodes its own mixed track with
 		// (24 000 B/s), so the two platforms produce comparable files.
@@ -963,6 +1325,30 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 				}
 			}
 		}
+
+		if nativeMicrophoneEnabled, let path = request.outputs.micWavPath, !path.isEmpty {
+			do {
+				let wav = try PCMWavWriter(url: URL(fileURLWithPath: path), channels: AVAudioChannelCount(AudioTrackMixer.chunkChannelCount), inputChannels: AudioTrackMixer.chunkChannelCount)
+				micWav = wav
+				audioMixers.append(
+					AudioTrackMixer(
+						input: DiscardingAudioSink(),
+						includesSystemAudio: false,
+						includesMicrophone: true,
+						microphoneGain: 1,
+						limitsPeaks: false,
+						onChunk: { chunk in wav.write(interleaved: chunk) },
+						clock: { [weak self] in self?.timelineNow() ?? .invalid }
+					)
+				)
+			} catch {
+				emit([
+					"event": "warning",
+					"code": "mic-wav-unavailable",
+					"message": "The microphone WAV could not be created: \(error)",
+				])
+			}
+		}
 	}
 
 	/// The instant the writer's timeline has reached: the host clock, less the time spent
@@ -987,7 +1373,8 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 	/// emits at; the leeway lets the system coalesce the wakeups, since being a few milliseconds
 	/// late only means the next tick emits two chunks instead of one.
 	private func startAudioTicker() {
-		guard !audioMixers.isEmpty, audioTicker == nil else {
+		// Always now (1.2.0): the screen and the camera keep their constant frame rate off it.
+		guard audioTicker == nil else {
 			return
 		}
 
@@ -1008,6 +1395,10 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 				return
 			}
 			self.audioMixers.forEach { $0.tick() }
+			let now = self.timelineNow()
+			self.tickScreen(now: now)
+			self.cameraCapture?.tick(now: now)
+			self.cameraCapture?.reportFailureOnce()
 		}
 		audioTicker = timer
 		timer.resume()
@@ -1017,6 +1408,7 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 		guard let writer else {
 			return
 		}
+		var cameraEnd = CMTime.invalid
 
 		// A take that ended before its first frame -- a start that failed after the writer
 		// was set up, or a stop right away -- never called `startWriting`. Finishing (or
@@ -1030,6 +1422,10 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 				audioTicker = nil
 			}
 			try? FileManager.default.removeItem(atPath: request.outputs.screenPath)
+			micWav?.finish()
+			for path in [request.outputs.webcamPath, request.outputs.micWavPath].compactMap({ $0 }) {
+				try? FileManager.default.removeItem(atPath: path)
+			}
 			emitError(
 				code: "writer-failed",
 				message: "The recording stopped before its first frame was written."
@@ -1053,11 +1449,17 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 			audioTicker = nil
 
 			let end = timelineNow()
+			fillScreenTail(upTo: end)
 			audioMixers.forEach { $0.finish(atSourceTime: end) }
+			micWav?.finish()
 			if didStartWriting, writer.status == .writing {
 				writer.endSession(atSourceTime: end)
 			}
+			cameraEnd = end
 		}
+
+		// The camera's file closes on its own; its tail is filled to the same instant.
+		let cameraResult = await finishCamera(at: cameraEnd)
 
 		let (refusedVideoFrames, droppedFrames) = sampleQueue.sync {
 			(videoTimestampGate.rejectedCount, droppedVideoFrames)
@@ -1081,17 +1483,83 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 		}
 
 		if writer.status == .completed {
-			emit([
+			var stopped: [String: Any] = [
 				"event": "recording-stopped",
 				"screenPath": request.outputs.screenPath,
 				"droppedVideoFrames": droppedFrames,
-			])
+				"screenFrameRate": Int(Self.screenFrameRate),
+			]
+			if let cameraResult {
+				stopped["webcamPath"] = cameraResult.path
+				stopped["webcamFrames"] = cameraResult.frames
+				stopped["webcamRepeatedFrames"] = cameraResult.repeats
+			}
+			if let micWav, micWav.framesWritten > 0, micWav.lastError == nil {
+				stopped["micWavPath"] = micWav.url.path
+			}
+			emit(stopped)
 		} else {
 			emitError(
 				code: "writer-failed",
 				message: writer.error.map { "\($0)" } ?? "AVAssetWriter failed with status \(writer.status.rawValue)."
 			)
 		}
+	}
+
+	/// Sample queue, at the stop: the slots up to `end` repeat the last frame, waiting briefly
+	/// for an encoder still busy with the frames before them.
+	private func fillScreenTail(upTo end: CMTime) {
+		guard didStartWriting, writer?.status == .writing, let latest = latestScreenFrame, let videoInput,
+			let due = screenGrid.dueRepeats(upTo: end, latency: 1)
+		else {
+			return
+		}
+		for slot in due {
+			var waited = 0
+			while !videoInput.isReadyForMoreMediaData && waited < 200 {
+				Thread.sleep(forTimeInterval: 0.005)
+				waited += 1
+			}
+			if !appendScreenFrame(latest, slot: slot) {
+				break
+			}
+		}
+	}
+
+	/// The camera's file, closed at `end`: its path and frame counts, or nil when the take has
+	/// no camera (none asked for, none started, or no frame ever arrived).
+	private func finishCamera(at end: CMTime) async -> (path: String, frames: Int64, repeats: Int64)? {
+		guard let camera = cameraCapture else {
+			return nil
+		}
+		cameraCapture = nil
+		guard end.isValid else {
+			return nil
+		}
+		let completed: Bool = await withCheckedContinuation { continuation in
+			sampleQueue.async {
+				camera.finish(at: end) { ok in
+					continuation.resume(returning: ok)
+				}
+			}
+		}
+		guard completed else {
+			// A file the writer did not close cleanly is still fragmented and readable: kept
+			// when it holds anything, for the app to salvage, never deleted here.
+			let size = (try? FileManager.default.attributesOfItem(atPath: camera.outputURL.path)[.size] as? Int) ?? 0
+			emit([
+				"event": "warning",
+				"code": "webcam-not-recorded",
+				"message": "The camera file could not be written: "
+					+ (camera.writerError ?? "no frame arrived (\(camera.framesReceived) received)"),
+			])
+			if size > 0, camera.framesWritten > 0 {
+				return (camera.outputURL.path, camera.framesWritten, camera.repeatsWritten)
+			}
+			try? FileManager.default.removeItem(at: camera.outputURL)
+			return nil
+		}
+		return (camera.outputURL.path, camera.framesWritten, camera.repeatsWritten)
 	}
 
 	private func addAudioInput(to writer: AVAssetWriter, bitRate: Int) throws -> AVAssetWriterInput {
@@ -1374,8 +1842,29 @@ struct OpenScreenScreenCaptureKitHelper {
 				}
 			}
 
-			try await recorder.start()
-			await stopTask.value
+			// The take starts on a task of its own, and the MAIN thread runs its CFRunLoop from
+			// here on (1.2.0): CoreMediaIO delivers a camera's frames, and the audio engine its
+			// buffers, through the main run loop, and a command-line tool whose main thread only
+			// awaited never ran one -- the camera came up with no frame and the microphone with
+			// no buffer. Nothing before this line awaits, so this is still the main thread (a
+			// run loop after an `await` would be a pool thread's). The stop command arrives on
+			// `stopTask` and exits the process from there.
+			Task.detached {
+				do {
+					try await recorder.start()
+				} catch let error as HelperError {
+					emitError(code: "helper-error", message: error.description)
+					exit(1)
+				} catch {
+					emitError(code: "helper-error", message: "\(error)")
+					exit(1)
+				}
+			}
+			_ = stopTask
+			diagnosticLog("main run loop on the main thread: \(Thread.isMainThread)")
+			while true {
+				CFRunLoopRunInMode(.defaultMode, 3600, false)
+			}
 		} catch let error as HelperError {
 			emitError(code: "helper-error", message: error.description)
 			exit(1)

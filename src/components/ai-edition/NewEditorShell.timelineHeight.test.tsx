@@ -31,6 +31,7 @@ import { AUDIO_ROW_EXPANSION_PX } from "@/lib/ai-edition/document/audioTracks";
 import { createAudioTrack, createEmptyDocument } from "@/lib/ai-edition/schema";
 import { useProjectStore } from "@/lib/ai-edition/store/projectStore";
 import {
+	CAMERA_ZOOM_LANE_EXPANSION_PX,
 	DEFAULT_TIMELINE_HEIGHT_PX,
 	MAX_TIMELINE_HEIGHT_PX,
 	MIN_TIMELINE_HEIGHT_PX,
@@ -40,7 +41,7 @@ import {
 function renderShell() {
 	return render(
 		<TooltipProvider>
-				<NewEditorShell />
+			<NewEditorShell />
 		</TooltipProvider>,
 	);
 }
@@ -230,6 +231,51 @@ describe("NewEditorShell timeline height", () => {
 			useProjectStore.setState({ document: singleTrackDoc });
 		});
 
+		expect(root.style.gridTemplateRows).toBe(`58px 1fr ${DEFAULT_TIMELINE_HEIGHT_PX}px`);
+	});
+	it("grows by the camera zoom lane when it shows under the screen's, not for a talking head alone", () => {
+		const { container } = renderShell();
+		const root = container.firstElementChild as HTMLElement;
+		const docWith = (asset: Record<string, unknown>) => {
+			const doc = createEmptyDocument({ projectId: "p", title: "t" });
+			doc.assets = [
+				{ id: "a1", kind: "video", label: "rec", durationSec: 10, ...asset },
+			] as typeof doc.assets;
+			doc.timeline.clips = [
+				{
+					id: "c1",
+					assetId: "a1",
+					sourceStartSec: 0,
+					sourceEndSec: 10,
+					timelineStartSec: 0,
+					timelineEndSec: 10,
+					wordRefs: [],
+					origin: "user",
+					reason: "",
+				},
+			] as typeof doc.timeline.clips;
+			return doc;
+		};
+
+		// A screen take with a camera beside it: both zoom lanes.
+		act(() => {
+			useProjectStore.setState({
+				document: docWith({
+					originalPath: "/tmp/recording-1.mp4",
+					cameraTrack: { sourcePath: "/tmp/cam.mov", startMs: 0, offsetMs: 0, visible: true },
+				}),
+			});
+		});
+		expect(root.style.gridTemplateRows).toBe(
+			`58px 1fr ${DEFAULT_TIMELINE_HEIGHT_PX + CAMERA_ZOOM_LANE_EXPANSION_PX}px`,
+		);
+
+		// A talking head alone: the camera's lane replaces the screen's.
+		act(() => {
+			useProjectStore.setState({
+				document: docWith({ originalPath: "/tmp/recording-2.mov", cameraTrack: null }),
+			});
+		});
 		expect(root.style.gridTemplateRows).toBe(`58px 1fr ${DEFAULT_TIMELINE_HEIGHT_PX}px`);
 	});
 });

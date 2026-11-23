@@ -569,7 +569,8 @@ describe("migrateRawDocumentToCurrent", () => {
 		// unchanged, so the round-trip allocation is bounded to a property
 		// comparison per upgrader — the same per-parse overhead the old
 		// `z.preprocess` carried.
-		expect(once).toEqual({ ...v5, schemaVersion: 8 });
+		// The camera zoom list is the one key a current document may still lack: it is added empty.
+		expect(once).toEqual({ ...v5, schemaVersion: 8, cameraZoomRanges: [] });
 	});
 
 	it("passes non-document input through unchanged (the schema is the gate, not this helper)", () => {
@@ -623,6 +624,7 @@ describe("dropping trims anchored to audio", () => {
 	function docWith(trimRanges: unknown[], assets?: unknown[]) {
 		return {
 			schemaVersion: 8,
+			cameraZoomRanges: [],
 			project: { id: "p", title: "t", createdAt, updatedAt: createdAt },
 			assets: assets ?? [
 				{ id: "vid", kind: "video", label: "v", originalPath: "/v.mp4", cameraTrack: null },
@@ -763,6 +765,7 @@ describe("repairing inverted transcript timings", () => {
 		};
 		return {
 			schemaVersion: 8,
+			cameraZoomRanges: [],
 			project: { id: "p", title: "t", createdAt, updatedAt: createdAt },
 			assets: [{ id: "vid", kind: "video", label: "v", originalPath: "/v.mp4", cameraTrack: null }],
 			transcript,

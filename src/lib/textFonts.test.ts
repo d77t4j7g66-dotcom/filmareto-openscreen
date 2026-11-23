@@ -59,7 +59,9 @@ describe("the text font files", () => {
 		const offered = [
 			...new Set(
 				TEXT_FONT_FAMILIES.flatMap((family) =>
-					(["normal", "bold"] as const).map((weight) => path.basename(textFontFile(family, weight))),
+					(["normal", "bold"] as const).map((weight) =>
+						path.basename(textFontFile(family, weight)),
+					),
 				),
 			),
 		];

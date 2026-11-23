@@ -1,6 +1,20 @@
-import { Check, Languages, NotepadText, Settings } from "lucide-react";
+import {
+	Check,
+	ChevronDown,
+	ChevronUp,
+	Languages,
+	Minus,
+	NotepadText,
+	Pause,
+	PenLine,
+	Play,
+	Plus,
+	Settings,
+	SkipBack,
+} from "lucide-react";
 import {
 	createContext,
+	Fragment,
 	memo,
 	type ReactElement,
 	useContext,
@@ -10,6 +24,7 @@ import {
 } from "react";
 import { useScopedT } from "@/contexts/I18nContext";
 import { moveMenuFocus } from "@/lib/menuKeyboard";
+import type { HotkeyAction } from "../../../electron/teleprompter/shared/protocol";
 import { formatTimePadded } from "../../utils/timeUtils";
 import { Button } from "../ui/button";
 import { TOOLTIP_GAP_PX, Tooltip } from "../ui/tooltip";
@@ -442,6 +457,68 @@ export const HudSceneRunControls = memo(function HudSceneRunControls({
 	);
 });
 
+/**
+ * The prompter's own controls, whenever it is open (before a take and during one): previous
+ * segment, a line back, play or pause, a line on, and the scroll speed. Retake and next segment
+ * stay in HudSegmentControls. Each one is a press that goes to the prompter by its action.
+ */
+export const HudPrompterControls = memo(function HudPrompterControls({
+	vertical,
+	playing,
+	speed,
+	onAction,
+}: {
+	vertical: boolean;
+	playing: boolean;
+	/** The manual scroll speed; shown beside the slower and faster buttons. */
+	speed: number | null;
+	onAction: (action: HotkeyAction) => void;
+}) {
+	const t = useScopedT("launch");
+	const buttons: { action: HotkeyAction; icon: typeof Play; label: string }[] = [
+		{ action: "prevStage", icon: SkipBack, label: t("scene.action.prevStage") },
+		{ action: "prevLine", icon: ChevronUp, label: t("scene.action.prevLine") },
+		{
+			action: "playPause",
+			icon: playing ? Pause : Play,
+			label: playing ? t("scene.pause") : t("scene.play"),
+		},
+		{ action: "nextLine", icon: ChevronDown, label: t("scene.action.nextLine") },
+		{ action: "slower", icon: Minus, label: t("scene.action.slower") },
+		{ action: "faster", icon: Plus, label: t("scene.action.faster") },
+	];
+	return (
+		<div
+			data-testid="hud-prompter-controls"
+			className={`flex items-center gap-1 ${vertical ? "flex-col" : ""} ${styles.electronNoDrag}`}
+		>
+			{buttons.map(({ action, icon: Icon, label }) => (
+				<Fragment key={action}>
+					<HudTooltip content={label}>
+						<button
+							type="button"
+							className={hudAuxIconBtnClasses}
+							aria-label={label}
+							onClick={() => onAction(action)}
+						>
+							<Icon size={16} strokeWidth={2} aria-hidden="true" />
+						</button>
+					</HudTooltip>
+					{action === "slower" && speed !== null ? (
+						<span
+							data-testid="hud-prompter-speed"
+							title={t("scene.speed")}
+							className="min-w-3 text-center text-[11px] font-medium text-white/50 tabular-nums"
+						>
+							{speed}
+						</span>
+					) : null}
+				</Fragment>
+			))}
+		</div>
+	);
+});
+
 /** While a take runs with a script: this segment again, or on to the next. Always a press. */
 export const HudSegmentControls = memo(function HudSegmentControls({
 	vertical,
@@ -711,6 +788,31 @@ export const HudNotesButton = memo(function HudNotesButton({
 				onClick={onClick}
 			>
 				<NotepadText size={ICON_SIZE} />
+			</button>
+		</HudTooltip>
+	);
+});
+
+export const HudEditScriptButton = memo(function HudEditScriptButton({
+	disabled,
+	label,
+	onClick,
+}: {
+	disabled: boolean;
+	label: string;
+	onClick: () => void;
+}) {
+	return (
+		<HudTooltip content={label}>
+			<button
+				type="button"
+				data-testid="launch-edit-script-button"
+				aria-label={label}
+				disabled={disabled}
+				className={hudIconBtnClasses}
+				onClick={onClick}
+			>
+				<PenLine size={ICON_SIZE} />
 			</button>
 		</HudTooltip>
 	);

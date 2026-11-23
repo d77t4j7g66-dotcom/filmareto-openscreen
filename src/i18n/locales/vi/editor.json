@@ -53,7 +53,8 @@
 		"permissionDenied": "Quyền ghi hình bị từ chối. Vui lòng cho phép ghi màn hình.",
 		"accessibilityAllowAndRetry": "Cho phép Filmareto truy cập Trợ năng, sau đó nhấn ghi lại để bắt đầu đếm ngược.",
 		"cursorAccessibilityUnavailable": "Quyền Trợ năng đang tắt. Quá trình ghi vẫn tiếp tục nhưng hiệu ứng con trỏ có thể bị hạn chế. Hãy bật quyền này trong Cài đặt hệ thống để dùng đầy đủ hiệu ứng con trỏ.",
-		"selectSource": "Vui lòng chọn một nguồn để ghi"
+		"selectSource": "Vui lòng chọn một nguồn để ghi",
+		"cameraNotBroadcast": "Camera được ghi ở chất lượng tiêu chuẩn: trình ghi chất lượng phát sóng không mở được camera."
 	},
 	"emptyState": {
 		"title": "Không có dự án nào được mở",
@@ -81,6 +82,7 @@
 		"nothingToPaste": "Chưa sao chép thuộc tính nào",
 		"pasteAssetMissing": "Tệp của bản âm thanh này không có trong dự án",
 		"pasteEffectOverlap": "Ở đó đã có một hiệu ứng khác: mỗi lúc chỉ một hiệu ứng",
+		"pasteCameraZoomOverlap": "Another camera zoom already plays there: one camera zoom at a time",
 		"kinds": {
 			"zoom": "Thu phóng",
 			"speed": "Tốc độ",
@@ -109,7 +111,8 @@
 			"script": "Script",
 			"edit": "Chỉnh sửa",
 			"rec": "Ghi hình"
-		}
+		},
+		"exportForResolve": "Export for Resolve…"
 	},
 	"rec": {
 		"source": "Nguồn",
@@ -155,6 +158,17 @@
 		"recordingsFolderFailed": "Không thể chuyển sang thư mục đó"
 	},
 	"mediaStage": {
+		"moreActions": "More actions",
+		"removeFromProject": "Remove from project",
+		"deleteFromDisk": "Delete from disk…",
+		"removedFromProject": "Removed {{label}} from the project",
+		"deleteDialogTitle": "Delete {{name}} from disk?",
+		"deleteDialogBody": "These files move to the Trash, and every clip that uses {{name}} is removed from this project. Undo brings the clips back, not the files: restore them from the Trash.",
+		"cannotDelete": "{{label}} can't be deleted from the disk here",
+		"deleteDialogConfirm": "Move to the Trash",
+		"movedToTrash": "Moved {{label}} to the Trash — restore it from the Trash",
+		"removedStillUsed": "Removed {{label}} from this project. A project still uses the file, so it stays on disk.",
+		"trashFailed": "Removed {{label}} from the project, but the file could not be moved to the Trash",
 		"openProjectFirst": "Hãy mở một dự án trước",
 		"couldNotAddAsset": "Không thể thêm tệp",
 		"searchPlaceholder": "Tìm kiếm media…",
@@ -230,6 +244,10 @@
 	},
 	"inspector": {
 		"resetFocusPoint": "Đặt lại điểm lấy nét",
+		"moveToCameraZoom": "Move to camera zoom",
+		"moveToScreenZoom": "Move to screen zoom",
+		"cameraFocusAuto": "Follows your face",
+		"moveZoomBlocked": "There is already a zoom there. Move or shorten one first.",
 		"setColor": "Đặt màu {{color}}",
 		"trimHiddenDuration": "{{duration}}s media gốc bị ẩn khỏi dòng thời gian đã chỉnh sửa.",
 		"restoreDeleteTrim": "Khôi phục (xóa cắt)",
@@ -346,6 +364,16 @@
 			"screenRecordingDesc": "Bắt đầu chụp hệ thống",
 			"importMediaDesc": "Video, âm thanh, hình ảnh từ ổ đĩa"
 		}
+	},
+	"recordingKindDialog": {
+		"title": "What are you recording?",
+		"subtitle": "Sets the camera, screen and microphone for the recording bar",
+		"talkingHead": "Talking head",
+		"talkingHeadDesc": "Camera only, with your microphone",
+		"screenCamera": "Screen + camera",
+		"screenCameraDesc": "Your screen with you on camera",
+		"screenOnly": "Screen only",
+		"screenOnlyDesc": "Your screen and microphone, no camera"
 	},
 	"openProjectDialog": {
 		"title": "Mở dự án",
@@ -538,5 +566,19 @@
 		"unsafePath": "Một số đường dẫn trong dự án trỏ ra ngoài thư mục của nó nên dự án chưa được đóng gói.",
 		"notFound": "Không tìm thấy dự án. Hãy lưu rồi thử lại.",
 		"reloadFailed": "Không thể tải lại dự án sau khi mở gói."
+	},
+	"resolveExport": {
+		"runningTitle": "Exporting for DaVinci Resolve",
+		"runningBody": "Preparing the media and the framing data. This can take a few minutes.",
+		"doneTitle": "Ready for DaVinci Resolve",
+		"doneBody": "The export is in {{path}}.",
+		"reveal": "Show in Finder",
+		"restartNeeded": "Restart DaVinci Resolve once first, so it loads the Filmareto Screen effect.",
+		"nextStep": "In DaVinci Resolve: Workspace → Scripts → Filmareto Import.",
+		"errorTitle": "Export for Resolve failed",
+		"notFound": "The project could not be found.",
+		"disabled": "Export for DaVinci Resolve is switched off in the app menu.",
+		"noFfmpeg": "ffmpeg was not found, so the media cannot be prepared.",
+		"noClips": "The project has no clip to export."
 	}
 }

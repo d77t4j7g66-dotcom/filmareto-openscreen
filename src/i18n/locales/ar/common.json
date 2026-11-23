@@ -51,7 +51,9 @@
 		"unhide": "إظهار الكل",
 		"saveDiagnostics": "حفظ التشخيصات",
 		"permissions": "الأذونات…",
-		"closeNotification": "إغلاق الإشعار"
+		"closeNotification": "إغلاق الإشعار",
+		"exportForResolve": "Export for Resolve…",
+		"resolveExportSetting": "Export for DaVinci Resolve (open timeline)"
 	},
 	"updates": {
 		"available": "يتوفر Filmareto {{latestVersion}}. الإصدار المثبت هو {{currentVersion}}.",

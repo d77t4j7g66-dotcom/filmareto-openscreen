@@ -907,6 +907,37 @@ export class CompositorViewService {
 		return addon.renderFrames(clips, resolveSceneAssetPaths(sceneJson), fps, frames, maxWidth);
 	}
 
+	/** Per-media-frame framing for the Resolve export (main process only): see
+	 *  `sampleResolveFrames` in the addon. `null` when this addon cannot sample. */
+	sampleResolveFrames(
+		sceneJson: string,
+		cursorPath: string | null,
+		clipIndex: number,
+		role: "screen" | "camera",
+		sourceTimes: Float64Array,
+		cursorKinds: string[],
+		params: {
+			renderW: number;
+			renderH: number;
+			screenW: number;
+			screenH: number;
+			webcamW: number;
+			webcamH: number;
+		},
+	): Float32Array | null {
+		const addon = this.ensureAddon();
+		if (!addon || typeof addon.sampleResolveFrames !== "function") return null;
+		return addon.sampleResolveFrames(
+			resolveSceneAssetPaths(sceneJson),
+			cursorPath,
+			clipIndex,
+			role,
+			sourceTimes,
+			cursorKinds,
+			params,
+		);
+	}
+
 	/** `startGifExport` for MP4, except that an addon built before MP4 cancellation still
 	 *  exports: the main export must not fail over a missing Cancel. That job runs to the end
 	 *  and refuses to cancel. */

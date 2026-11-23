@@ -164,7 +164,18 @@
 		"shadowLight": "약하게",
 		"shadowMedium": "보통",
 		"shadowStrong": "강하게",
-		"formatFillCover": "Fill"
+		"formatFillCover": "Fill",
+		"framePosition": "Frame position",
+		"framePositionAuto": "Auto",
+		"framePositionHorizontal": "Left to right",
+		"framePositionVertical": "Top to bottom",
+		"framePositionScope": "Apply to",
+		"framePositionWhole": "Whole project",
+		"framePositionClip": "This clip",
+		"framePositionOwnOne": "1 clip has its own position",
+		"framePositionOwnMany": "{{count}} clips have their own position",
+		"framePositionUseProject": "Use project position",
+		"framePositionCameraHint": "Places your camera when it fills the frame."
 	},
 	"stylePresets": {
 		"button": "프리셋",
@@ -451,6 +462,7 @@
 		"reactiveWebcamTip": "영상이 확대되어 있는 동안 카메라가 작아집니다",
 		"webcamBackground": "카메라 배경",
 		"helpNoWebcam": "이 프로젝트에는 카메라가 없어 레이아웃 설정이 비활성화되고 프리셋이 “웹캠 없음”으로 표시됩니다. 저장된 레이아웃은 카메라를 추가할 때를 위해 유지됩니다.",
+		"helpCameraOnly": "This take is your camera alone. Choose where its cut sits when the format is narrower than the take.",
 		"title": "카메라 레이아웃",
 		"noWebcam": "웹캠 없음"
 	},

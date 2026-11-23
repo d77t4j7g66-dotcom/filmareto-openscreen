@@ -164,7 +164,18 @@
 		"shadowLight": "Leicht",
 		"shadowMedium": "Mittel",
 		"shadowStrong": "Stark",
-		"formatFillCover": "Fill"
+		"formatFillCover": "Fill",
+		"framePosition": "Frame position",
+		"framePositionAuto": "Auto",
+		"framePositionHorizontal": "Left to right",
+		"framePositionVertical": "Top to bottom",
+		"framePositionScope": "Apply to",
+		"framePositionWhole": "Whole project",
+		"framePositionClip": "This clip",
+		"framePositionOwnOne": "1 clip has its own position",
+		"framePositionOwnMany": "{{count}} clips have their own position",
+		"framePositionUseProject": "Use project position",
+		"framePositionCameraHint": "Places your camera when it fills the frame."
 	},
 	"stylePresets": {
 		"button": "Vorgaben",
@@ -451,6 +462,7 @@
 		"reactiveWebcamTip": "Die Kamera wird kleiner, solange das Video herangezoomt ist",
 		"webcamBackground": "Kamera-Hintergrund",
 		"helpNoWebcam": "Dieses Projekt hat keine Kamera, deshalb sind die Layout-Regler aus und die Vorgabe zeigt „Keine Webcam“. Dein gespeichertes Layout bleibt erhalten, falls später eine Kamera dazukommt.",
+		"helpCameraOnly": "This take is your camera alone. Choose where its cut sits when the format is narrower than the take.",
 		"title": "Kamera-Layout",
 		"noWebcam": "Keine Webcam"
 	},

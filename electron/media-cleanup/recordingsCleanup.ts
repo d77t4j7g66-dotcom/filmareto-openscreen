@@ -1,11 +1,15 @@
+import { randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { usedAssetIds } from "../../src/lib/ai-edition/document/discardedTakes";
-import type { AxcutDocument } from "../../src/lib/ai-edition/schema";
+import {
+	type AxcutAsset,
+	type AxcutDocument,
+	createEmptyDocument,
+} from "../../src/lib/ai-edition/schema";
 import { documentWithoutAsset } from "../ai-edition/document-service";
 import { collectPackageRefs } from "../package/packageReferences";
-
 /**
  * Recordings leave the disk with their project (docs/superpowers/specs/2026-11-22-recordings-
  * cleanup-design.md). Deleting a project sends its takes to the Trash at once, and a take the user
@@ -70,7 +74,7 @@ function isSweepable(recordingsDir: string, file: string): boolean {
 }
 
 /** Every path inside the recordings folder a project file mentions, in any field. */
-function mentionedPaths(raw: string, recordingsDir: string): string[] {
+function mentionedPaths(raw: string, recordingsDir: string | null): string[] {
 	const found: string[] = [];
 	const visit = (value: unknown): void => {
 		if (typeof value === "string") {
@@ -82,7 +86,11 @@ function mentionedPaths(raw: string, recordingsDir: string): string[] {
 					return;
 				}
 			}
-			if (path.isAbsolute(candidate) && isInside(recordingsDir, candidate)) found.push(candidate);
+			if (
+				path.isAbsolute(candidate) &&
+				(recordingsDir === null || isInside(recordingsDir, candidate))
+			)
+				found.push(candidate);
 		} else if (Array.isArray(value)) {
 			for (const item of value) visit(item);
 		} else if (value && typeof value === "object") {
@@ -106,7 +114,7 @@ function protects(protection: Protection, file: string): boolean {
 
 /** Throws on a file that is not JSON, which the callers take as "decide nothing". */
 function protectionFrom(
-	recordingsDir: string,
+	recordingsDir: string | null,
 	files: RawProject[],
 	isOther: (raw: string) => boolean,
 	alsoProtect: AxcutDocument[] = [],
@@ -268,4 +276,144 @@ export async function sweepUnusedTakes(deps: SweepDeps): Promise<CleanupResult> 
 		result.kept.push(...moved.kept);
 	}
 	return result;
+}
+
+export interface TrashAssetResult {
+	/** Files moved to the Trash: the media file and its sidecars. */
+	trashed: string[];
+	/** Files that should have gone but could not be moved. */
+	kept: string[];
+	/** The media file is still used by a project (this one through another asset, or another one): nothing moved. */
+	shared: boolean;
+	/** True when a project file could not be read and nothing was touched. */
+	failedClosed: boolean;
+	/** The request was not honoured: unknown token, or the asset is still in the saved project. */
+	refused?: boolean;
+}
+
+export interface AssetTrashDeps extends CleanupDeps {
+	/** The saved project, read by main from its own store. */
+	getProject(projectId: string): Promise<AxcutDocument>;
+	/** The path when the app may read it as media (`readableApprovedPath`), else null. */
+	approvedPath(file: string): string | null;
+}
+
+/**
+ * The files of one media item. Only a take the app made (`recording-<id>`, the package inbox)
+ * brings its sidecars: `<file>.cursor.json`, the take's `.session.json` and `.mic.wav`, its
+ * camera video and a `-webcam.*` beside it. Any other file is exactly the one the project names,
+ * so a neighbour such as `interview-webcam.mp4` is never touched.
+ */
+export async function mediaFilesOf(asset: AxcutAsset, recordingsDir: string): Promise<string[]> {
+	if (!isSweepable(recordingsDir, asset.originalPath)) return [asset.originalPath];
+	const doc = { ...createEmptyDocument({ projectId: "trash", title: "trash" }), assets: [asset] };
+	const files = new Map<string, string>();
+	for (const ref of collectPackageRefs(doc)) {
+		if (ref.kind === "derived" || ref.kind === "graphic-frame") continue;
+		if (isSweepable(recordingsDir, ref.sourcePath))
+			files.set(pathKey(ref.sourcePath), ref.sourcePath);
+	}
+	const parsed = path.parse(asset.originalPath);
+	const base = parsed.name.endsWith("-webcam")
+		? parsed.name.slice(0, -"-webcam".length)
+		: parsed.name;
+	try {
+		for (const name of await fs.readdir(parsed.dir)) {
+			if (name.startsWith(`${base}-webcam.`)) {
+				const file = path.join(parsed.dir, name);
+				files.set(pathKey(file), file);
+			}
+		}
+	} catch {
+		// A folder that is gone has nothing more to move.
+	}
+	return [...files.values()];
+}
+
+/** A regular file: not a link, not a folder. */
+async function isRegularFile(file: string): Promise<boolean> {
+	try {
+		return (await fs.lstat(file)).isFile();
+	} catch {
+		return false;
+	}
+}
+
+interface PendingTrash {
+	projectId: string;
+	asset: AxcutAsset;
+	files: string[];
+}
+const pendingTrashes = new Map<string, PendingTrash>();
+
+/**
+ * Step one of "Delete from disk", before the asset leaves the project: main reads the saved
+ * project itself and resolves the asset's files from it (the renderer names only ids), then
+ * returns the list for the confirm dialog with a token. Null when the asset is not in that
+ * project or its media file is not an approved regular file.
+ */
+export async function prepareAssetTrash(
+	deps: AssetTrashDeps,
+	projectId: string,
+	assetId: string,
+): Promise<{ token: string; files: string[] } | null> {
+	let doc: AxcutDocument;
+	try {
+		doc = await deps.getProject(projectId);
+	} catch {
+		return null;
+	}
+	const asset = doc.assets.find((candidate) => candidate.id === assetId);
+	if (!asset || !path.isAbsolute(asset.originalPath)) return null;
+	if (!deps.approvedPath(asset.originalPath) || !(await isRegularFile(asset.originalPath))) {
+		return null;
+	}
+	const files: string[] = [];
+	for (const file of await mediaFilesOf(asset, deps.recordingsDir)) {
+		if (path.isAbsolute(file) && (await isRegularFile(file))) files.push(file);
+	}
+	const token = randomUUID();
+	pendingTrashes.set(token, { projectId, asset, files });
+	return { token, files };
+}
+
+/** Forget a prepared trash (the dialog was cancelled). */
+export function cancelAssetTrash(token: string): void {
+	pendingTrashes.delete(token);
+}
+
+/**
+ * Step two, after the renderer removed the asset and saved: re-reads the saved project, refuses
+ * unless the asset is gone from it, then moves the prepared files to the Trash, unless any
+ * project file still mentions the file or its take (this project's included).
+ */
+export async function commitAssetTrash(
+	deps: AssetTrashDeps,
+	token: string,
+): Promise<TrashAssetResult> {
+	const pending = pendingTrashes.get(token);
+	const refused = { trashed: [], kept: [], shared: false, failedClosed: false, refused: true };
+	if (!pending) return refused;
+	try {
+		const doc = await deps.getProject(pending.projectId);
+		if (doc.assets.some((asset) => asset.id === pending.asset.id)) return refused;
+	} catch {
+		return refused;
+	}
+	pendingTrashes.delete(token);
+	let protection: Protection;
+	try {
+		protection = protectionFrom(null, await readAll(deps), () => true);
+	} catch (error) {
+		deps.log(`a project file could not be read, so no media file was moved: ${String(error)}`);
+		return { trashed: [], kept: [], shared: false, failedClosed: true };
+	}
+	if (protects(protection, pending.asset.originalPath)) {
+		return { trashed: [], kept: [], shared: true, failedClosed: false };
+	}
+	const movable: string[] = [];
+	for (const file of pending.files) {
+		if (!protects(protection, file) && (await isRegularFile(file))) movable.push(file);
+	}
+	return { ...(await trashAll(deps, movable)), shared: false, failedClosed: false };
 }

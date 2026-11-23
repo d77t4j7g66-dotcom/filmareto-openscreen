@@ -1,6 +1,6 @@
 import { type ChildProcessWithoutNullStreams, spawn } from "node:child_process";
 import { EventEmitter } from "node:events";
-import { constants as fsConstants } from "node:fs";
+import { existsSync, constants as fsConstants } from "node:fs";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -45,6 +45,7 @@ import {
 	type RecordingSession,
 	type StoreRecordedSessionInput,
 } from "../../src/lib/recordingSession";
+import { LAUNCH_ON_SCRIPT, LAUNCH_QUERY_KEY } from "../../src/lib/recordingStart";
 import {
 	AI_EDITION_OPEN_PROJECT_CHANNEL,
 	type CursorRecordingData,
@@ -89,7 +90,7 @@ import { McpController } from "../mcp/mcp-controller";
 import { McpSettingsStore } from "../mcp/mcp-settings-store";
 import { createMediaTools, type MediaToolDeps, type RecordRequest } from "../mcp/media-tools";
 import { createToolRunner, type McpToolDeps } from "../mcp/openscreen-mcp-server";
-import { type AudioPeaksResult, getAudioPeaks } from "../media/audioPeaks";
+import { type AudioPeaksResult, getAudioPeaks, resolveFfmpeg } from "../media/audioPeaks";
 import {
 	readCursorRecordingFile as readCursorRecordingFileFrom,
 	readCursorSidecar,
@@ -100,13 +101,18 @@ import { relinkProjectMedia } from "../media/projectMediaRelinker";
 import { detectFrozenSpans, type ScreenActivityResult } from "../media/screenActivity";
 import {
 	analyseTalkingHead,
+	createFaceTrackLooks,
 	findFace,
 	hearSpans,
 	type TalkingHeadAnalysis,
 } from "../media/talkingHead";
 import { analyseVoiceRegions, type VoiceRegionsResult } from "../media/voiceRegions";
 import {
+	type AssetTrashDeps,
 	type CleanupDeps,
+	cancelAssetTrash,
+	commitAssetTrash,
+	prepareAssetTrash,
 	sweepUnusedTakes,
 	trashDeletedProject,
 } from "../media-cleanup/recordingsCleanup";
@@ -115,7 +121,10 @@ import {
 	type LinuxCaptureSourceKind,
 	LinuxNativeCaptureSession,
 } from "../native-bridge/capture/linuxNativeCaptureSession";
-import { compactCursorTelemetryPauseRanges } from "../native-bridge/cursor/recording/cursorPauseRanges";
+import {
+	compactCursorTelemetryPauseRanges,
+	shiftCursorTelemetry,
+} from "../native-bridge/cursor/recording/cursorPauseRanges";
 import { createCursorRecordingSession } from "../native-bridge/cursor/recording/factory";
 import {
 	isMacCursorHelperUnavailable,
@@ -133,7 +142,11 @@ import {
 	markMacSystemPickerUnavailable,
 } from "../native-bridge/screen/macPickerSession";
 import { readMacScreenCaptureAccess } from "../native-bridge/screen/macScreenAccess";
-import { CompositorViewService } from "../native-bridge/services/compositorViewService";
+import {
+	CompositorViewService,
+	resolveSceneAssetPath,
+	resolveSceneAssetPaths,
+} from "../native-bridge/services/compositorViewService";
 import { buildEditorPackage } from "../package/buildPackage";
 import { handleOpenEditorPackage, handlePackageProject, type PackageIpcDeps } from "../package/ipc";
 import { openEditorPackage } from "../package/openPackage";
@@ -181,14 +194,19 @@ import {
 	shouldEnumerateRecordingSources,
 	shouldPersistSelectedSource,
 } from "../recording-source-settings";
+import { buildResolveExport } from "../resolve-export/build";
+import { handleExportForResolve, type ResolveExportIpcDeps } from "../resolve-export/ipc";
 import { getSttManager } from "../stt";
 import {
 	nativeHelperPath,
+	teleprompterCameraChanged,
+	teleprompterCameraClaimChanged,
 	teleprompterRecordingChanged,
 	teleprompterRecordingPaused,
 	teleprompterRunTakesOver,
 	teleprompterWindowIds,
 } from "../teleprompter";
+import { prompterCameraName } from "../teleprompter/shared/camera";
 import { createRunnerWindow } from "../windows";
 import { getSourcesByType, shouldEnumerateSourceTypesSeparately } from "./desktopSourceTypes";
 import { registerNativeBridgeHandlers } from "./nativeBridge";
@@ -911,6 +929,46 @@ let nativeMacCaptureProcess: ChildProcessWithoutNullStreams | null = null;
 let macPickerSession: MacPickerSession | null = null;
 let nativeMacCaptureOutput = "";
 let nativeMacCaptureTargetPath: string | null = null;
+/** 1.2.0: the camera `.mov` and microphone WAV the running take was asked to write. */
+let nativeMacCaptureSidecarPaths: string[] = [];
+/**
+ * 1.2.0: the capture helper holds the camera. A camera runs one format at a time, and the app's
+ * own previews (Chromium, 1080p) kept it at theirs: the helper's 4K at a locked 1/30 s then got no
+ * frame at all. Every window's preview lets the camera go while this is true.
+ */
+let nativeCameraClaimed = false;
+function setNativeCameraClaimed(claimed: boolean) {
+	if (nativeCameraClaimed === claimed) return;
+	nativeCameraClaimed = claimed;
+	teleprompterCameraClaimChanged(claimed);
+	for (const window of BrowserWindow.getAllWindows()) {
+		if (!window.isDestroyed()) window.webContents.send("native-camera-claim", claimed);
+	}
+}
+/** How long the previews get to close their camera before the helper opens it. */
+const NATIVE_CAMERA_HANDOFF_MS = 600;
+/**
+ * A take started during its countdown and held there (`holdUntilResume`, 1.2.0): its helper,
+ * once spawned, and how the countdown ended if it ended before the helper was there to be told.
+ */
+let nativeMacHold: {
+	recordingId: number;
+	proc: ChildProcessWithoutNullStreams | null;
+	release: "go" | "cancel" | null;
+} | null = null;
+function sendNativeMacHoldRelease(proc: ChildProcessWithoutNullStreams, release: "go" | "cancel") {
+	if (!proc.stdin.writable) return;
+	if (release === "cancel") {
+		// Not the user stopping a take: nothing was recorded, and the start's own failure
+		// path cleans up. Marked so the helper's exit does not read as a take that ended.
+		nativeMacStopInFlight = true;
+		proc.stdin.write("stop\n");
+	} else {
+		proc.stdin.write("resume\n");
+	}
+}
+/** How long a screen take waits for the helper's first camera frame before the app records it. */
+const NATIVE_CAMERA_FIRST_FRAME_WAIT_MS = 7000;
 let nativeMacCaptureRecordingId: number | null = null;
 let nativeMacCursorOffsetMs = 0;
 let nativeMacCursorCaptureMode: CursorCaptureMode = "editable-overlay";
@@ -1469,19 +1527,10 @@ async function registerRecordingMediaLinks(
 }
 
 function shiftPendingCursorTelemetry(offsetMs: number) {
-	if (!pendingCursorRecordingData || !Number.isFinite(offsetMs) || offsetMs <= 0) {
+	if (!pendingCursorRecordingData) {
 		return;
 	}
-
-	pendingCursorRecordingData = {
-		...pendingCursorRecordingData,
-		samples: pendingCursorRecordingData.samples
-			.map((sample) => ({
-				...sample,
-				timeMs: Math.max(0, sample.timeMs - offsetMs),
-			}))
-			.sort((a, b) => a.timeMs - b.timeMs),
-	};
+	pendingCursorRecordingData = shiftCursorTelemetry(pendingCursorRecordingData, offsetMs);
 }
 
 function compactPendingCursorTelemetryPauseRanges(
@@ -2002,7 +2051,7 @@ export async function exportDiagnosticFile(payload: {
 }
 
 export function registerIpcHandlers(
-	createEditorWindow: () => void,
+	createEditorWindow: (query?: Record<string, string>) => void,
 	createSourceSelectorWindow: () => BrowserWindow,
 	createCountdownOverlayWindow: () => BrowserWindow,
 	createNotesWindowWrapper: () => BrowserWindow,
@@ -2023,8 +2072,13 @@ export function registerIpcHandlers(
 	 * for a client's take to start, and the tray shows it. A native path that called
 	 * `onRecordingStateChange` itself left the MCP recorder waiting on a take already running.
 	 */
+	/** The face looks in progress (`find-face-track`): a take starting stops them. */
+	const faceTrackLooks = createFaceTrackLooks();
 	const setAppRecording = (recording: boolean, sourceName: string) => {
 		appRecording = recording;
+		// Minutes of ffmpeg and Vision work must not run into a take: its children are killed, and
+		// the look answers "busy", so the renderer asks again once the take is over.
+		if (recording) faceTrackLooks.stopAll();
 		mcpAppRecorder.recordingChanged(recording);
 		teleprompterRecordingChanged(recording);
 		onRecordingStateChange?.(recording, sourceName);
@@ -2353,6 +2407,13 @@ export function registerIpcHandlers(
 		getMainWindow,
 		() => BrowserWindow.getAllWindows(),
 		(previous, next) => {
+			// The teleprompter shows the camera that is on, behind its text.
+			if (
+				previous.camEnabled !== next.camEnabled ||
+				previous.camDeviceName !== next.camDeviceName
+			) {
+				teleprompterCameraChanged(prompterCameraName(next));
+			}
 			// Apple's picker bakes the exclusions into the filter it hands back, so a pick made
 			// before "Hide desktop icons" changed would still record the desktop the old way.
 			// Dropping it makes the HUD ask for a new pick instead of ignoring the toggle.
@@ -2372,6 +2433,8 @@ export function registerIpcHandlers(
 			}
 		},
 	);
+
+	teleprompterCameraChanged(prompterCameraName(recordingPrefs.get()));
 
 	// Asked before every take starts. A disk that fills up mid-take used to be found only
 	// when the take was saved, and the take was lost with it.
@@ -2549,6 +2612,11 @@ export function registerIpcHandlers(
 		// opening the editor. Closing it here too double-closes, leaving ghost
 		// transparent windows and compounding the HUD shadow each cycle.
 		createEditorWindow();
+	});
+
+	// The bar's "Edit script": the editor on the Script tab of the project it restores.
+	ipcMain.handle("open-script-editor", () => {
+		createEditorWindow({ [LAUNCH_QUERY_KEY]: LAUNCH_ON_SCRIPT });
 	});
 
 	ipcMain.handle("switch-to-hud", () => {
@@ -3187,13 +3255,27 @@ export function registerIpcHandlers(
 	);
 
 	ipcMain.handle("start-native-mac-recording", async (_, request: NativeMacRecordingRequest) => {
+		let heldStart: typeof nativeMacHold = null;
 		try {
 			if (process.platform !== "darwin") {
 				return { success: false, error: "Native macOS capture requires macOS." };
 			}
-			if (nativeMacCaptureProcess) {
+			// A held start still getting ready counts: it has no process yet.
+			if (nativeMacCaptureProcess || nativeMacHold) {
 				return { success: false, error: "Native macOS capture is already running." };
 			}
+
+			// Before the first await: the countdown's release can arrive while this is still
+			// getting ready, and has to find the hold.
+			heldStart =
+				request.holdUntilResume === true
+					? {
+							recordingId: Number(request.recordingId),
+							proc: null,
+							release: null,
+						}
+					: null;
+			nativeMacHold = heldStart;
 
 			const helperPath = await findNativeMacCaptureHelperPath();
 			if (!helperPath) {
@@ -3208,9 +3290,23 @@ export function registerIpcHandlers(
 				typeof request.recordingId === "number" && Number.isFinite(request.recordingId)
 					? request.recordingId
 					: Date.now();
-			const outputPath = path.join(RECORDINGS_DIR, `${RECORDING_FILE_PREFIX}${recordingId}.mp4`);
-			const cursorCaptureMode =
-				normalizeCursorCaptureMode(request.cursor?.mode) ?? "editable-overlay";
+			// 1.2.0: a talking-head take records the camera natively; its `.mov` is the take.
+			const cameraOnly = request.source.type === "camera";
+			const outputPath = path.join(
+				RECORDINGS_DIR,
+				`${RECORDING_FILE_PREFIX}${recordingId}${cameraOnly ? ".mov" : ".mp4"}`,
+			);
+			const cursorCaptureMode = cameraOnly
+				? "system"
+				: (normalizeCursorCaptureMode(request.cursor?.mode) ?? "editable-overlay");
+			// The camera beside a screen take, and the microphone master (1.2.0).
+			const webcamOutputPath =
+				!cameraOnly && request.webcam?.enabled
+					? path.join(RECORDINGS_DIR, `${RECORDING_FILE_PREFIX}${recordingId}-webcam.mov`)
+					: undefined;
+			const micWavOutputPath = request.audio?.microphone?.enabled
+				? path.join(RECORDINGS_DIR, `${RECORDING_FILE_PREFIX}${recordingId}.mic.wav`)
+				: undefined;
 			// A source from Apple's picker records through the session that holds the pick,
 			// and needs no Screen Recording grant -- so nothing here may go near one.
 			const pickerSession = isMacPickerSourceId(request.source.sourceId) ? macPickerSession : null;
@@ -3225,7 +3321,7 @@ export function registerIpcHandlers(
 					error: "The screen or window you picked is no longer available. Pick it again.",
 				};
 			}
-			if (!pickerSession) {
+			if (!pickerSession && !cameraOnly) {
 				try {
 					await desktopCapturer.getSources({
 						types: ["screen"],
@@ -3257,7 +3353,9 @@ export function registerIpcHandlers(
 				pick?.bounds ?? request.source.bounds ?? sourceDisplay?.bounds ?? getSelectedSourceBounds();
 			const captureExcludedWindowSourceIds: string[] = [];
 			if (request.source.type === "display") {
-				for (const window of [getMainWindow(), getNotesWindow()]) {
+				// The countdown too (1.2.0): a take held through its countdown sees it, and a still
+				// screen starts from the last frame seen then (see `holdUntilResume`).
+				for (const window of [getMainWindow(), getNotesWindow(), getCountdownOverlayWindow?.()]) {
 					if (window && !window.isDestroyed()) {
 						captureExcludedWindowSourceIds.push(window.getMediaSourceId());
 					}
@@ -3281,9 +3379,10 @@ export function registerIpcHandlers(
 					...request.video,
 					hideSystemCursor: cursorCaptureMode === "editable-overlay",
 				},
+				// 1.2.0: the helper records the camera itself (HEVC Main 10, constant 30 fps).
 				webcam: {
 					...request.webcam,
-					enabled: false,
+					enabled: cameraOnly || Boolean(request.webcam?.enabled),
 				},
 				cursor: {
 					mode: cursorCaptureMode,
@@ -3294,6 +3393,8 @@ export function registerIpcHandlers(
 						RECORDINGS_DIR,
 						`${RECORDING_FILE_PREFIX}${recordingId}${RECORDING_SESSION_SUFFIX}`,
 					),
+					...(webcamOutputPath ? { webcamPath: webcamOutputPath } : {}),
+					...(micWavOutputPath ? { micWavPath: micWavOutputPath } : {}),
 				},
 			};
 
@@ -3310,6 +3411,9 @@ export function registerIpcHandlers(
 			await fs.mkdir(RECORDINGS_DIR, { recursive: true });
 			nativeMacCaptureOutput = "";
 			nativeMacCaptureTargetPath = outputPath;
+			nativeMacCaptureSidecarPaths = [webcamOutputPath, micWavOutputPath].filter((p): p is string =>
+				Boolean(p),
+			);
 			nativeMacCaptureRecordingId = recordingId;
 			nativeMacCursorOffsetMs = 0;
 			nativeMacCursorCaptureMode = cursorCaptureMode;
@@ -3321,6 +3425,9 @@ export function registerIpcHandlers(
 			nativeMacRecordingWarning = null;
 			activeMacCaptureBounds = null;
 
+			// A held take's pointer and keys start here too, during its countdown, so starting them
+			// costs the take nothing at zero; what they caught before the take's t=0 is dropped
+			// when the take stops (`shiftCursorTelemetry`).
 			const cursorStartTimeMs = Date.now();
 			if (cursorCaptureMode === "editable-overlay") {
 				nativeMacCursorRecordingStartMs = cursorStartTimeMs;
@@ -3331,6 +3438,14 @@ export function registerIpcHandlers(
 				pendingCursorRecordingData = null;
 			}
 
+			if (config.webcam.enabled) {
+				setNativeCameraClaimed(true);
+				await new Promise((resolve) => setTimeout(resolve, NATIVE_CAMERA_HANDOFF_MS));
+			}
+			if (heldStart?.release === "cancel") {
+				// Cancelled before there was a helper to tell: nothing is started at all.
+				throw new Error("The take was cancelled during its countdown.");
+			}
 			const proc = pickerSession
 				? pickerSession.startTake(config)
 				: spawn(helperPath, [JSON.stringify(config)], {
@@ -3338,6 +3453,13 @@ export function registerIpcHandlers(
 						stdio: ["pipe", "pipe", "pipe"],
 					});
 			nativeMacCaptureProcess = proc;
+			if (heldStart && nativeMacHold === heldStart) {
+				heldStart.proc = proc;
+				if (heldStart.release) {
+					sendNativeMacHoldRelease(proc, heldStart.release);
+					nativeMacHold = null;
+				}
+			}
 			// When the take ends without the user — the helper reported an error or
 			// exited — this drives the renderer's own stop, the same one the tray's Stop
 			// Recording sends: it clears the HUD and surfaces the result.
@@ -3384,11 +3506,36 @@ export function registerIpcHandlers(
 			}
 			nativeMacCursorOffsetMs =
 				cursorCaptureMode === "editable-overlay"
-					? Math.max(0, captureStartedAtMs - cursorStartTimeMs)
+					? Math.max(0, captureStartedAtMs - nativeMacCursorRecordingStartMs)
 					: 0;
 
 			const source = selectedSource || { name: "Screen" };
-			setAppRecording(true, source.name);
+			// A camera-only take warmed up during the countdown says it is recording when the
+			// countdown ends (set-recording-state), as the browser path always did.
+			if (!(cameraOnly && request.deferAppRecording)) setAppRecording(true, source.name);
+			// The helper has the camera once it has WRITTEN a frame (opening it is not enough:
+			// a camera can come up sending nothing). The renderer then records none of its own.
+			// A camera-only take started at its first camera frame, so it has one already.
+			if (config.webcam.enabled && !cameraOnly) {
+				const deadline = Date.now() + NATIVE_CAMERA_FIRST_FRAME_WAIT_MS;
+				while (
+					Date.now() < deadline &&
+					!nativeMacCaptureOutput.includes('"event":"webcam-recording"') &&
+					!nativeMacCaptureOutput.includes('"code":"webcam-unavailable"') &&
+					!nativeMacCaptureOutput.includes('"code":"webcam-writer-failed"')
+				) {
+					await new Promise((resolve) => setTimeout(resolve, 100));
+				}
+			}
+			const webcamNative =
+				cameraOnly || nativeMacCaptureOutput.includes('"event":"webcam-recording"');
+			if (config.webcam.enabled && !webcamNative) {
+				console.warn("[native-sck] the helper could not record the camera", {
+					deviceName: request.webcam?.deviceName,
+				});
+				// Back to the app: its own recorder takes the camera for this take.
+				setNativeCameraClaimed(false);
+			}
 
 			return {
 				success: true,
@@ -3399,9 +3546,19 @@ export function registerIpcHandlers(
 				microphoneDefaulted,
 				microphoneUnavailable,
 				microphoneNotFound,
+				webcamNative,
 			};
 		} catch (error) {
 			console.error("Failed to start native macOS recording:", error);
+			if (nativeMacHold === heldStart) nativeMacHold = null;
+			if (nativeMacCaptureOutput.trim()) {
+				console.error("[native-sck] helper output:", nativeMacCaptureOutput.trim().slice(-2000));
+			}
+			setNativeCameraClaimed(false);
+			for (const sidecar of nativeMacCaptureSidecarPaths) {
+				await fs.rm(sidecar, { force: true }).catch(() => undefined);
+			}
+			nativeMacCaptureSidecarPaths = [];
 			const failedOutputPath = nativeMacCaptureTargetPath;
 			nativeMacCaptureProcess?.kill();
 			nativeMacCaptureProcess = null;
@@ -3418,6 +3575,9 @@ export function registerIpcHandlers(
 			}
 			await stopCursorRecording();
 			return { success: false, error: error instanceof Error ? error.message : String(error) };
+		} finally {
+			// However the start ended, its hold ends with it (an early return leaves it otherwise).
+			if (heldStart && nativeMacHold === heldStart) nativeMacHold = null;
 		}
 	});
 
@@ -3441,7 +3601,30 @@ export function registerIpcHandlers(
 			proc.stdin.write("pause\n");
 			nativeMacIsPaused = true;
 			nativeMacPauseStartedAtMs = Date.now();
-			teleprompterRecordingPaused(true);
+			// A camera-only take paused for its countdown (1.2.0) is not recording for the app
+			// yet: the teleprompter is not told, or it would start itself at the resume.
+			if (appRecording) teleprompterRecordingPaused(true);
+			return { success: true };
+		} catch (error) {
+			return { success: false, error: error instanceof Error ? error.message : String(error) };
+		}
+	});
+
+	ipcMain.handle("release-native-mac-hold", async (_, cancel: boolean, recordingId?: number) => {
+		const hold = nativeMacHold;
+		// Nothing held, or another take's hold: a late cancel must not reach a newer take.
+		if (!hold || (typeof recordingId === "number" && recordingId !== hold.recordingId)) {
+			return { success: true };
+		}
+		const release = cancel ? "cancel" : "go";
+		if (!hold.proc) {
+			// Not spawned yet: the start sends it as soon as it is.
+			hold.release = release;
+			return { success: true };
+		}
+		nativeMacHold = null;
+		try {
+			sendNativeMacHoldRelease(hold.proc, release);
 			return { success: true };
 		} catch (error) {
 			return { success: false, error: error instanceof Error ? error.message : String(error) };
@@ -3468,7 +3651,7 @@ export function registerIpcHandlers(
 			proc.stdin.write("resume\n");
 			completeNativeMacCursorPauseRange();
 			nativeMacIsPaused = false;
-			teleprompterRecordingPaused(false);
+			if (appRecording) teleprompterRecordingPaused(false);
 			return { success: true };
 		} catch (error) {
 			return { success: false, error: error instanceof Error ? error.message : String(error) };
@@ -3716,6 +3899,8 @@ export function registerIpcHandlers(
 		}
 	});
 
+	ipcMain.handle("is-native-camera-claimed", () => nativeCameraClaimed);
+
 	ipcMain.handle("stop-native-mac-recording", async (_, discard?: boolean) => {
 		if (process.platform !== "darwin") {
 			return { success: false, error: "Native macOS capture requires macOS." };
@@ -3723,6 +3908,7 @@ export function registerIpcHandlers(
 
 		const proc = nativeMacCaptureProcess;
 		const preferredPath = nativeMacCaptureTargetPath;
+		const sidecarPaths = nativeMacCaptureSidecarPaths;
 		const recordingId = nativeMacCaptureRecordingId ?? Date.now();
 		const cursorCaptureMode = nativeMacCursorCaptureMode;
 
@@ -3751,7 +3937,7 @@ export function registerIpcHandlers(
 			if (discard) {
 				pendingCursorRecordingData = null;
 				await Promise.all(
-					nativeMacDiscardTargets(stopResult, preferredPath).map((target) =>
+					nativeMacDiscardTargets(stopResult, preferredPath, sidecarPaths).map((target) =>
 						fs.rm(target, { force: true }),
 					),
 				);
@@ -3766,8 +3952,12 @@ export function registerIpcHandlers(
 			let screenVideoPath: string;
 			let warning: string | undefined;
 			let recovered = false;
+			let webcamVideoPath: string | undefined;
+			let micAudioPath: string | undefined;
 			if (stopResult.ok) {
 				screenVideoPath = stopResult.screenVideoPath;
+				webcamVideoPath = stopResult.webcamVideoPath;
+				micAudioPath = stopResult.micAudioPath;
 				warning = stopResult.warning;
 				if (warning) {
 					console.warn(
@@ -3798,6 +3988,17 @@ export function registerIpcHandlers(
 				screenVideoPath = salvage.screenVideoPath;
 				warning = describeSalvagedTake(stopResult.message, salvage.durationSec);
 				recovered = true;
+				// The camera and the WAV are separate files the helper may have closed cleanly
+				// (or left fragmented, which still plays): kept with the take when they hold anything.
+				for (const sidecar of sidecarPaths) {
+					const size = await fs
+						.stat(sidecar)
+						.then((stat) => stat.size)
+						.catch(() => 0);
+					if (size <= 0) continue;
+					if (sidecar.endsWith(".mov")) webcamVideoPath = sidecar;
+					else if (sidecar.endsWith(".wav")) micAudioPath = sidecar;
+				}
 				console.warn("[native-sck] recovered the part of the take written before its stop failed", {
 					stopFailure: stopResult.message,
 					path: screenVideoPath,
@@ -3833,8 +4034,11 @@ export function registerIpcHandlers(
 				);
 			}
 
+			// The camera and the WAV come from the helper's own clock: t=0 is the screen's.
 			const session: RecordingSession = {
 				screenVideoPath,
+				...(webcamVideoPath ? { webcamVideoPath, webcamOffsetMs: 0 } : {}),
+				...(micAudioPath ? { micAudioPath } : {}),
 				createdAt: recordingId,
 				cursorCaptureMode,
 			};
@@ -3848,7 +4052,10 @@ export function registerIpcHandlers(
 			await writeAlongside("session manifest", sessionManifestPath, () =>
 				fs.writeFile(sessionManifestPath, JSON.stringify(session, null, 2), "utf-8"),
 			);
-			await registerRecordingMediaLinks(screenVideoPath, { cursorCaptureMode });
+			await registerRecordingMediaLinks(screenVideoPath, {
+				cursorCaptureMode,
+				...(webcamVideoPath ? { webcamVideoPath, webcamOffsetMs: 0 } : {}),
+			});
 
 			return {
 				success: true,
@@ -3868,6 +4075,8 @@ export function registerIpcHandlers(
 			nativeMacStopInFlight = false;
 			nativeMacCaptureProcess = null;
 			nativeMacCaptureTargetPath = null;
+			nativeMacCaptureSidecarPaths = [];
+			setNativeCameraClaimed(false);
 			nativeMacCaptureRecordingId = null;
 			nativeMacCursorOffsetMs = 0;
 			nativeMacCursorCaptureMode = "editable-overlay";
@@ -3959,12 +4168,18 @@ export function registerIpcHandlers(
 				const webcamOffsetMs = Number.isFinite(payload.webcamOffsetMs)
 					? payload.webcamOffsetMs
 					: undefined;
+				// The take's microphone WAV (1.2.0), from the session the stop just wrote.
+				const micAudioPath =
+					currentRecordingSession?.screenVideoPath === screenVideoPath
+						? currentRecordingSession.micAudioPath
+						: undefined;
 				const session: RecordingSession = {
 					screenVideoPath,
 					webcamVideoPath,
 					createdAt,
 					...(webcamOffsetMs !== undefined ? { webcamOffsetMs } : {}),
 					...(cursorCaptureMode ? { cursorCaptureMode } : {}),
+					...(micAudioPath ? { micAudioPath } : {}),
 				};
 				setCurrentRecordingSessionState(session);
 				currentProjectPath = null;
@@ -4588,6 +4803,22 @@ export function registerIpcHandlers(
 		return normalizedPath && helper ? findFace(normalizedPath, durationSec, helper) : null;
 	});
 
+	// The face over a camera picture, or null (none found); undefined when it could not be looked
+	// for (no helper on this system, or the pictures failed), so a later run can try again; "busy"
+	// while a take is recording.
+	ipcMain.handle(
+		"find-face-track",
+		async (_, filePath: string, durationSec: number, offsetSec?: number) => {
+			const normalizedPath = readableApprovedPath(filePath);
+			const helper = nativeHelperPath();
+			if (!normalizedPath || !helper) return undefined;
+			// A take is being recorded: the look waits, and is asked for again afterwards. One that
+			// starts later is stopped by it (`setAppRecording`), with the same answer.
+			if (appRecording) return "busy";
+			return faceTrackLooks.look(normalizedPath, durationSec, helper, offsetSec);
+		},
+	);
+
 	ipcMain.handle(
 		"hear-talking-head",
 		async (
@@ -4772,6 +5003,47 @@ export function registerIpcHandlers(
 		"open-editor-package",
 		(event, opts?: { source?: string; mode?: "replace" | "copy" }) =>
 			handleOpenEditorPackage(packageIpcDeps(event.sender), opts ?? {}),
+	);
+
+	// Export for DaVinci Resolve (open timeline): the work is in `resolve-export/`; this supplies
+	// Electron's side of it. Behind the `resolveExportEnabled` setting, off by default.
+	const resolveExportDeps = (sender: WebContents): ResolveExportIpcDeps => ({
+		isEnabled: () => appSettings.getSnapshot().resolveExportEnabled,
+		recordingsDir: RECORDINGS_DIR,
+		// Dev: `<repo>/resolve`. Packaged: `resources/resolve` (extraResources).
+		resolveDir: app.isPackaged
+			? path.join(process.resourcesPath, "resolve")
+			: path.join(app.getAppPath(), "resolve"),
+		resolveUserDir: path.join(
+			app.getPath("home"),
+			"Library",
+			"Application Support",
+			"Blackmagic Design",
+			"DaVinci Resolve",
+			"Fusion",
+		),
+		ffmpegPath: () => resolveFfmpeg(),
+		getProject: (id) => aiEditionDocuments.getProject(id),
+		showItemInFolder: (fullPath) => shell.showItemInFolder(fullPath),
+		sendProgress: (progress) => {
+			if (!sender.isDestroyed()) sender.send("resolve-export-progress", progress);
+		},
+		build: buildResolveExport,
+		buildDeps: {
+			sampleFrames: (...args) => loudnessService.sampleResolveFrames(...args),
+			exportAlpha: (clips, outPath, sceneJson, params, onProgress) =>
+				loudnessService.exportAlpha(clips, outPath, sceneJson, params, onProgress),
+			resolveScene: resolveSceneAssetPaths,
+			// A wallpaper is stored as "/wallpapers/x.jpg": looked up under the app's asset bases like
+			// `resolveSceneAssetPaths` does, else taken as a path on disk.
+			resolveImagePath: (p) =>
+				resolveSceneAssetPath(p.replace(/^\/+/, "")) ?? (existsSync(p) ? p : null),
+			now: () => new Date(),
+		},
+	});
+
+	ipcMain.handle("export-for-resolve", (event, projectId: string) =>
+		handleExportForResolve(resolveExportDeps(event.sender), projectId),
 	);
 
 	async function saveProjectFile(
@@ -5187,6 +5459,34 @@ export function registerIpcHandlers(
 		readAllProjectFilesRaw: () => aiEditionDocuments.readAllProjectFilesRaw(),
 		trash: (file) => shell.trashItem(file),
 		log: (message) => console.warn(`[recordings-cleanup] ${message}`),
+	});
+	// The Media tab's "Delete from disk", in two steps. The renderer names only ids: main reads
+	// the saved project, lists the files for the dialog, and trashes only after the asset has
+	// left the saved project.
+	const assetTrashDeps = (): AssetTrashDeps => ({
+		...recordingsCleanupDeps(),
+		getProject: (projectId) => aiEditionDocuments.getProject(projectId),
+		approvedPath: (file) => readableApprovedPath(file),
+	});
+	ipcMain.handle("media:prepareTrash", async (_event, projectId: unknown, assetId: unknown) => {
+		if (typeof projectId !== "string" || typeof assetId !== "string") return null;
+		return prepareAssetTrash(assetTrashDeps(), projectId, assetId);
+	});
+	ipcMain.handle("media:cancelTrash", (_event, token: unknown) => {
+		if (typeof token === "string") cancelAssetTrash(token);
+	});
+	ipcMain.handle("media:commitTrash", async (_event, token: unknown) => {
+		if (typeof token !== "string") {
+			return { trashed: [], kept: [], shared: false, failedClosed: false, refused: true };
+		}
+		const result = await commitAssetTrash(assetTrashDeps(), token);
+		console.info(
+			`[recordings-cleanup] deleted media from disk: ${result.trashed.length} file(s) to the Trash` +
+				(result.shared ? ", none moved: still used by a project" : "") +
+				(result.refused ? ", refused" : "") +
+				(result.kept.length ? `, ${result.kept.length} left` : ""),
+		);
+		return result;
 	});
 
 	// LlmConfigStore is single-instance for a duller reason — its constructor does

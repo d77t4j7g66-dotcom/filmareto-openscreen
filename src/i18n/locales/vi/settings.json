@@ -164,7 +164,18 @@
 		"shadowLight": "Nhẹ",
 		"shadowMedium": "Vừa",
 		"shadowStrong": "Đậm",
-		"formatFillCover": "Fill"
+		"formatFillCover": "Fill",
+		"framePosition": "Frame position",
+		"framePositionAuto": "Auto",
+		"framePositionHorizontal": "Left to right",
+		"framePositionVertical": "Top to bottom",
+		"framePositionScope": "Apply to",
+		"framePositionWhole": "Whole project",
+		"framePositionClip": "This clip",
+		"framePositionOwnOne": "1 clip has its own position",
+		"framePositionOwnMany": "{{count}} clips have their own position",
+		"framePositionUseProject": "Use project position",
+		"framePositionCameraHint": "Places your camera when it fills the frame."
 	},
 	"stylePresets": {
 		"button": "Cài đặt sẵn",
@@ -451,6 +462,7 @@
 		"reactiveWebcamTip": "Máy ảnh thu nhỏ khi video được phóng to",
 		"webcamBackground": "Nền máy ảnh",
 		"helpNoWebcam": "Dự án này không có camera nên các tùy chọn bố cục bị tắt và thiết lập sẵn hiển thị “Không có webcam”. Bố cục đã lưu của bạn vẫn được giữ lại cho khi bạn thêm camera.",
+		"helpCameraOnly": "This take is your camera alone. Choose where its cut sits when the format is narrower than the take.",
 		"title": "Bố cục camera",
 		"noWebcam": "Không có webcam"
 	},

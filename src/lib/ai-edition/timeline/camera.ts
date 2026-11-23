@@ -4,6 +4,7 @@
 // timeline, and whether the timeline has ANY camera at all — used to gate
 // camera-only preview chrome and settings controls.
 
+import { mainTakeIsCamera } from "../document/cameraTake";
 import type { AxcutAsset, AxcutCameraTrack, AxcutClip } from "../schema";
 import { locateVirtualPosition } from "./virtual-preview";
 
@@ -21,6 +22,32 @@ export function resolveActiveCameraTrack(
 /** True when at least one clip currently on the timeline has an asset with a camera attached. */
 export function hasAnyClipWithCamera(assets: AxcutAsset[], clips: AxcutClip[]): boolean {
 	return clips.some((clip) => assets.find((a) => a.id === clip.assetId)?.cameraTrack != null);
+}
+
+/**
+ * True when the timeline has a camera picture to zoom: a camera beside a screen take, or a take
+ * that is itself the camera (a talking head).
+ */
+export function hasAnyCameraPicture(assets: AxcutAsset[], clips: AxcutClip[]): boolean {
+	return clips.some((clip) => {
+		const asset = assets.find((a) => a.id === clip.assetId);
+		return asset?.cameraTrack != null || mainTakeIsCamera(asset);
+	});
+}
+
+/**
+ * Which zoom lanes the timeline shows. The camera lane whenever there is a camera picture. The
+ * screen lane unless every clip is a talking head, which has no screen to frame; an empty
+ * project shows it, as it always did.
+ */
+export function zoomLanesShown(
+	assets: AxcutAsset[],
+	clips: AxcutClip[],
+): { screen: boolean; camera: boolean } {
+	const everyClipIsCamera =
+		clips.length > 0 &&
+		clips.every((clip) => mainTakeIsCamera(assets.find((a) => a.id === clip.assetId)));
+	return { screen: !everyClipIsCamera, camera: hasAnyCameraPicture(assets, clips) };
 }
 
 /**

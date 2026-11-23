@@ -41,6 +41,8 @@ interface PreviewProps {
 	trimRanges?: AxcutTrimRange[];
 	transcripts?: AxcutTranscript[];
 	selectedZoomRegionId?: string | null;
+	cameraZoomRegions?: AxcutZoomRegion[];
+	selectedCameraZoomId?: string | null;
 	onZoomFocusChange?: (id: string, focus: ZoomFocus) => void;
 	onZoomFocusCommit?: () => void;
 	annotationRegions?: AxcutAnnotationRegion[];
@@ -76,6 +78,8 @@ export function Preview({
 	trimRanges,
 	transcripts,
 	selectedZoomRegionId,
+	cameraZoomRegions,
+	selectedCameraZoomId,
 	onZoomFocusChange,
 	onZoomFocusCommit,
 	annotationRegions,
@@ -219,6 +223,8 @@ export function Preview({
 						trimRanges={trimRanges}
 						transcripts={transcripts}
 						selectedZoomRegionId={selectedZoomRegionId}
+						cameraZoomRegions={cameraZoomRegions}
+						selectedCameraZoomId={selectedCameraZoomId}
 						onZoomFocusChange={onZoomFocusChange}
 						onZoomFocusCommit={onZoomFocusCommit}
 						annotationRegions={annotationRegions}

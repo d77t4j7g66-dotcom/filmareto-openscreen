@@ -62,6 +62,18 @@ import {
 	collapseTracksToPills,
 	trackGroupId,
 } from "@/lib/ai-edition/document/audioTracks";
+import { documentHasTiltedZoom } from "@/lib/ai-edition/document/cameraZooms";
+import {
+	clearOwnFramePositions,
+	clipsWithOwnFramePosition,
+	framePositionAt,
+	framePositionPatch,
+	framePositionShare,
+	framePositionStart,
+	framePositionTarget,
+	framePositionValue,
+	hasTakeFramePosition,
+} from "@/lib/ai-edition/document/framePosition";
 import {
 	collectNativeFormats,
 	formatFillAvailability,
@@ -83,10 +95,12 @@ import {
 	AUDIO_GAIN_DB_LIMIT,
 	AUDIO_TRACK_GAIN_DB_MAX,
 	AUDIO_TRACK_GAIN_DB_MIN,
+	clipUnderPlayhead,
 	DEFAULT_EDITOR_SETTINGS,
 	DUCK_DEPTH_DEFAULT_DB,
 	DUCK_DEPTH_MAX_DB,
 	DUCK_DEPTH_MIN_DB,
+	getEditorSettings,
 	STEM_GAIN_FLOOR_DB,
 	webcamPresetForFormat,
 } from "@/lib/ai-edition/store/editorSettings";
@@ -416,7 +430,10 @@ function BackgroundSection() {
 		<>
 			<div className={styles.sectionLabel}>
 				{ts("background.title")}
-				<span style={{ fontWeight: 400, color: "var(--muted)" }}> · {te("studio.wholeProject")}</span>
+				<span style={{ fontWeight: 400, color: "var(--muted)" }}>
+					{" "}
+					· {te("studio.wholeProject")}
+				</span>
 			</div>
 			{/* Inline, the way Screen Studio sets it: the choice sits on the pane at a glance
 			    instead of behind a trigger. Small swatches, eight to a row, are what keep it
@@ -2500,6 +2517,120 @@ export function FormatField() {
 }
 
 /**
+ * "Frame position": where the cut of the camera sits when the format is narrower than it, placed
+ * by hand. It lives with the camera because that is what it frames (1.2.0 Beta feedback): a
+ * talking head's take is the camera, so its own cut moves; in a screen take it is the camera
+ * beside the screen that moves, wherever it is cut to fit (filling the frame, or a slot of a
+ * vertical layout). The screen's own cut stays on Auto, following the pointer.
+ * `framePositionTarget` decides which setting it writes; null renders nothing.
+ */
+function FramePositionField() {
+	const ts = useScopedT("settings");
+	const { settings, set, setLive, commit, edit, hasDocument } = useEditorSettings();
+	const document = useProjectStore((s) => s.document);
+	// The clip the program shows: the one a cut placed for "This clip" belongs to.
+	const targetClip = useProjectStore((s) => clipUnderPlayhead(s.document, s.currentTimeSec));
+	const target = useMemo(
+		() => (document ? framePositionTarget(document, targetClip) : null),
+		[document, targetClip],
+	);
+	// Whose position the control edits: the project's, or only the clip under the playhead's.
+	// Only a timeline of several clips has the choice.
+	const [positionScope, setPositionScope] = useState<"project" | "clip">("project");
+	if (!document || !target) return null;
+	// A camera beside a screen is placed for the whole project: a clip's own look would switch
+	// off the timeline's camera-fullscreen moments (one scene per clip replaces them).
+	const severalClips = document.timeline.clips.length > 1 && target.kind === "take";
+	const scope = severalClips ? positionScope : "project";
+	// What the edit starts from: the clip's settings (its look over the project's), or the project's.
+	const source = scope === "clip" ? settings : getEditorSettings(document);
+	const placed = framePositionValue(target, source);
+	const ownPositions = clipsWithOwnFramePosition(document, target.key).length;
+	const place = (next: { x: number; y: number } | null) => framePositionPatch(target, source, next);
+	const slider = (axis: "x" | "y", labelKey: string) =>
+		placed ? (
+			<SliderCell
+				full
+				label={ts(labelKey)}
+				value={Math.round(framePositionShare(target, axis, placed) * 100)}
+				min={0}
+				max={100}
+				defaultValue={50}
+				suffix="%"
+				disabled={!hasDocument}
+				onChange={(next) =>
+					setLive(place(framePositionAt(target, axis, next / 100, placed)), scope)
+				}
+				onCommit={() => void commit()}
+			/>
+		) : null;
+	return (
+		<>
+			<div className={styles.sectionLabel}>{ts("effects.framePosition")}</div>
+			{target.kind === "camera" ? (
+				<p className={styles.hint} style={{ padding: "0 var(--sp-4) 8px" }}>
+					{ts("effects.framePositionCameraHint")}
+				</p>
+			) : null}
+			{severalClips ? (
+				<div style={{ padding: "0 var(--sp-4) 12px" }}>
+					<ChoiceRow<"project" | "clip">
+						label={ts("effects.framePositionScope")}
+						options={[
+							{ value: "project", label: ts("effects.framePositionWhole") },
+							{ value: "clip", label: ts("effects.framePositionClip") },
+						]}
+						value={scope}
+						disabled={!hasDocument}
+						onChange={setPositionScope}
+					/>
+				</div>
+			) : null}
+			{/* A zoomed camera crop is always placed somewhere: it has no Auto to go back to. */}
+			{target.auto ? (
+				<div className={styles.paneRow}>
+					<span className={styles.label}>{ts("effects.framePositionAuto")}</span>
+					<Toggle
+						checked={placed === null}
+						ariaLabel={ts("effects.framePositionAuto")}
+						disabled={!hasDocument}
+						onChange={(auto) => {
+							if (auto) return void set(place(null), scope);
+							// Starts where Auto would rest with no pointer: on the face, else in the middle.
+							const face = document.assets.find((a) => a.id === targetClip?.assetId)?.face;
+							void set(place(framePositionStart(target, face)), scope);
+						}}
+					/>
+				</div>
+			) : null}
+			{placed ? (
+				<div className={styles.sliderGrid}>
+					{target.axes.horizontal ? slider("x", "effects.framePositionHorizontal") : null}
+					{target.axes.vertical ? slider("y", "effects.framePositionVertical") : null}
+				</div>
+			) : null}
+			{ownPositions > 0 ? (
+				<div className={styles.paneRow}>
+					<span className={styles.label}>
+						{ownPositions === 1
+							? ts("effects.framePositionOwnOne")
+							: ts("effects.framePositionOwnMany", { count: ownPositions })}
+					</span>
+					<button
+						type="button"
+						className={styles.secondaryBtn}
+						disabled={!hasDocument}
+						onClick={() => void edit((doc) => clearOwnFramePositions(doc, target.key))}
+					>
+						{ts("effects.framePositionUseProject")}
+					</button>
+				</div>
+			) : null}
+		</>
+	);
+}
+
+/**
  * One pane for everything that shapes the composition.
  *
  * Background and Effects used to be two facets, and four of Effects' five controls were
@@ -2517,7 +2648,7 @@ export function VideoEffectsPane() {
 	const { settings, set, setLive, commit, hasDocument } = useEditorSettings();
 	const document = useProjectStore((s) => s.document);
 
-	const hasTiltedZoom = (document?.zoomRanges ?? []).some((z) => z.rotationPreset != null);
+	const hasTiltedZoom = document ? documentHasTiltedZoom(document) : false;
 	// The padding a drag started from, held until its release: the Roundness row follows it and
 	// not the live value. Added or dropped mid-drag, the row reflowed the pane under the pointer
 	// dragging the slider: a clamped scroll on the way to 0, a scrollbar appearing on the way
@@ -2905,6 +3036,11 @@ export function LayoutPane() {
 		() => (document ? hasAnyClipWithCamera(document.assets, document.timeline.clips) : false),
 		[document],
 	);
+	// No screen take's camera to arrange, but a talking head whose cut can be placed.
+	const cameraOnlyFraming = useMemo(
+		() => !!document && !hasAnyCamera && hasTakeFramePosition(document),
+		[document, hasAnyCamera],
+	);
 	const effectiveLayoutPreset = resolveWebcamLayoutPreset(
 		settings.webcamLayoutPreset,
 		hasAnyCamera,
@@ -2957,6 +3093,19 @@ export function LayoutPane() {
 		// One patch for both, so a half-written pair can never reach disk.
 		setLive({ webcamCropPan: pan, webcamCropRegion: cropRegionFor(size, pan) });
 	};
+	// A talking head is the camera with no screen beside it: nothing here arranges it, but where
+	// its cut sits in the format is placed here, with the camera.
+	if (cameraOnlyFraming) {
+		return (
+			<Pane
+				title={ts("layout.title")}
+				icon={<Camera size={16} />}
+				helpText={ts("layout.helpCameraOnly")}
+			>
+				<FramePositionField />
+			</Pane>
+		);
+	}
 	return (
 		<Pane title={ts("layout.title")} icon={<Camera size={16} />} helpText={helpText}>
 			{/* The heading names the current layout: the tiles below only draw theirs. */}
@@ -3453,6 +3602,7 @@ export function LayoutPane() {
 					) : null}
 				</>
 			) : null}
+			<FramePositionField />
 			<div className={styles.sectionLabel}>{ts("layout.webcamFraming")}</div>
 			<WebcamFraming
 				label={ts("layout.webcamFraming")}
@@ -3470,6 +3620,10 @@ export function LayoutPane() {
 				}
 				disabled={layoutControlsDisabled}
 				hint={ts("layout.webcamFramingDrag")}
+				// The camera is cover-cut to its box; the pan places the cut at full size too.
+				panAtFull={!isPip || settings.webcamMaskShape === "square"}
+				coverPan={settings.webcamCoverPan}
+				onCoverPanLive={(next) => setLive({ webcamCoverPan: next })}
 				onFrameLive={setCropFrame}
 				onCommit={() => void commit()}
 			/>
@@ -3528,6 +3682,9 @@ function WebcamFraming({
 	background,
 	disabled,
 	hint,
+	panAtFull = false,
+	coverPan = null,
+	onCoverPanLive,
 	onFrameLive,
 	onCommit,
 }: {
@@ -3543,6 +3700,13 @@ function WebcamFraming({
 	} | null;
 	disabled: boolean;
 	hint: string;
+	/** The box is not the camera's own shape (a slot of a block layout, a square mask), so the
+	 *  compositor places its cover cut by the pan even at 100%, where the frame has no room. */
+	panAtFull?: boolean;
+	/** Where the cover cut sits at 100% (`webcamCoverPan`), null centred. Moving the frame while
+	 *  it is the whole picture writes this, and the crop's own pan stays as it was. */
+	coverPan?: { x: number; y: number } | null;
+	onCoverPanLive?: (pan: { x: number; y: number }) => void;
 	onFrameLive: (size: number, pan: { x: number; y: number }) => void;
 	onCommit: () => void;
 }) {
@@ -3586,7 +3750,12 @@ function WebcamFraming({
 	const ready = src !== null && metadata?.src === src;
 	const aspect = ready ? metadata.aspect : 16 / 9;
 	const size = crop.width;
-	const movable = !disabled && size < 0.999;
+	const roomy = size < 0.999;
+	const movable = !disabled && (roomy || panAtFull);
+	// What a move acts on: the crop's pan while the frame has room, else the cover cut's.
+	const activePan = roomy ? pan : (coverPan ?? { x: 0.5, y: 0.5 });
+	const writePan = (next: { x: number; y: number }) =>
+		roomy ? onFrameLive(size, next) : onCoverPanLive?.(next);
 	const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
 
 	/** A frame of `next` size at (x, y), kept inside the picture, written as size and pan. */
@@ -3615,8 +3784,9 @@ function WebcamFraming({
 		if (gesture.kind === "move") {
 			// The frame travels over (1 - size) of the picture, so a pixel of drag is worth more
 			// pan the bigger the frame is.
-			const free = 1 - size;
-			onFrameLive(size, {
+			// With no room, a drag across the whole picture is the whole pan.
+			const free = roomy ? 1 - size : 1;
+			writePan({
 				x: clamp01(gesture.pan.x + (e.clientX - gesture.x) / (box.width * free)),
 				y: clamp01(gesture.pan.y + (e.clientY - gesture.y) / (box.height * free)),
 			});
@@ -3695,8 +3865,8 @@ function WebcamFraming({
 					aria-orientation="horizontal"
 					aria-valuemin={0}
 					aria-valuemax={100}
-					aria-valuenow={Math.round(pan.x * 100)}
-					aria-valuetext={`${Math.round(pan.x * 100)}%, ${Math.round(pan.y * 100)}%`}
+					aria-valuenow={Math.round(activePan.x * 100)}
+					aria-valuetext={`${Math.round(activePan.x * 100)}%, ${Math.round(activePan.y * 100)}%`}
 					aria-disabled={disabled}
 					aria-keyshortcuts="+ -"
 					tabIndex={disabled ? -1 : 0}
@@ -3709,7 +3879,7 @@ function WebcamFraming({
 					onPointerDown={(e) => {
 						if (!movable) return;
 						e.currentTarget.setPointerCapture?.(e.pointerId);
-						gestureRef.current = { kind: "move", x: e.clientX, y: e.clientY, pan };
+						gestureRef.current = { kind: "move", x: e.clientX, y: e.clientY, pan: activePan };
 					}}
 					onPointerMove={onPointerMove}
 					onPointerUp={endGesture}
@@ -3739,7 +3909,10 @@ function WebcamFraming({
 						// The editor shell seeks on the arrows, from WINDOW: keep them here.
 						e.preventDefault();
 						e.nativeEvent.stopPropagation();
-						onFrameLive(size, { x: clamp01(pan.x + delta.x), y: clamp01(pan.y + delta.y) });
+						writePan({
+							x: clamp01(activePan.x + delta.x),
+							y: clamp01(activePan.y + delta.y),
+						});
 						onCommit();
 					}}
 				>
@@ -3788,62 +3961,62 @@ export function AudioPane() {
 			{/* Only a take with a voice and a system sound of its own has anything to balance. */}
 			{hasStems ? (
 				<>
-			<div className={styles.sliderGrid}>
-				{(
-					[
-						["audio.systemGain", "recordingSystemGainDb"],
-						["audio.voiceGain", "recordingMicGainDb"],
-					] as const
-				).map(([labelKey, key]) => (
-					<SliderCell
-						key={key}
-						label={ts(labelKey)}
-						value={settings[key]}
-						min={STEM_GAIN_FLOOR_DB}
-						max={AUDIO_GAIN_DB_LIMIT}
-						defaultValue={0}
-						step={0.5}
-						decimals={1}
-						suffix=" dB"
-						formatValue={(db) => (db <= STEM_GAIN_FLOOR_DB ? "−∞ dB" : `${db.toFixed(1)} dB`)}
+					<div className={styles.sliderGrid}>
+						{(
+							[
+								["audio.systemGain", "recordingSystemGainDb"],
+								["audio.voiceGain", "recordingMicGainDb"],
+							] as const
+						).map(([labelKey, key]) => (
+							<SliderCell
+								key={key}
+								label={ts(labelKey)}
+								value={settings[key]}
+								min={STEM_GAIN_FLOOR_DB}
+								max={AUDIO_GAIN_DB_LIMIT}
+								defaultValue={0}
+								step={0.5}
+								decimals={1}
+								suffix=" dB"
+								formatValue={(db) => (db <= STEM_GAIN_FLOOR_DB ? "−∞ dB" : `${db.toFixed(1)} dB`)}
+								disabled={!hasDocument || !hasStems}
+								onChange={(value) => setLive({ [key]: value })}
+								onCommit={() => void commit()}
+							/>
+						))}
+					</div>
+					<div className={styles.paneRow}>
+						<span className={styles.label}>{ts("audio.duck")}</span>
+						<Toggle
+							checked={settings.recordingDuckEnabled}
+							ariaLabel={ts("audio.duck")}
+							tooltip={ts("audio.duckTip")}
+							disabled={!hasDocument || !hasStems}
+							onChange={(v) => void set({ recordingDuckEnabled: v })}
+						/>
+					</div>
+					<div className={styles.sliderGrid}>
+						<SliderCell
+							label={ts("audio.duckDepth")}
+							value={settings.recordingDuckDepthDb}
+							min={DUCK_DEPTH_MIN_DB}
+							max={DUCK_DEPTH_MAX_DB}
+							defaultValue={DUCK_DEPTH_DEFAULT_DB}
+							step={1}
+							suffix=" dB"
+							disabled={!hasDocument || !hasStems || !settings.recordingDuckEnabled}
+							onChange={(value) => setLive({ recordingDuckDepthDb: value })}
+							onCommit={() => void commit()}
+						/>
+					</div>
+					<button
+						type="button"
+						className={styles.secondaryBtn}
 						disabled={!hasDocument || !hasStems}
-						onChange={(value) => setLive({ [key]: value })}
-						onCommit={() => void commit()}
-					/>
-				))}
-			</div>
-			<div className={styles.paneRow}>
-				<span className={styles.label}>{ts("audio.duck")}</span>
-				<Toggle
-					checked={settings.recordingDuckEnabled}
-					ariaLabel={ts("audio.duck")}
-					tooltip={ts("audio.duckTip")}
-					disabled={!hasDocument || !hasStems}
-					onChange={(v) => void set({ recordingDuckEnabled: v })}
-				/>
-			</div>
-			<div className={styles.sliderGrid}>
-				<SliderCell
-					label={ts("audio.duckDepth")}
-					value={settings.recordingDuckDepthDb}
-					min={DUCK_DEPTH_MIN_DB}
-					max={DUCK_DEPTH_MAX_DB}
-					defaultValue={DUCK_DEPTH_DEFAULT_DB}
-					step={1}
-					suffix=" dB"
-					disabled={!hasDocument || !hasStems || !settings.recordingDuckEnabled}
-					onChange={(value) => setLive({ recordingDuckDepthDb: value })}
-					onCommit={() => void commit()}
-				/>
-			</div>
-			<button
-				type="button"
-				className={styles.secondaryBtn}
-				disabled={!hasDocument || !hasStems}
-				onClick={() => void set({ recordingDuckRegions: null })}
-			>
-				{ts("audio.duckAgain")}
-			</button>
+						onClick={() => void set({ recordingDuckRegions: null })}
+					>
+						{ts("audio.duckAgain")}
+					</button>
 				</>
 			) : null}
 			<div className={styles.sliderGrid}>

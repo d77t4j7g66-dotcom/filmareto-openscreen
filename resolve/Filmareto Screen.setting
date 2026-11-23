@@ -1,0 +1,37 @@
+{
+	Tools = ordered() {
+		FilmaretoScreen = MacroOperator {
+			CtrlWZoom = false,
+			NameSet = true,
+			Inputs = ordered() {
+				MainInput1 = InstanceInput { SourceOp = "FScreen", Source = "Input" },
+				Input1 = InstanceInput { SourceOp = "FScreen", Source = "Mode", Default = 0 },
+				Input2 = InstanceInput { SourceOp = "FScreen", Source = "Smoothing", Default = 0 },
+				Input3 = InstanceInput { SourceOp = "FScreen", Source = "ZoomStrength", Default = 1 },
+				Input4 = InstanceInput { SourceOp = "FScreen", Source = "Offset" },
+				Input5 = InstanceInput { SourceOp = "FScreen", Source = "SafeTop", Default = 0 },
+				Input6 = InstanceInput { SourceOp = "FScreen", Source = "SafeBottom", Default = 0 },
+				Input7 = InstanceInput { SourceOp = "FScreen", Source = "SafeRight", Default = 0 },
+				Input8 = InstanceInput { SourceOp = "FScreen", Source = "SafeLeft", Default = 0 },
+				Input9 = InstanceInput { SourceOp = "FScreen", Source = "ManualCenter" },
+				Input10 = InstanceInput { SourceOp = "FScreen", Source = "ManualZoom", Default = 1 },
+				Input11 = InstanceInput { SourceOp = "FScreen", Source = "TransitionSec", Default = 0.5 },
+				Input12 = InstanceInput { SourceOp = "FScreen", Source = "CursorOn", Default = 1 },
+				Input13 = InstanceInput { SourceOp = "FScreen", Source = "CursorSize", Default = 1 },
+				Input14 = InstanceInput { SourceOp = "FScreen", Source = "DataFile" },
+				Input15 = InstanceInput { SourceOp = "FScreen", Source = "FetchByFrame", Default = 1 },
+			},
+			Outputs = {
+				MainOutput1 = InstanceOutput { SourceOp = "FScreen", Source = "Output" },
+			},
+			ViewInfo = GroupInfo { Pos = { 0, 0 } },
+			Tools = ordered() {
+				FScreen = Fuse.FilmaretoScreen {
+					CtrlWZoom = false,
+					ViewInfo = OperatorInfo { Pos = { 0, 0 } },
+				},
+			},
+		},
+	},
+	ActiveTool = "FilmaretoScreen",
+}

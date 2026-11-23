@@ -14,6 +14,7 @@ import {
 	shell,
 	Tray,
 } from "electron";
+import { launchWindowQuery } from "../src/lib/recordingStart";
 import { ShortcutBinding } from "../src/lib/shortcuts";
 import {
 	type AboutFacts,
@@ -24,6 +25,7 @@ import {
 } from "./about";
 import { flushChatPersistence } from "./ai-edition/chat-service";
 import { stopClaudeTurns } from "./ai-edition/claude-subscription";
+import { AppSettingsStore } from "./app-settings";
 import {
 	blockedFromInstalling,
 	checkForSelfUpdate,
@@ -83,6 +85,7 @@ import {
 import { describeChildProcessGone, describeRenderProcessGone } from "./processGoneLog";
 import { setDisplaySleepBlocked } from "./recording/displaySleepBlocker";
 import { RecordingsDirManager } from "./recording/recordingsDirManager";
+import { resolveExportFileMenuItems } from "./resolve-export/menu";
 import { registerSttIpc, shutdownStt } from "./stt";
 import { registerTeleprompter, teleprompterWindowClosed } from "./teleprompter";
 import { checkLatestRelease } from "./update-checker";
@@ -227,7 +230,7 @@ function createWindow() {
 	mainWindow = createHudOverlayWindow();
 }
 
-function showMainWindow() {
+function showMainWindow(create: () => void = createWindow) {
 	if (mainWindow && !mainWindow.isDestroyed()) {
 		if (mainWindow.isMinimized()) {
 			mainWindow.restore();
@@ -237,7 +240,25 @@ function showMainWindow() {
 		return;
 	}
 
-	createWindow();
+	create();
+}
+
+// The app's launch window: the editor on its Record tab with no project (the renderer reads
+// `startOn=record`, src/lib/recordingStart.ts), instead of the bare recording bar. Start recording
+// there opens the bar and closes this window, as before. This is the only place that decides it:
+//   - launch (appReady, below), the tray, the open-app shortcut, a second instance and the Dock
+//     click all go through showLaunchWindow();
+//   - the bar itself (createWindow/showMainWindow with no argument) is still what a take starts
+//     and ends on, so the Record button and the end of a take behave as they always did.
+function createLaunchWindow() {
+	if (mainWindow && !mainWindow.isDestroyed()) {
+		return;
+	}
+	createEditorWindowWrapper(launchWindowQuery());
+}
+
+function showLaunchWindow() {
+	showMainWindow(createLaunchWindow);
 }
 
 // CLI runs skip the single-instance lock so `openscreen export/record` works
@@ -249,7 +270,7 @@ if (cliCommand) {
 	runCli(cliCommand);
 } else if (hasSingleInstanceLock) {
 	app.on("second-instance", () => {
-		showMainWindow();
+		showLaunchWindow();
 	});
 } else {
 	app.quit();
@@ -266,7 +287,8 @@ function sendEditorMenuAction(
 		| "menu-save-project-as"
 		| "menu-new-project"
 		| "menu-package-for-editor"
-		| "menu-open-editor-package",
+		| "menu-open-editor-package"
+		| "menu-export-for-resolve",
 ) {
 	let targetWindow = BrowserWindow.getFocusedWindow() ?? mainWindow;
 
@@ -294,6 +316,25 @@ function sendEditorUndoRedo(channel: EditorUndoRedoChannel) {
 	routeEditorUndoRedo(channel, targetWindow, () => !!targetWindow && isEditorWindow(targetWindow));
 }
 
+// "Export for DaVinci Resolve" is behind a setting that is off by default. `AppSettingsStore` is a
+// stateless wrapper around one JSON file, so this costs a path string.
+function resolveExportEnabled(): boolean {
+	try {
+		return new AppSettingsStore(app.getPath("userData")).getSnapshot().resolveExportEnabled;
+	} catch {
+		return false;
+	}
+}
+
+function setResolveExportEnabled(enabled: boolean) {
+	new AppSettingsStore(app.getPath("userData")).setResolveExportEnabled(enabled);
+	// The File menu gains or loses its item, and the editor's top bar follows.
+	setupApplicationMenu();
+	for (const window of BrowserWindow.getAllWindows()) {
+		if (!window.isDestroyed()) window.webContents.send("resolve-export-enabled-changed", enabled);
+	}
+}
+
 function setupApplicationMenu() {
 	const isMac = process.platform === "darwin";
 	const template: Electron.MenuItemConstructorOptions[] = [];
@@ -309,6 +350,15 @@ function setupApplicationMenu() {
 				{
 					label: mainT("common", "actions.permissions") || "Permissions…",
 					click: showPermissionsWindow,
+				},
+				{ type: "separator" as const },
+				{
+					label:
+						mainT("common", "actions.resolveExportSetting") ||
+						"Export for DaVinci Resolve (open timeline)",
+					type: "checkbox" as const,
+					checked: resolveExportEnabled(),
+					click: (item) => setResolveExportEnabled(item.checked),
 				},
 				{ type: "separator" as const },
 				{
@@ -384,6 +434,11 @@ function setupApplicationMenu() {
 					label: mainT("common", "actions.openPackage") || "Open Package…",
 					click: () => sendEditorMenuAction("menu-open-editor-package"),
 				},
+				...resolveExportFileMenuItems(
+					resolveExportEnabled(),
+					mainT("common", "actions.exportForResolve") || "Export for Resolve…",
+					() => sendEditorMenuAction("menu-export-for-resolve"),
+				),
 				...(isMac
 					? []
 					: [
@@ -498,10 +553,10 @@ function setupApplicationMenu() {
 function createTray() {
 	tray = new Tray(defaultTrayIcon);
 	tray.on("click", () => {
-		showMainWindow();
+		showLaunchWindow();
 	});
 	tray.on("double-click", () => {
-		showMainWindow();
+		showLaunchWindow();
 	});
 }
 
@@ -1138,7 +1193,7 @@ function updateTrayMenu(recording: boolean = false) {
 				{
 					label: mainT("common", "actions.open") || "Open",
 					click: () => {
-						showMainWindow();
+						showLaunchWindow();
 					},
 				},
 				// Omitted entirely where a package manager owns the update (Microsoft Store,
@@ -1257,14 +1312,14 @@ function forceCloseEditorWindow(windowToClose: BrowserWindow | null) {
 	});
 }
 
-function createEditorWindowWrapper() {
+function createEditorWindowWrapper(query: Record<string, string> = {}) {
 	if (mainWindow) {
 		isForceClosing = true;
 		mainWindow.close();
 		isForceClosing = false;
 		mainWindow = null;
 	}
-	mainWindow = createEditorWindow();
+	mainWindow = createEditorWindow(query);
 	editorHasUnsavedChanges = false;
 
 	mainWindow.on("close", (event) => {
@@ -1382,7 +1437,7 @@ app.on("activate", () => {
 		return !isCountdownOverlayWindow;
 	});
 	if (!hasVisibleWindow) {
-		showMainWindow();
+		showLaunchWindow();
 	}
 });
 
@@ -1518,7 +1573,7 @@ appReady?.then(async () => {
 	});
 
 	ipcMain.handle("update-global-shortcut", (_, binding: ShortcutBinding) => {
-		const success = registerOpenAppShortcut(binding, showMainWindow);
+		const success = registerOpenAppShortcut(binding, showLaunchWindow);
 		return { success };
 	});
 
@@ -1557,6 +1612,8 @@ appReady?.then(async () => {
 	// verdict because the caller has a spinner to stop; this one has nothing to wait for, and
 	// awaiting it would leave the renderer's promise pending for as long as the user leaves
 	// the dialog open.
+	ipcMain.handle("get-resolve-export-enabled", () => resolveExportEnabled());
+
 	ipcMain.handle("show-about", () => {
 		// macOS asked for its own panel and `configureAboutPanel()` already filled it in.
 		// Calling runAboutDialog() here would open a second, differently-shaped box beside the
@@ -1637,7 +1694,7 @@ appReady?.then(async () => {
 	// Native STT (whisper.cpp + forced alignment) — single instance per app.
 	registerSttIpc(ipcMain);
 
-	await loadAndRegisterGlobalShortcut(showMainWindow);
+	await loadAndRegisterGlobalShortcut(showLaunchWindow);
 
 	// --bench=<query>: run the export bench instead of the app. Opens the real
 	// editor window (same webPreferences, same preload) pointed at the bench
@@ -1662,7 +1719,7 @@ appReady?.then(async () => {
 		),
 		new Promise((resolve) => setTimeout(resolve, 8000)),
 	]);
-	createWindow();
+	createLaunchWindow();
 	// Off unless the user turned it on in Settings → AI. Started here rather than
 	// in registerIpcHandlers so neither the headless CLI nor a bench run binds it.
 	void mcpController.startIfEnabled();

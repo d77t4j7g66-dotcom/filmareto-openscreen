@@ -164,7 +164,18 @@
 		"shadowLight": "Light",
 		"shadowMedium": "Medium",
 		"shadowStrong": "Strong",
-		"formatFillCover": "Fill"
+		"formatFillCover": "Fill",
+		"framePosition": "Frame position",
+		"framePositionAuto": "Auto",
+		"framePositionHorizontal": "Left to right",
+		"framePositionVertical": "Top to bottom",
+		"framePositionScope": "Apply to",
+		"framePositionWhole": "Whole project",
+		"framePositionClip": "This clip",
+		"framePositionOwnOne": "1 clip has its own position",
+		"framePositionOwnMany": "{{count}} clips have their own position",
+		"framePositionUseProject": "Use project position",
+		"framePositionCameraHint": "Places your camera when it fills the frame."
 	},
 	"stylePresets": {
 		"button": "Presets",
@@ -451,6 +462,7 @@
 		"reactiveWebcamTip": "The camera gets smaller while the video is zoomed in",
 		"webcamBackground": "Camera background",
 		"helpNoWebcam": "This project has no camera, so the layout controls are off and the preset reads “No webcam”. Your saved layout is kept for when a camera is added.",
+		"helpCameraOnly": "This take is your camera alone. Choose where its cut sits when the format is narrower than the take.",
 		"title": "Camera layout",
 		"noWebcam": "No webcam"
 	},

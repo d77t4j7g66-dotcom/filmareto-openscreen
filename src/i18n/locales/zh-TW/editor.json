@@ -53,7 +53,8 @@
 		"restartFailed": "無法開始新的錄製。先前的錄製已被刪除。",
 		"accessibilityAllowAndRetry": "允許 Filmareto 使用輔助使用權限，然後再次按下錄製以開始倒數。",
 		"cursorAccessibilityUnavailable": "輔助使用權限尚未開啟。錄影會繼續，但游標效果可能受限。請在系統設定中開啟此權限，以使用完整的游標效果。",
-		"selectSource": "請選擇要錄製的來源"
+		"selectSource": "請選擇要錄製的來源",
+		"cameraNotBroadcast": "攝影機以標準畫質錄製：廣播級錄製器無法開啟攝影機。"
 	},
 	"emptyState": {
 		"title": "未開啟任何專案",
@@ -81,6 +82,7 @@
 		"nothingToPaste": "尚未複製任何屬性",
 		"pasteAssetMissing": "該音訊軌道的檔案不在此專案中",
 		"pasteEffectOverlap": "該處已有另一個效果：同一時間只能有一個效果",
+		"pasteCameraZoomOverlap": "Another camera zoom already plays there: one camera zoom at a time",
 		"kinds": {
 			"zoom": "縮放",
 			"speed": "速度",
@@ -109,7 +111,8 @@
 			"script": "Script",
 			"edit": "編輯",
 			"rec": "錄製"
-		}
+		},
+		"exportForResolve": "Export for Resolve…"
 	},
 	"rec": {
 		"source": "來源",
@@ -155,6 +158,17 @@
 		"recordingsFolderFailed": "無法切換到該資料夾"
 	},
 	"mediaStage": {
+		"moreActions": "More actions",
+		"removeFromProject": "Remove from project",
+		"deleteFromDisk": "Delete from disk…",
+		"removedFromProject": "Removed {{label}} from the project",
+		"deleteDialogTitle": "Delete {{name}} from disk?",
+		"deleteDialogBody": "These files move to the Trash, and every clip that uses {{name}} is removed from this project. Undo brings the clips back, not the files: restore them from the Trash.",
+		"cannotDelete": "{{label}} can't be deleted from the disk here",
+		"deleteDialogConfirm": "Move to the Trash",
+		"movedToTrash": "Moved {{label}} to the Trash — restore it from the Trash",
+		"removedStillUsed": "Removed {{label}} from this project. A project still uses the file, so it stays on disk.",
+		"trashFailed": "Removed {{label}} from the project, but the file could not be moved to the Trash",
 		"openProjectFirst": "請先開啟專案",
 		"couldNotAddAsset": "無法新增素材",
 		"searchPlaceholder": "搜尋媒體…",
@@ -230,6 +244,10 @@
 	},
 	"inspector": {
 		"resetFocusPoint": "重設焦點",
+		"moveToCameraZoom": "Move to camera zoom",
+		"moveToScreenZoom": "Move to screen zoom",
+		"cameraFocusAuto": "Follows your face",
+		"moveZoomBlocked": "There is already a zoom there. Move or shorten one first.",
 		"setColor": "設定顏色 {{color}}",
 		"trimHiddenDuration": "已編輯的時間軸中隱藏了 {{duration}} 秒的來源媒體。",
 		"restoreDeleteTrim": "還原(刪除修剪)",
@@ -346,6 +364,16 @@
 			"screenRecordingDesc": "開始系統擷取",
 			"importMediaDesc": "從磁碟匯入影片、音訊、圖片"
 		}
+	},
+	"recordingKindDialog": {
+		"title": "What are you recording?",
+		"subtitle": "Sets the camera, screen and microphone for the recording bar",
+		"talkingHead": "Talking head",
+		"talkingHeadDesc": "Camera only, with your microphone",
+		"screenCamera": "Screen + camera",
+		"screenCameraDesc": "Your screen with you on camera",
+		"screenOnly": "Screen only",
+		"screenOnlyDesc": "Your screen and microphone, no camera"
 	},
 	"openProjectDialog": {
 		"title": "開啟專案",
@@ -538,5 +566,19 @@
 		"unsafePath": "專案中有些路徑指向其資料夾之外，因此未封裝。",
 		"notFound": "找不到該專案。請先儲存後再試。",
 		"reloadFailed": "開啟封裝後無法重新載入專案。"
+	},
+	"resolveExport": {
+		"runningTitle": "Exporting for DaVinci Resolve",
+		"runningBody": "Preparing the media and the framing data. This can take a few minutes.",
+		"doneTitle": "Ready for DaVinci Resolve",
+		"doneBody": "The export is in {{path}}.",
+		"reveal": "Show in Finder",
+		"restartNeeded": "Restart DaVinci Resolve once first, so it loads the Filmareto Screen effect.",
+		"nextStep": "In DaVinci Resolve: Workspace → Scripts → Filmareto Import.",
+		"errorTitle": "Export for Resolve failed",
+		"notFound": "The project could not be found.",
+		"disabled": "Export for DaVinci Resolve is switched off in the app menu.",
+		"noFfmpeg": "ffmpeg was not found, so the media cannot be prepared.",
+		"noClips": "The project has no clip to export."
 	}
 }

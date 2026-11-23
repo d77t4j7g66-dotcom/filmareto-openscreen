@@ -3,14 +3,13 @@ import { contextualStrings, stageEndHint, toPrompterStage } from "../shared/prom
 import type {
 	FromHelper,
 	HotkeyAction,
-	PrompterPosition,
 	PrompterSettings,
 	PrompterUiState,
 	ToHelper,
 } from "../shared/protocol";
 import type { Script } from "../shared/script/types";
 import { type LogEventType, type SessionLog, SessionLogBuilder } from "../shared/sessionLog";
-import { formatHotkey, type Settings } from "../shared/settings";
+import { activeHotkeys, formatHotkey, nextPosition, type Settings } from "../shared/settings";
 import type { Hypothesis } from "../shared/speechTypes";
 import type { BridgeStatus } from "./helperBridge";
 
@@ -29,11 +28,16 @@ export type ControllerDeps = {
 	clock?: () => number;
 	wall?: () => Date;
 	onStatus?: (text: string) => void;
+	/** The helper reported an error: its code, for the window to word. */
+	onHelperError?: (code: string) => void;
+	/** What the helper could not register, after every `hotkeys.set`. Empty when all went through. */
 	onHotkeysFailed?: (failed: HotkeyAction[]) => void;
 	/** A segment was put on the prompter: the next one, the same one again, or one jumped to. */
 	onStageOpened?: (stageIndex: number) => void;
 	/** A take is running: a segment put on the prompter starts at once. */
 	isRecording?: () => boolean;
+	/** The camera the prompter may show behind the text; null while the camera is off. */
+	getCameraName?: () => string | null;
 	/** Called whenever something the control bar shows has changed. */
 	onState?: (state: PrompterUiState) => void;
 };
@@ -47,7 +51,6 @@ export type OpenRequest = {
 };
 
 const ENGINE = "sfspeech-el-GR-ondevice";
-const POSITIONS: PrompterPosition[] = ["notch", "free", "screen", "fullscreen"];
 const END_CHECK_MS = 100;
 const round3 = (x: number) => Math.round(x * 1000) / 1000;
 
@@ -122,6 +125,17 @@ export class PrompterController {
 		return this.finished;
 	}
 
+	get isVisible(): boolean {
+		return this.req !== null && this.visible;
+	}
+
+	/** Hides the panel even if it believes it is hidden: a reload may have shown it again. */
+	hide(): void {
+		if (!this.req) return;
+		this.visible = false;
+		this.send({ type: "prompter.setVisible", visible: false });
+	}
+
 	setVisible(visible: boolean): void {
 		if (!this.req || this.visible === visible) return;
 		this.visible = visible;
@@ -176,7 +190,7 @@ export class PrompterController {
 		} else {
 			this.pushSettings();
 		}
-		this.send({ type: "hotkeys.set", bindings: this.deps.getSettings().hotkeys });
+		this.send({ type: "hotkeys.set", bindings: activeHotkeys(this.deps.getSettings().hotkeys) });
 	}
 
 	// --- stage lifecycle ---
@@ -215,7 +229,8 @@ export class PrompterController {
 			startLineId: stage.lines[startIndex].id,
 			settings: settings.prompter,
 		});
-		this.send({ type: "hotkeys.set", bindings: settings.hotkeys });
+		this.send({ type: "hotkeys.set", bindings: activeHotkeys(settings.hotkeys) });
+		this.pushCamera();
 		this.status();
 		this.deps.onStageOpened?.(this.stageIndex);
 	}
@@ -235,10 +250,11 @@ export class PrompterController {
 	private status(text?: string): void {
 		const voice = this.mode() === "voice";
 		const label = voice ? "Voice sync" : this.mode() === "bullets" ? "Bullets" : "Constant speed";
-		const start = formatHotkey(this.deps.getSettings().hotkeys, "playPause");
+		const keys = formatHotkey(this.deps.getSettings().hotkeys, "playPause");
+		const start = keys ? ` ${keys} start` : "";
 		this.statusText =
 			text ??
-			(this.playing ? `${label} · ${voice ? "listening" : "scrolling"}` : `${label} · ⏸ ${start} start`);
+			(this.playing ? `${label} · ${voice ? "listening" : "scrolling"}` : `${label} · ⏸${start}`);
 		this.send({ type: "prompter.status", text: this.statusText });
 		this.notify();
 	}
@@ -247,7 +263,13 @@ export class PrompterController {
 		this.deps.bridge.send(msg);
 	}
 
+	/** Tells the helper which camera is on; it decides whether to show it. */
+	pushCamera(): void {
+		this.send({ type: "prompter.setCamera", name: this.deps.getCameraName?.() ?? null });
+	}
+
 	private pushSettings(): void {
+		this.pushCamera();
 		this.send({ type: "prompter.setSettings", settings: this.deps.getSettings().prompter });
 		this.notify();
 	}
@@ -381,10 +403,12 @@ export class PrompterController {
 				if (m.atEnd && this.playing && this.mode() === "manual") this.finishStage();
 				break;
 			case "hotkeys.result":
-				if (m.failed.length > 0) this.deps.onHotkeysFailed?.(m.failed);
+				this.deps.onHotkeysFailed?.(m.failed);
 				break;
 			case "error":
-				this.deps.onStatus?.(`Helper error: ${m.message}`);
+				// The helper's own text is for the log; the window words the code.
+				console.warn(`[teleprompter] helper error ${m.code}: ${m.message}`);
+				this.deps.onHelperError?.(m.code);
 				break;
 		}
 	}
@@ -439,7 +463,8 @@ export class PrompterController {
 			this.playing = false;
 			this.deps.updatePrompterSettings({ mode: "manual" });
 			this.pushSettings();
-			this.deps.onStatus?.(message ?? "Speech recognition is not available");
+			if (message) console.warn(`[teleprompter] speech: ${message}`);
+			this.deps.onStatus?.("Speech recognition is not available");
 			if (wasPlaying) this.begin();
 			else this.status();
 		} else if (state === "deviceLost") {
@@ -452,7 +477,8 @@ export class PrompterController {
 			this.deps.updatePrompterSettings({ mode: "manual" });
 			this.pushSettings();
 			this.status("Microphone disconnected: manual");
-			this.deps.onStatus?.(message ?? "Microphone disconnected");
+			if (message) console.warn(`[teleprompter] speech: ${message}`);
+			this.deps.onStatus?.("Microphone disconnected");
 		}
 	}
 
@@ -537,7 +563,7 @@ export class PrompterController {
 			case "cyclePosition": {
 				const current = this.deps.getSettings().prompter.position;
 				this.deps.updatePrompterSettings({
-					position: POSITIONS[(POSITIONS.indexOf(current) + 1) % POSITIONS.length],
+					position: nextPosition(current),
 				});
 				this.pushSettings();
 				break;

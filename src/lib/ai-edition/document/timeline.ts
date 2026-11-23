@@ -46,6 +46,7 @@ import { createId } from "./ids";
  *  {@link removeClip}, not here — deleting a clip reflows the whole timeline. */
 export type RegionKind =
 	| "zoom"
+	| "cameraZoom"
 	| "trim"
 	| "annotation"
 	| "speed"
@@ -393,6 +394,10 @@ export function mapAllRegionCollections(
 			document.zoomRanges as unknown as StoredRegion[],
 			"zoom",
 		) as unknown as AxcutDocument["zoomRanges"],
+		cameraZoomRanges: fn(
+			(document.cameraZoomRanges ?? []) as unknown as StoredRegion[],
+			"zoom",
+		) as unknown as AxcutDocument["cameraZoomRanges"],
 		shaderEffectRanges: fn(
 			(document.shaderEffectRanges ?? []) as unknown as StoredRegion[],
 			"fxr",
@@ -611,6 +616,9 @@ export function applyProbedDuration(
 	);
 }
 
+/** The reason `documentAfterProbedDuration` writes on the clip it seeds into an empty timeline. */
+export const SEEDED_CLIP_REASON = "Auto-created full-duration clip";
+
 /**
  * What a `loadedmetadata` event should write, or `null` for "write nothing".
  *
@@ -666,7 +674,7 @@ export function documentAfterProbedDuration(
 		return replaceTimeline(
 			docWithDuration,
 			[{ startSec: 0, endSec: knownSec }],
-			"Auto-created full-duration clip",
+			SEEDED_CLIP_REASON,
 		);
 	}
 	// The pure document layer patches only the clips of THIS asset that are still
@@ -744,6 +752,7 @@ function anchoredRegionsOf(document: AxcutDocument): Array<{ id: string; clipId:
 	const legacy = document.legacyEditor as Record<string, unknown> | null;
 	const collections: StoredRegion[][] = [
 		document.zoomRanges as unknown as StoredRegion[],
+		(document.cameraZoomRanges ?? []) as unknown as StoredRegion[],
 		document.annotations as unknown as StoredRegion[],
 		(legacy?.speedRegions as StoredRegion[] | undefined) ?? [],
 		(legacy?.cameraFullscreenRegions as StoredRegion[] | undefined) ?? [],
@@ -1083,7 +1092,14 @@ export function insertAssetClip(
 	index: number,
 	clip: Pick<
 		AxcutClip,
-		"id" | "assetId" | "sourceStartSec" | "origin" | "reason" | "segmentId" | "sceneId" | "alternates"
+		| "id"
+		| "assetId"
+		| "sourceStartSec"
+		| "origin"
+		| "reason"
+		| "segmentId"
+		| "sceneId"
+		| "alternates"
 	> & {
 		sourceEndSec: number;
 	},
@@ -1097,6 +1113,22 @@ export function insertAssetClip(
 		wordRefs: [],
 	});
 	return withClipsChanged(document, clips);
+}
+
+/**
+ * The document without the whole-take clip the editor seeded for `assetId` on its own.
+ *
+ * A take of a scene run joins a project whose timeline may still be empty. The file is saved before
+ * its scene clips are, so the preview's `loadedmetadata` can land in between, find no clip and seed
+ * the whole take; the scene clips then went in after it and the take played twice. Only a seeded
+ * clip of that asset with no scene goes: a clip the user placed or trimmed is never one of them.
+ */
+export function withoutSeededClipsOf(document: AxcutDocument, assetId: string): AxcutDocument {
+	const clips = document.timeline.clips;
+	const kept = clips.filter(
+		(clip) => !(clip.assetId === assetId && clip.reason === SEEDED_CLIP_REASON && !clip.sceneId),
+	);
+	return kept.length === clips.length ? document : withClipsChanged(document, kept);
 }
 
 /**
@@ -1246,6 +1278,14 @@ export function removeRegion(document: AxcutDocument, kind: RegionKind, id: stri
 				...document,
 				zoomRanges: dropPillById(document.zoomRanges, id) as AxcutDocument["zoomRanges"],
 			};
+		case "cameraZoom":
+			return {
+				...document,
+				cameraZoomRanges: dropPillById(
+					document.cameraZoomRanges ?? [],
+					id,
+				) as AxcutDocument["cameraZoomRanges"],
+			};
 		case "annotation":
 			return { ...document, annotations: dropPillById(document.annotations, id) };
 		case "audio":
@@ -1317,6 +1357,10 @@ const EDIT_REGIONS: Record<
 	{ count: (d: AxcutDocument) => number; clear: (d: AxcutDocument) => AxcutDocument }
 > = {
 	zoom: { count: (d) => d.zoomRanges.length, clear: (d) => ({ ...d, zoomRanges: [] }) },
+	cameraZoom: {
+		count: (d) => (d.cameraZoomRanges ?? []).length,
+		clear: (d) => ({ ...d, cameraZoomRanges: [] }),
+	},
 	annotation: { count: (d) => d.annotations.length, clear: (d) => ({ ...d, annotations: [] }) },
 	trim: {
 		count: (d) => d.timeline.trimRanges.length,

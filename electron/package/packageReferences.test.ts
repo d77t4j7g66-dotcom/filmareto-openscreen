@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { type AxcutDocument, createEmptyDocument } from "../../src/lib/ai-edition/schema";
 import {
 	collectPackageRefs,
+	micWavPathForVideo,
 	type PackageRef,
 	packageFolderName,
 	rewriteDocumentPaths,
@@ -73,6 +74,22 @@ describe("collectPackageRefs", () => {
 			kind: "session",
 			required: false,
 		});
+	});
+
+	it("brings the take's microphone WAV along, optional, beside its video", () => {
+		expect(micWavPathForVideo("/v/recording-1.mov")).toBe("/v/recording-1.mic.wav");
+		expect(micWavPathForVideo("/v/recording-1-webcam.mov")).toBe("/v/recording-1.mic.wav");
+		const refs = collectPackageRefs(withAssets([video("a1", "/v/recording-1.mp4")]));
+		expect(find(refs, "/v/recording-1.mic.wav")).toEqual({
+			sourcePath: "/v/recording-1.mic.wav",
+			packagePath: "media/recording-1.mic.wav",
+			kind: "voice",
+			required: false,
+		});
+		const clash = collectPackageRefs(
+			withAssets([video("a1", "/x/recording-1.mp4"), video("a2", "/y/recording-1.mp4")]),
+		);
+		expect(find(clash, "/y/recording-1.mic.wav")?.packagePath).toBe("media/2-recording-1.mic.wav");
 	});
 
 	it("gives audio assets no sidecars", () => {

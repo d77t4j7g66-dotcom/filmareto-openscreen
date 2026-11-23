@@ -1,5 +1,6 @@
 import {
 	ChevronDown,
+	Clapperboard,
 	Download,
 	FolderOpen,
 	FolderPlus,
@@ -36,6 +37,8 @@ export interface TopBarActions {
 	save: () => void;
 	packageForEditing: () => void;
 	openPackage: () => void;
+	/** Present only while the "Export for DaVinci Resolve" setting is on. */
+	exportForResolve?: () => void;
 	export: () => void;
 	openSettings: () => void;
 	renameProject: (title: string) => void;
@@ -438,6 +441,17 @@ function AppMenu({ actions }: { actions: TopBarActions }) {
 						<PackageOpen size={15} />
 						{tEditor("topbar.openPackage")}
 					</button>
+					{actions.exportForResolve ? (
+						<button
+							type="button"
+							role="menuitem"
+							className={styles.appMenuRow}
+							onClick={run(actions.exportForResolve)}
+						>
+							<Clapperboard size={15} />
+							{tEditor("topbar.exportForResolve")}
+						</button>
+					) : null}
 					<div className={styles.appMenuSep} aria-hidden />
 					<button
 						type="button"

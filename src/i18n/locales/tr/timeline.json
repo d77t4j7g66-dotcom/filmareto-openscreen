@@ -1,6 +1,8 @@
 {
 	"buttons": {
 		"addZoom": "Şu anki zamanda yakınlaştırma ekle",
+		"addCameraZoom": "Add camera zoom",
+		"autoCameraZooms": "Auto camera zooms",
 		"autoFocusAll": "Tüm yakınlaştırmalar için Otomatik Odak",
 		"autoFocusAllTip": "Tüm yakınlaştırmalar imleci takip eder. Kapalı: her yakınlaştırmanın odağını siz seçersiniz.",
 		"clearTimeline": "Tüm yakınlaştırma, kırpma, hız, açıklama ve Tam Ekran Kamera öğelerini kaldır. Klipler, ses ve altyazılar kalır.",
@@ -11,6 +13,7 @@
 	},
 	"hints": {
 		"pressZoom": "Yakınlaştırma eklemek için {{key}} tuşuna basın",
+		"pressCameraZoom": "Press Shift+Z to zoom the camera",
 		"pressTrim": "Kırpma eklemek için {{key}} tuşuna basın",
 		"pressAnnotation": "Açıklama eklemek için {{key}} tuşuna basın",
 		"pressAudio": "Ses eklemek için {{audioKey}}, seslendirme kaydetmek için {{voiceoverKey}} tuşuna basın",
@@ -25,6 +28,7 @@
 		"trim": "Kırp",
 		"speed": "Hız",
 		"zoomItem": "Yakınlaştırma {{index}}",
+		"cameraZoom": "Camera zoom",
 		"trimItem": "Kırpma {{index}}",
 		"speedItem": "Hız {{index}}",
 		"annotationItem": "Açıklama",
@@ -86,6 +90,8 @@
 		"importRecordingFirst": "Önce bir kayıt içe aktarın",
 		"noAutoZoomMoments": "Otomatik yakınlaştırma anı bulunamadı",
 		"noAutoZoomMomentsDescription": "Bu kayıtta kaydedilmiş tıklama yok ya da hiçbiri için yakınlaştırmaya yer yok.",
+		"noAutoCameraZooms": "No cuts to punch in on",
+		"noAutoCameraZoomsDescription": "Needs two or more touching clips where the camera fills the frame.",
 		"addedAutoZoom": "{{count}} otomatik yakınlaştırma eklendi",
 		"addedAutoZoomPlural": "{{count}} otomatik yakınlaştırma eklendi",
 		"autoZoomFailed": "Otomatik yakınlaştırma başarısız oldu",

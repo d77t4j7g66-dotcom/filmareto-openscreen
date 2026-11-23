@@ -31,6 +31,7 @@ const TOOLTIP_KEYS: Record<string, string[]> = {
 		"tooltips.camera",
 		"tooltips.openStudio",
 		"tooltips.openNotes",
+		"tooltips.editScript",
 		"cursor.name",
 		"cursor.editableTip",
 		"cursor.systemTip",

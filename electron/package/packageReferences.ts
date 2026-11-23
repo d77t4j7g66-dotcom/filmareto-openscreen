@@ -9,6 +9,7 @@ export type PackageRefKind =
 	| "camera"
 	| "cursor"
 	| "session"
+	| "voice"
 	| "graphic-frame"
 	| "derived";
 
@@ -20,6 +21,8 @@ export interface PackageRef {
 }
 
 export const RECORDING_SESSION_SUFFIX = ".session.json";
+/** 1.2.0: the microphone of a take as a 48 kHz 24-bit WAV, `<take>.mic.wav` beside it. */
+export const MIC_WAV_SUFFIX = ".mic.wav";
 const CURSOR_SIDECAR_SUFFIX = ".cursor.json";
 const GENERATED_ASSET_PREFIX = "ext:";
 const MAX_FOLDER_NAME_LENGTH = 80;
@@ -30,6 +33,16 @@ function sessionManifestPathWith(pathApi: typeof path.posix, videoPath: string):
 		? parsedPath.name.slice(0, -"-webcam".length)
 		: parsedPath.name;
 	return pathApi.join(parsedPath.dir, `${baseName}${RECORDING_SESSION_SUFFIX}`);
+}
+
+function micWavPathWith(pathApi: typeof path.posix, videoPath: string): string {
+	const manifest = sessionManifestPathWith(pathApi, videoPath);
+	return `${manifest.slice(0, -RECORDING_SESSION_SUFFIX.length)}${MIC_WAV_SUFFIX}`;
+}
+
+/** The microphone WAV of the take a video belongs to (a `-webcam` file shares its screen's). */
+export function micWavPathForVideo(videoPath: string): string {
+	return micWavPathWith(path, videoPath);
 }
 
 /** The recording-session manifest that sits next to a video (a `-webcam` file shares its screen's). */
@@ -74,8 +87,11 @@ export function collectPackageRefs(doc: AxcutDocument): PackageRef[] {
 			const owned = [`media/${name}`];
 			if (withSidecars) {
 				owned.push(`media/${name}${CURSOR_SIDECAR_SUFFIX}`);
-				// A session manifest already claimed is shared, not a second file.
-				if (recordingPrefix !== n) owned.push(sessionManifestPathWith(path.posix, `media/${name}`));
+				// A session manifest (and the take's WAV) already claimed is shared, not a second file.
+				if (recordingPrefix !== n) {
+					owned.push(sessionManifestPathWith(path.posix, `media/${name}`));
+					owned.push(micWavPathWith(path.posix, `media/${name}`));
+				}
 			}
 			if (owned.some((p) => taken.has(nameKey(p)))) continue;
 			for (const p of owned) taken.add(nameKey(p));
@@ -111,6 +127,12 @@ export function collectPackageRefs(doc: AxcutDocument): PackageRef[] {
 			sourcePath: sessionManifestPathForVideo(asset.originalPath),
 			packagePath: sessionManifestPathWith(path.posix, finalName),
 			kind: "session",
+			required: false,
+		});
+		add({
+			sourcePath: micWavPathForVideo(asset.originalPath),
+			packagePath: micWavPathWith(path.posix, finalName),
+			kind: "voice",
 			required: false,
 		});
 	}

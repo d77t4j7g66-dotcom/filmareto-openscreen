@@ -205,7 +205,7 @@ export function createAppRecorder(deps: AppRecorderDeps): AppRecorder {
 				projectId: document.project.id,
 				videoPath: asset.originalPath,
 				durationSec: asset.durationSec ?? 0,
-				autoZooms: document.zoomRanges?.length ?? 0,
+				autoZooms: (document.zoomRanges?.length ?? 0) + (document.cameraZoomRanges?.length ?? 0),
 			} satisfies RecordedTake;
 		} finally {
 			take.restore();

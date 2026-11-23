@@ -1,6 +1,8 @@
 {
 	"buttons": {
 		"addZoom": "Добавить масштабирование в текущий момент",
+		"addCameraZoom": "Add camera zoom",
+		"autoCameraZooms": "Auto camera zooms",
 		"autoFocusAll": "Автофокус для всех зумов",
 		"autoFocusAllTip": "Все зумы следуют за курсором. Выкл.: фокус каждого зума вы выбираете сами.",
 		"clearTimeline": "Удалить все зумы, обрезки, изменения скорости, аннотации и камеру на весь экран. Клипы, аудио и субтитры остаются.",
@@ -11,6 +13,7 @@
 	},
 	"hints": {
 		"pressZoom": "Нажмите {{key}} для добавления масштабирования",
+		"pressCameraZoom": "Press Shift+Z to zoom the camera",
 		"pressTrim": "Нажмите {{key}} для добавления обрезки",
 		"pressAnnotation": "Нажмите {{key}} для добавления аннотации",
 		"pressAudio": "Нажмите {{audioKey}}, чтобы добавить аудио, {{voiceoverKey}} — чтобы записать закадровый голос",
@@ -25,6 +28,7 @@
 		"trim": "Обрезка",
 		"speed": "Скорость воспроизведения",
 		"zoomItem": "Масштабирование {{index}}",
+		"cameraZoom": "Camera zoom",
 		"trimItem": "Обрезка {{index}}",
 		"speedItem": "Скорость воспроизведения {{index}}",
 		"annotationItem": "Аннотация",
@@ -86,6 +90,8 @@
 		"importRecordingFirst": "Сначала импортируйте запись",
 		"noAutoZoomMoments": "Моменты для автозума не найдены",
 		"noAutoZoomMomentsDescription": "В этой записи нет записанных кликов, или ни для одного из них нет места для зума.",
+		"noAutoCameraZooms": "No cuts to punch in on",
+		"noAutoCameraZoomsDescription": "Needs two or more touching clips where the camera fills the frame.",
 		"addedAutoZoom": "Добавлен {{count}} автоматический зум",
 		"addedAutoZoomPlural": "Добавлено {{count}} автоматических зумов",
 		"autoZoomFailed": "Не удалось выполнить автозум",

@@ -6,7 +6,9 @@
 // and TikTok draw their own text. Where there is no room left, it gets smaller rather than cover
 // the mouth.
 
-import type { AxcutDocument } from "../schema";
+import { mainTakeIsCamera } from "../document/cameraTake";
+import type { AxcutDocument, AxcutZoomRegion } from "../schema";
+import { faceAt } from "../timeline/faceTrack";
 import { coverAxis, faceUnderPlayhead } from "../timeline/yapping";
 import { effectiveZoomScale } from "../timeline/zoom-scale";
 
@@ -47,6 +49,11 @@ export function placeUnderChin(
 /**
  * The answer for each phrase of this document, or null when no phrase needs asking: a face only
  * moves under a caption when the footage fills the frame.
+ *
+ * A talking head's zooms are the camera lane's (its picture is the camera), yapping's punch-ins
+ * included, so over one both lanes are read. A camera zoom on Auto follows the face: it is centred
+ * on where the face is during the phrase (the face track, else the take's one face), and the face
+ * sits there, not on the zoom's stored point.
  */
 export function captionFaceGuard(
 	document: AxcutDocument,
@@ -54,26 +61,50 @@ export function captionFaceGuard(
 ): ((startMs: number, endMs: number, insetY: number, blockPct: number) => CaptionPlace) | null {
 	if (!document.assets.some((asset) => asset.face)) return null;
 	return (startMs, endMs, insetY, blockPct) => {
-		const face = faceUnderPlayhead(document, (startMs + endMs) / 2000);
+		const sec = (startMs + endMs) / 2000;
+		const face = faceUnderPlayhead(document, sec);
 		if (!face) return { insetY, scale: 1 };
+		const clip = document.timeline.clips.find(
+			(c) => c.timelineStartSec <= sec && sec < c.timelineEndSec,
+		);
 		const asset = document.assets.find((a) => a.face === face);
 		const video = asset?.video;
 		const sourceAspect = video && video.height > 0 ? video.width / video.height : frameAspect;
 		// How much of the source's height the frame shows before any zoom.
 		const shown = coverAxis(sourceAspect, frameAspect) === "y" ? sourceAspect / frameAspect : 1;
-		const zoom = (document.zoomRanges ?? [])
-			.filter((region) => region.startMs < endMs && region.endMs > startMs)
-			.map((region) => ({ scale: effectiveZoomScale(region), cy: region.focus.cy }))
-			.reduce((a, b) => (b.scale > a.scale ? b : a), { scale: 1, cy: face.y });
+		const talkingHead = mainTakeIsCamera(asset);
+		// Where the face is at the phrase's middle: the track, read at the take's own second.
+		const tracked =
+			talkingHead && clip && asset?.faceTrack?.length
+				? faceAt(asset.faceTrack, clip.sourceStartSec + (sec - clip.timelineStartSec))
+				: null;
+		const facedY = tracked?.y ?? face.y;
+		const overlaps = (region: AxcutZoomRegion) => region.startMs < endMs && region.endMs > startMs;
+		const zoom = [
+			...(document.zoomRanges ?? []).filter(overlaps).map((region) => ({
+				scale: effectiveZoomScale(region),
+				cy: region.focus.cy,
+				followsFace: false,
+			})),
+			...(talkingHead ? (document.cameraZoomRanges ?? []) : []).filter(overlaps).map((region) => {
+				const followsFace = region.focusMode === "auto";
+				return {
+					scale: effectiveZoomScale(region),
+					cy: followsFace ? facedY : region.focus.cy,
+					followsFace,
+				};
+			}),
+		].reduce((a, b) => (b.scale > a.scale ? b : a), { scale: 1, cy: face.y, followsFace: false });
+		const faceY = zoom.followsFace ? facedY : face.y;
 		const height = shown / zoom.scale;
 		const centre = Math.min(1 - height / 2, Math.max(height / 2, zoom.cy));
 		const inFrame = (y: number) => ((y - (centre - height / 2)) / height) * 100;
-		const faceHeight = face.h ?? USUAL_FACE_HEIGHT;
+		const faceHeight = (zoom.followsFace ? tracked?.h : undefined) ?? face.h ?? USUAL_FACE_HEIGHT;
 		return placeUnderChin(
 			insetY,
 			blockPct,
-			inFrame(face.y + faceHeight * EYES_TO_CHIN),
-			inFrame(face.y + faceHeight * EYES_TO_MOUTH),
+			inFrame(faceY + faceHeight * EYES_TO_CHIN),
+			inFrame(faceY + faceHeight * EYES_TO_MOUTH),
 		);
 	};
 }

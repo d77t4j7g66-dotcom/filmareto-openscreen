@@ -1,6 +1,8 @@
 {
 	"buttons": {
 		"addZoom": "إضافة تكبير عند الوقت الحالي",
+		"addCameraZoom": "Add camera zoom",
+		"autoCameraZooms": "Auto camera zooms",
 		"autoFocusAll": "التركيز التلقائي لجميع التكبيرات",
 		"autoFocusAllTip": "تتبع جميع التكبيرات المؤشر. عند الإيقاف: تختار بنفسك تركيز كل تكبير.",
 		"clearTimeline": "إزالة جميع التكبيرات وعمليات القص والسرعات والشروح والكاميرا كاملة الشاشة. تبقى المقاطع والصوت والترجمة.",
@@ -11,6 +13,7 @@
 	},
 	"hints": {
 		"pressZoom": "اضغط {{key}} لإضافة تكبير",
+		"pressCameraZoom": "Press Shift+Z to zoom the camera",
 		"pressTrim": "اضغط {{key}} لإضافة قص",
 		"pressAnnotation": "اضغط {{key}} لإضافة شرح",
 		"pressAudio": "اضغط {{audioKey}} لإضافة صوت، و{{voiceoverKey}} لتسجيل تعليق صوتي",
@@ -25,6 +28,7 @@
 		"trim": "قص",
 		"speed": "سرعة",
 		"zoomItem": "تكبير {{index}}",
+		"cameraZoom": "Camera zoom",
 		"trimItem": "قص {{index}}",
 		"speedItem": "سرعة {{index}}",
 		"annotationItem": "شرح",
@@ -86,6 +90,8 @@
 		"importRecordingFirst": "استورد تسجيلاً أولاً",
 		"noAutoZoomMoments": "لم يتم العثور على لحظات تكبير تلقائي",
 		"noAutoZoomMomentsDescription": "لا يحتوي هذا التسجيل على نقرات مسجلة، أو لا توجد نقرة تتسع لتكبير.",
+		"noAutoCameraZooms": "No cuts to punch in on",
+		"noAutoCameraZoomsDescription": "Needs two or more touching clips where the camera fills the frame.",
 		"addedAutoZoom": "تمت إضافة {{count}} تكبير تلقائي",
 		"addedAutoZoomPlural": "تمت إضافة {{count}} تكبيرات تلقائية",
 		"autoZoomFailed": "فشل التكبير التلقائي",

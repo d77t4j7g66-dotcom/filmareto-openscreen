@@ -11,6 +11,7 @@ import {
 } from "@/lib/nativeLinuxRecording";
 import {
 	type NativeMacRecordingRequest,
+	type NativeMacRecordingStartResult,
 	parseMacDisplayIdFromSourceId,
 	parseMacWindowIdFromSourceId,
 } from "@/lib/nativeMacRecording";
@@ -22,6 +23,7 @@ import type { CursorCaptureMode, RecordedVideoAssetInput } from "@/lib/recording
 import { loadUserPreferences, saveUserPreferences } from "@/lib/userPreferences";
 import { canRecordMicrophone } from "@/utils/platformUtils";
 import { createRecorderHandle, type RecorderHandle } from "./recorderHandle";
+import { useNativeCameraClaimed } from "./useNativeCameraClaimed";
 import {
 	DEFAULT_WEBCAM_QUALITY,
 	WEBCAM_TARGET_FRAME_RATE,
@@ -346,6 +348,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 
 	const screenRecorder = useRef<RecorderHandle | null>(null);
 	const webcamRecorder = useRef<RecorderHandle | null>(null);
+	const nativeCameraClaimed = useNativeCameraClaimed();
 	const nativeWindowsRecording = useRef<NativeWindowsRecordingHandle | null>(null);
 	const nativeMacRecording = useRef<NativeMacRecordingHandle | null>(null);
 	const nativeLinuxRecording = useRef<NativeLinuxRecordingHandle | null>(null);
@@ -364,6 +367,8 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 	const discardRecordingId = useRef<number | null>(null);
 	const restarting = useRef(false);
 	const countdownRunId = useRef(0);
+	/** Opens the hold of a take started during the countdown (see `startHeldNativeMacTake`). */
+	const openCountdownHold = useRef<(() => void) | null>(null);
 	const cursorAccessibilityWarningShown = useRef(false);
 	const [countdownActive, setCountdownActive] = useState(false);
 	const webcamReady = useRef(false);
@@ -492,7 +497,9 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 	);
 
 	useEffect(() => {
-		if (!webcamEnabled) return;
+		// 1.2.0: while the capture helper records the camera, this window's stream lets it go
+		// (the camera runs one format at a time) and is opened again when the take ends.
+		if (!webcamEnabled || nativeCameraClaimed) return;
 
 		let cancelled = false;
 		let acquiredStream: MediaStream | null = null;
@@ -566,7 +573,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 				webcamStream.current = null;
 			}
 		};
-	}, [webcamEnabled, webcamDeviceId, webcamDeviceName, webcamQuality, t]);
+	}, [webcamEnabled, webcamDeviceId, webcamDeviceName, webcamQuality, t, nativeCameraClaimed]);
 
 	const finalizeRecording = useCallback(
 		(
@@ -1150,6 +1157,8 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 		countdownRunId.current += 1;
 		setCountdownActive(false);
 		void safeHideCountdownOverlay(activeRunId);
+		// At once, not at the countdown's next tick: the held take lets the camera go now.
+		openCountdownHold.current?.();
 	};
 
 	const safeSetCountdownOverlayValue = async (value: number, runId: number) => {
@@ -1312,10 +1321,49 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 		}
 	};
 
+	/**
+	 * 1.2.0: a take with the camera starts during its countdown, held (`holdUntilResume`), so the
+	 * camera has woken up and settled its exposure by zero: opened at zero, its first second
+	 * faded in from black. `hold` resolves at zero and releases it; a cancelled countdown drops
+	 * it instead (null). A held start that failed is tried once more at zero, the old way, so
+	 * the hold never costs a take.
+	 */
+	const startHeldNativeMacTake = async (
+		request: NativeMacRecordingRequest,
+		hold: Promise<void>,
+		countdownRunToken?: number,
+	): Promise<NativeMacRecordingStartResult | null> => {
+		const starting = window.electronAPI
+			.startNativeMacRecording({ ...request, holdUntilResume: true })
+			.catch(
+				(cause: unknown): NativeMacRecordingStartResult => ({
+					success: false,
+					error: cause instanceof Error ? cause.message : String(cause),
+				}),
+			);
+		await hold;
+		if (!isCountdownRunActive(countdownRunToken)) {
+			await window.electronAPI.releaseNativeMacHold(true, request.recordingId);
+			if ((await starting).success) {
+				// Released before the cancel reached it: the take did start, so drop it.
+				await window.electronAPI.stopNativeMacRecording(true);
+			}
+			return null;
+		}
+		await window.electronAPI.releaseNativeMacHold(false, request.recordingId);
+		const result = await starting;
+		if (result.success || !isCountdownRunActive(countdownRunToken)) {
+			return result;
+		}
+		console.warn("[native-sck] the held start failed; starting at zero instead:", result.error);
+		return window.electronAPI.startNativeMacRecording(request);
+	};
+
 	const startNativeMacRecordingIfAvailable = async (
 		selectedSource: ProcessedDesktopSource,
 		recordMicrophone: boolean,
 		countdownRunToken?: number,
+		hold?: Promise<void> | null,
 	) => {
 		try {
 			const platform = window.electronAPI.getPlatform();
@@ -1353,6 +1401,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 			// webcam asset later instead of leaving the camera looking like it lags
 			// behind screen/audio (see webcamOffsetMs on NativeMacRecordingHandle).
 			let nativeWebcamRecorderStartedAtMs: number | null = null;
+			let fallbackWebcamStartedAtWallMs: number | null = null;
 			if (webcamEnabled) {
 				if (!webcamReady.current) {
 					await new Promise<void>((resolve) => {
@@ -1371,22 +1420,15 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 				if (!isCountdownRunActive(countdownRunToken)) {
 					return true;
 				}
-				if (webcamStream.current) {
-					nativeWebcamRecorderStartedAtMs = performance.now();
-					// Stream to disk. Buffered in memory, a long take had to be flattened
-					// into one ArrayBuffer at finalize -- past ~2GB that throws, and the
-					// camera was dropped without a word (#253). The main process reuses the
-					// recordingId we send here, so this name is the one finalize rebuilds.
-					nativeWebcamRecorder = createRecorderHandle(
-						webcamStream.current,
-						webcamRecorderOptions(webcamStream.current),
-						`${RECORDING_FILE_PREFIX}${activeRecordingId}${WEBCAM_FILE_SUFFIX}${VIDEO_FILE_EXTENSION}`,
-					);
-				} else {
+				// 1.2.0: the helper records the camera itself (HEVC Main 10, constant 30 fps).
+				// The browser recorder below is only the fallback when the helper says it could
+				// not open the camera.
+				if (!webcamStream.current) {
 					webcamAcquireId.current++;
 					setWebcamEnabledState(false);
 				}
 			}
+			const webcamRequested = webcamEnabled && Boolean(webcamStream.current);
 			if (!isCountdownRunActive(countdownRunToken)) {
 				return true;
 			}
@@ -1421,7 +1463,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 					},
 				},
 				webcam: {
-					enabled: webcamEnabled,
+					enabled: webcamRequested,
 					// Same pairing rule as the Windows path; here the stream is still
 					// open, so the identity can be read at the point of use.
 					...readWebcamDeviceIdentity(),
@@ -1436,7 +1478,13 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 					screenPath: "",
 				},
 			};
-			const result = await window.electronAPI.startNativeMacRecording(request);
+			const result = hold
+				? await startHeldNativeMacTake(request, hold, countdownRunToken)
+				: await window.electronAPI.startNativeMacRecording(request);
+			if (result === null) {
+				// The countdown was cancelled; the held take was dropped with it.
+				return true;
+			}
 			if (!result.success || !result.recordingId) {
 				throw new Error(result.error ?? "Native macOS capture failed.");
 			}
@@ -1453,6 +1501,30 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 			if (result.microphoneNotFound) {
 				toast.error(t("rec.noMicrophoneFound"));
 			}
+			if (webcamRequested && !result.webcamNative) {
+				// The main process gave the camera back; wait for this window's stream to reopen.
+				const deadline = performance.now() + 4000;
+				while (!webcamStream.current && performance.now() < deadline) {
+					await new Promise((resolve) => setTimeout(resolve, 100));
+				}
+			}
+			if (webcamRequested && !result.webcamNative) {
+				// Said out loud: a .webm in standard quality, not the HEVC master the user expects.
+				toast.warning(t("recording.cameraNotBroadcast"));
+			}
+			if (webcamRequested && !result.webcamNative && webcamStream.current) {
+				// The helper could not open the camera: the browser records it, as before 1.2.0.
+				// Stream to disk. Buffered in memory, a long take had to be flattened into one
+				// ArrayBuffer at finalize -- past ~2GB that throws, and the camera was dropped
+				// without a word (#253). The main process reuses the recordingId, so this name
+				// is the one finalize rebuilds.
+				fallbackWebcamStartedAtWallMs = Date.now();
+				nativeWebcamRecorder = createRecorderHandle(
+					webcamStream.current,
+					webcamRecorderOptions(webcamStream.current),
+					`${RECORDING_FILE_PREFIX}${result.recordingId}${WEBCAM_FILE_SUFFIX}${VIDEO_FILE_EXTENSION}`,
+				);
+			}
 
 			// The IPC call above only resolves once the helper's stdout confirms its
 			// screen capture has truly started (see waitForNativeMacCaptureStart in
@@ -1464,11 +1536,16 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 				recordingId: result.recordingId,
 				finalizing: false,
 				paused: false,
-				webcamOffsetMs: webcamOffsetMsFrom(
-					nativeWebcamRecorder,
-					nativeWebcamRecorderStartedAtMs,
-					nativeRecordingConfirmedStartedAtMs,
-				),
+				// The fallback recorder starts after the take's t=0 (the helper's own stamp of its
+				// first frame, wall clock): a positive offset, the camera starting late.
+				webcamOffsetMs:
+					fallbackWebcamStartedAtWallMs !== null && typeof result.startedAtMs === "number"
+						? Math.max(0, Math.round(fallbackWebcamStartedAtWallMs - result.startedAtMs))
+						: webcamOffsetMsFrom(
+								nativeWebcamRecorder,
+								nativeWebcamRecorderStartedAtMs,
+								nativeRecordingConfirmedStartedAtMs,
+							),
 			};
 			webcamRecorder.current = nativeWebcamRecorder;
 			accumulatedDurationMs.current = 0;
@@ -1735,6 +1812,19 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 
 		setCountdownActive(true);
 
+		// 1.2.0: on macOS a take with the camera starts now, held until zero, so the camera has
+		// woken up by then (see `startHeldNativeMacTake`). Zero opens the hold; so does every
+		// other way out of the countdown, where the start sees the run cancelled and drops it.
+		let openHold: () => void = () => undefined;
+		const hold =
+			window.electronAPI.getPlatform() === "darwin" && webcamEnabled
+				? new Promise<void>((resolve) => {
+						openHold = resolve;
+					})
+				: null;
+		openCountdownHold.current = openHold;
+		const heldStart = hold ? startRecording(runId, preparedRecordingId, hold) : null;
+
 		let overlayHiddenBeforeStart = false;
 		try {
 			const values = [3, 2, 1];
@@ -1772,8 +1862,17 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 				return;
 			}
 
-			await startRecording(runId, preparedRecordingId);
+			if (heldStart) {
+				openHold();
+				await heldStart;
+			} else {
+				await startRecording(runId, preparedRecordingId);
+			}
 		} finally {
+			openHold();
+			if (openCountdownHold.current === openHold) {
+				openCountdownHold.current = null;
+			}
 			if (!overlayHiddenBeforeStart && countdownRunId.current === runId) {
 				setCountdownActive(false);
 				await safeHideCountdownOverlay(runId);
@@ -1792,6 +1891,8 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 	const startRecording = async (
 		countdownRunToken?: number,
 		preparedRecordingId?: number | null,
+		/** Set when the start runs during the countdown (a held macOS take): resolves at zero. */
+		hold?: Promise<void> | null,
 	) => {
 		const platform = window.electronAPI.getPlatform();
 		const browserCursorCaptureMode = effectiveBrowserCursorMode(platform, cursorCaptureMode);
@@ -1850,9 +1951,18 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 					selectedSource,
 					recordMicrophone,
 					countdownRunToken,
+					hold,
 				)
 			) {
 				return;
+			}
+			// Started during the countdown for a held take that did not happen: nothing else may
+			// start recording before zero.
+			if (hold) {
+				await hold;
+				if (!isCountdownRunActive(countdownRunToken)) {
+					return;
+				}
 			}
 
 			// Capture screen + microphone in parallel: the gap between the two

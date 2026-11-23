@@ -101,6 +101,15 @@ const DEFAULT_CROP_PAN: CropPan = { x: 0.5, y: 0.5 };
 
 export type SegmentScene = "camera" | "screen";
 
+/**
+ * Where the centre of a vertical cut sits in the recording, 0..1 per axis (0 left / top, 1 right
+ * / bottom). `null` in the settings is Auto: the cut follows the face or the cursor.
+ */
+export interface FillPosition {
+	x: number;
+	y: number;
+}
+
 export interface EditorSettingsSnapshot {
 	wallpaper: string;
 	/** Only a gradient wallpaper moves; kept as chosen when the wallpaper changes kind. */
@@ -120,6 +129,14 @@ export interface EditorSettingsSnapshot {
 	 * recording whole. See `formatFillAvailability`.
 	 */
 	formatFollowCursor: boolean | null;
+	/**
+	 * While the format is filled: where the centre of the cut sits in the recording, in place of
+	 * the face or the cursor. `null` is Auto, and what every project saved before it reads as.
+	 * The compositor keeps the cut inside the recording, so the ends of the range are safe.
+	 * Only a camera take's cut is placed so (`fillPositionApplies`): a screen's stays on Auto, and
+	 * a value a screen take still carries is not drawn.
+	 */
+	fillPosition: FillPosition | null;
 	shadowIntensity: number;
 	backgroundBlur: number;
 	motionBlurAmount: number;
@@ -166,6 +183,9 @@ export interface EditorSettingsSnapshot {
 	/** Where the crop window sits in the room the zoom leaves it, 0..1 per axis.
 	 *  Authoritative: `webcamCropRegion.x/y` are rebuilt from it on read. */
 	webcamCropPan: CropPan;
+	/** Where the camera's cover cut sits when the crop is the whole frame (the box is not the
+	 *  camera's shape, so the picture is cut to it). null: centred, as every project before it. */
+	webcamCoverPan: CropPan | null;
 	audioGainDb: number;
 	/** The recording's own system audio and microphone, each on top of the master level, in dB. */
 	recordingSystemGainDb: number;
@@ -195,6 +215,7 @@ export const DEFAULT_EDITOR_SETTINGS: EditorSettingsSnapshot = {
 	cropRegion: DEFAULT_CROP_REGION,
 	webcamCropRegion: DEFAULT_CROP_REGION,
 	webcamCropPan: DEFAULT_CROP_PAN,
+	webcamCoverPan: null,
 	audioGainDb: 0,
 	recordingSystemGainDb: 0,
 	recordingMicGainDb: 0,
@@ -202,6 +223,7 @@ export const DEFAULT_EDITOR_SETTINGS: EditorSettingsSnapshot = {
 	recordingDuckDepthDb: DUCK_DEPTH_DEFAULT_DB,
 	recordingDuckRegions: null,
 	formatFollowCursor: null,
+	fillPosition: null,
 	segmentScene: null,
 };
 
@@ -215,6 +237,7 @@ interface LegacyShape {
 	screenAspect?: AspectRatio;
 	webcamAspect?: AspectRatio;
 	formatFollowCursor?: boolean;
+	fillPosition?: unknown;
 	shadowIntensity?: number;
 	backgroundBlur?: number;
 	/** Before the amount: an on/off switch. Read by `readBackgroundBlur`, never written. */
@@ -254,6 +277,7 @@ interface LegacyShape {
 	webcamPosition?: WebcamPosition | null;
 	webcamCropRegion?: CropRegion;
 	webcamCropPan?: CropPan;
+	webcamCoverPan?: unknown;
 	audioGainDb?: number;
 	recordingSystemGainDb?: number;
 	recordingMicGainDb?: number;
@@ -279,6 +303,13 @@ interface LegacyShape {
 	cursorAutoHide?: boolean;
 	cursorTheme?: string;
 	autoFocusAll?: boolean;
+}
+/** A stored position, each axis held to 0..1; anything that is not a pair of numbers is Auto. */
+function readFillPosition(value: unknown): FillPosition | null {
+	if (!value || typeof value !== "object") return null;
+	const { x, y } = value as Record<string, unknown>;
+	if (!isNumber(x) || !isNumber(y)) return null;
+	return { x: Math.min(1, Math.max(0, x)), y: Math.min(1, Math.max(0, y)) };
 }
 function isShape(value: unknown): value is LegacyShape {
 	return typeof value === "object" && value !== null;
@@ -386,6 +417,7 @@ export function getEditorSettings(doc: AxcutDocument | null | undefined): Editor
 		webcamAspect: legacy?.webcamAspect ?? DEFAULT_EDITOR_SETTINGS.webcamAspect,
 		formatFollowCursor:
 			typeof legacy?.formatFollowCursor === "boolean" ? legacy.formatFollowCursor : null,
+		fillPosition: readFillPosition(legacy?.fillPosition),
 		// Every number below is read into its `SETTING_BOUNDS` range: the slider's range, and the
 		// one a preset and the agent are held to. A stored value past it plays at the bound.
 		shadowIntensity: readBounded(
@@ -452,6 +484,7 @@ export function getEditorSettings(doc: AxcutDocument | null | undefined): Editor
 		webcamAnchor: readWebcamAnchor(legacy?.webcamAnchor, legacy?.webcamPosition),
 		webcamCropRegion: webcamCrop,
 		webcamCropPan: webcamCropPan,
+		webcamCoverPan: readFillPosition(legacy?.webcamCoverPan),
 		// Same bound the slider offers and the native `finish_audio` clamps to. Two
 		// different ranges for one value is how a project ends up exporting a gain the
 		// UI cannot display.
@@ -505,6 +538,8 @@ export interface EditorSettingsPatch {
 	screenAspect?: AspectRatio;
 	webcamAspect?: AspectRatio;
 	formatFollowCursor?: boolean;
+	/** `null` puts the cut back on Auto. */
+	fillPosition?: FillPosition | null;
 	shadowIntensity?: number;
 	backgroundBlur?: number;
 	motionBlurAmount?: number;
@@ -540,6 +575,8 @@ export interface EditorSettingsPatch {
 	webcamAnchor?: WebcamAnchor;
 	webcamCropRegion?: CropRegion;
 	webcamCropPan?: CropPan;
+	/** `null` centres the cut again. */
+	webcamCoverPan?: CropPan | null;
 	audioGainDb?: number;
 	recordingSystemGainDb?: number;
 	recordingMicGainDb?: number;
@@ -608,6 +645,7 @@ export const SEGMENT_LOOK_KEYS = [
 	"borderRadius",
 	"padding",
 	"screenAspect",
+	"fillPosition",
 	"webcamLayoutPreset",
 	"webcamMaskShape",
 	"webcamRoundness",
@@ -636,6 +674,7 @@ export const SEGMENT_LOOK_KEYS = [
 	"webcamDodge",
 	"webcamCropRegion",
 	"webcamCropPan",
+	"webcamCoverPan",
 	"webcamBackgroundMode",
 	"webcamBlurIntensity",
 ] as const satisfies readonly (keyof LegacyShape)[];

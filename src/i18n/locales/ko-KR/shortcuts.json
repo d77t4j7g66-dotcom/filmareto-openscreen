@@ -35,6 +35,7 @@
 		"cycleAnnotationsForward": "주석 앞으로 순환",
 		"cycleAnnotationsBackward": "주석 뒤로 순환",
 		"deleteSelectedAlt": "선택 항목 삭제 (대체)",
+		"addCameraZoom": "Add Camera Zoom",
 		"panTimeline": "타임라인 이동",
 		"zoomTimeline": "타임라인 확대/축소",
 		"frameBack": "이전 프레임",

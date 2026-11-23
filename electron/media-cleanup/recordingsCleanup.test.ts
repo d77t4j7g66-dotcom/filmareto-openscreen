@@ -5,7 +5,10 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { AxcutDocument } from "../../src/lib/ai-edition/schema";
 import { createEmptyDocument } from "../../src/lib/ai-edition/schema";
 import {
+	type AssetTrashDeps,
 	type CleanupDeps,
+	commitAssetTrash,
+	prepareAssetTrash,
 	sweepUnusedTakes,
 	trashDeletedProject,
 	unusedRecordingAssetIds,
@@ -367,5 +370,194 @@ describe("sweepUnusedTakes", () => {
 		});
 
 		expect(await exists(shared)).toBe(true);
+	});
+});
+
+describe("deleting a media item from disk (prepare, then commit)", () => {
+	/** `saved` is what main's store holds for each project; the commit re-reads it. */
+	function assetDeps(saved: Map<string, AxcutDocument>, trashed: string[] = []): AssetTrashDeps {
+		const base = deps([...saved.values()]);
+		return {
+			...base,
+			readAllProjectFilesRaw: async () =>
+				[...saved.values()].map((doc) => ({
+					filePath: path.join(root, "projects", `${doc.project.id}.openscreen`),
+					raw: JSON.stringify(doc),
+				})),
+			trash: async (file) => {
+				trashed.push(path.basename(file));
+				await base.trash(file);
+			},
+			getProject: async (id) => {
+				const doc = saved.get(id);
+				if (!doc) throw new Error("no such project");
+				return doc;
+			},
+			approvedPath: (file) => (/\.(mp4|webm|mov)$/.test(file) ? file : null),
+		};
+	}
+
+	/** The project after the renderer removed the asset and saved. */
+	const without = (doc: AxcutDocument, assetId: string): AxcutDocument =>
+		({ ...doc, assets: doc.assets.filter((a) => a.id !== assetId) }) as AxcutDocument;
+
+	it("sends a take and its sidecars to the Trash once the asset left the saved project", async () => {
+		const screen = await take("recording-300");
+		await fs.writeFile(path.join(recordings, "recording-300.mic.wav"), "x");
+		const doc = project("a", [screen]);
+		const saved = new Map([["a", doc]]);
+		const trashed: string[] = [];
+		const d = assetDeps(saved, trashed);
+
+		const prepared = await prepareAssetTrash(d, "a", doc.assets[0].id);
+		expect(prepared?.files.map((f) => path.basename(f)).sort()).toEqual(
+			[
+				"recording-300.mp4",
+				"recording-300.mp4.cursor.json",
+				"recording-300-webcam.webm",
+				"recording-300.session.json",
+				"recording-300.mic.wav",
+			].sort(),
+		);
+
+		saved.set("a", without(doc, doc.assets[0].id));
+		const result = await commitAssetTrash(d, prepared?.token ?? "");
+
+		expect(result.shared).toBe(false);
+		expect(trashed.sort()).toEqual(prepared?.files.map((f) => path.basename(f)).sort());
+		expect(await exists(screen)).toBe(false);
+	});
+
+	it("refuses a commit before the asset has left the saved project", async () => {
+		const screen = await take("recording-301");
+		const doc = project("a", [screen]);
+		const trashed: string[] = [];
+		const d = assetDeps(new Map([["a", doc]]), trashed);
+		const prepared = await prepareAssetTrash(d, "a", doc.assets[0].id);
+
+		const result = await commitAssetTrash(d, prepared?.token ?? "");
+
+		expect(result.refused).toBe(true);
+		expect(trashed).toEqual([]);
+		expect(await exists(screen)).toBe(true);
+	});
+
+	it("refuses a token it never issued, and a token used twice", async () => {
+		const screen = await take("recording-302");
+		const doc = project("a", [screen]);
+		const saved = new Map([["a", doc]]);
+		const d = assetDeps(saved);
+		expect((await commitAssetTrash(d, "/etc/hosts")).refused).toBe(true);
+		const prepared = await prepareAssetTrash(d, "a", doc.assets[0].id);
+		saved.set("a", without(doc, doc.assets[0].id));
+		await commitAssetTrash(d, prepared?.token ?? "");
+		expect((await commitAssetTrash(d, prepared?.token ?? "")).refused).toBe(true);
+	});
+
+	it("prepares nothing for an asset the project does not have, or for another project's", async () => {
+		const screen = await take("recording-303");
+		const mine = project("a", [screen]);
+		const theirs = project("b", [await take("recording-304")]);
+		const d = assetDeps(
+			new Map([
+				["a", mine],
+				["b", theirs],
+			]),
+		);
+		expect(await prepareAssetTrash(d, "a", "not-an-asset")).toBeNull();
+		expect(await prepareAssetTrash(d, "a", theirs.assets[0].id)).toBeNull();
+		expect(await prepareAssetTrash(d, "nope", mine.assets[0].id)).toBeNull();
+	});
+
+	it("refuses a path that is not a regular media file: a folder, a link, an unapproved type", async () => {
+		const folder = path.join(root, "Desktop", "clip.mp4");
+		await fs.mkdir(folder, { recursive: true });
+		const target = path.join(root, "Desktop", "real.mp4");
+		await fs.writeFile(target, "x");
+		const link = path.join(root, "Desktop", "link.mp4");
+		await fs.symlink(target, link);
+		const text = path.join(root, "Desktop", "notes.txt");
+		await fs.writeFile(text, "x");
+		const doc = project("a", [folder, link, text]);
+		for (const asset of doc.assets) asset.cameraTrack = null;
+		const d = assetDeps(new Map([["a", doc]]));
+
+		for (const asset of doc.assets) {
+			expect(await prepareAssetTrash(d, "a", asset.id), asset.originalPath).toBeNull();
+		}
+		expect(await exists(target)).toBe(true);
+	});
+
+	it("does not trash a file another project still uses", async () => {
+		const screen = await take("recording-305");
+		const mine = project("a", [screen]);
+		const other = project("b", [screen]);
+		const saved = new Map([
+			["a", mine],
+			["b", other],
+		]);
+		const trashed: string[] = [];
+		const d = assetDeps(saved, trashed);
+		const prepared = await prepareAssetTrash(d, "a", mine.assets[0].id);
+		saved.set("a", without(mine, mine.assets[0].id));
+
+		const result = await commitAssetTrash(d, prepared?.token ?? "");
+
+		expect(result.shared).toBe(true);
+		expect(trashed).toEqual([]);
+		expect(await exists(screen)).toBe(true);
+	});
+
+	it("does not trash a file this project still uses through another asset", async () => {
+		const screen = await take("recording-306");
+		const doc = project("a", [screen, screen]);
+		const saved = new Map([["a", doc]]);
+		const d = assetDeps(saved);
+		const prepared = await prepareAssetTrash(d, "a", doc.assets[0].id);
+		saved.set("a", without(doc, doc.assets[0].id));
+		expect((await commitAssetTrash(d, prepared?.token ?? "")).shared).toBe(true);
+		expect(await exists(screen)).toBe(true);
+	});
+
+	it("moves exactly the named file when the app did not make it, and no neighbour", async () => {
+		const dir = path.join(root, "Desktop");
+		await fs.mkdir(dir, { recursive: true });
+		const named = path.join(dir, "interview.mp4");
+		const neighbours = ["interview-webcam.mp4", "interview.mic.wav", "interview.mp4.cursor.json"];
+		await fs.writeFile(named, "x");
+		for (const name of neighbours) await fs.writeFile(path.join(dir, name), "x");
+		const doc = project("a", [named]);
+		doc.assets[0].cameraTrack = null;
+		const saved = new Map([["a", doc]]);
+		const trashed: string[] = [];
+		const d = assetDeps(saved, trashed);
+
+		const prepared = await prepareAssetTrash(d, "a", doc.assets[0].id);
+		expect(prepared?.files).toEqual([named]);
+		saved.set("a", without(doc, doc.assets[0].id));
+		await commitAssetTrash(d, prepared?.token ?? "");
+
+		expect(trashed).toEqual(["interview.mp4"]);
+		for (const name of neighbours) expect(await exists(path.join(dir, name)), name).toBe(true);
+	});
+
+	it("moves nothing when a project file cannot be read", async () => {
+		const screen = await take("recording-307");
+		const doc = project("a", [screen]);
+		const saved = new Map([["a", doc]]);
+		const d = assetDeps(saved);
+		const prepared = await prepareAssetTrash(d, "a", doc.assets[0].id);
+		saved.set("a", without(doc, doc.assets[0].id));
+		const result = await commitAssetTrash(
+			{
+				...d,
+				readAllProjectFilesRaw: async () => {
+					throw new Error("unreadable");
+				},
+			},
+			prepared?.token ?? "",
+		);
+		expect(result.failedClosed).toBe(true);
+		expect(await exists(screen)).toBe(true);
 	});
 });

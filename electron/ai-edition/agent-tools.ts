@@ -29,6 +29,8 @@ import {
 	placeAudioTrackInDocument,
 	trackGroupId,
 } from "../../src/lib/ai-edition/document/audioTracks";
+import { mainTakeIsCamera } from "../../src/lib/ai-edition/document/cameraTake";
+import { cameraZoomDefaultFocus } from "../../src/lib/ai-edition/document/cameraZooms";
 import { createId } from "../../src/lib/ai-edition/document/ids";
 import { resolveAspectRatioValue } from "../../src/lib/ai-edition/document/outputFormat";
 import {
@@ -132,6 +134,8 @@ function modifierIds(document: AxcutDocument, kind: ModifierKind): string[] {
 	switch (kind) {
 		case "zoom":
 			return document.zoomRanges.map((region) => region.id);
+		case "cameraZoom":
+			return (document.cameraZoomRanges ?? []).map((region) => region.id);
 		case "annotation":
 			return document.annotations.map((region) => region.id);
 		case "speed":
@@ -602,6 +606,7 @@ function modifierIdsOf(document: AxcutDocument): string[] {
 		(legacy.cameraFullscreenRegions as Array<{ id: string }> | undefined) ?? [];
 	return [
 		...document.zoomRanges.map((r) => r.id),
+		...(document.cameraZoomRanges ?? []).map((r) => r.id),
 		...document.annotations.map((r) => r.id),
 		...speedRegions.map((r) => r.id),
 		...cameraFullscreenRegions.map((r) => r.id),
@@ -788,6 +793,12 @@ const customScaleSchema = z
 		`A free zoom level, as a factor (${MIN_ZOOM_SCALE}–${MAX_ZOOM_SCALE}, e.g. 2 for 2×), in place of depth. Refused past the clip's own limit, the deepest its recording takes before it blurs; the refusal names it.`,
 	);
 
+const zoomLaneSchema = z
+	.enum(["screen", "camera"])
+	.describe(
+		'Which picture the zoom pushes in on: "screen" zooms the screen recording; "camera" zooms the camera picture, the face of a talking head or the camera shown full screen. Left out, it is "camera" on a talking head (whose picture is the camera) and "screen" elsewhere; "screen" on a talking head is refused, as nothing would show. A camera zoom may overlap a screen zoom, never another camera zoom.',
+	);
+
 export const addZoomArgs = z.object({
 	startSec: secondsSchema,
 	endSec: secondsSchema,
@@ -797,11 +808,24 @@ export const addZoomArgs = z.object({
 	depth: depthSchema
 		.optional()
 		.describe("Defaults to 3 when neither depth nor customScale is given."),
-	focus: focusSchema.default({ cx: 0.5, cy: 0.5 }),
+	// No schema default, for the same reason as `depth`: the centre on the screen lane, the upper
+	// middle on the camera lane, which only the handler knows.
+	focus: focusSchema
+		.optional()
+		.describe(
+			"Defaults to the centre (0.5, 0.5) on the screen lane and to the upper middle (0.5, 0.4) on the camera lane, where it is only where an Auto zoom looks while no face is known.",
+		),
 	rotationPreset: rotationPresetSchema.default("none"),
-	focusMode: focusModeSchema.default("manual"),
+	// No schema default, for the same reason as `depth`: it is "manual" on the screen lane and
+	// "auto" (follow the face) on the camera lane, which only the handler knows.
+	focusMode: focusModeSchema
+		.optional()
+		.describe(
+			'Defaults to "manual" on the screen lane and "auto" (follows the face) on the camera lane.',
+		),
 	hideCursor: z.boolean().default(false),
 	customScale: customScaleSchema.optional(),
+	lane: zoomLaneSchema.optional(),
 });
 
 /** A zoom with its 3D camera set: `none` drops the key, as a flat zoom never carries it. */
@@ -854,8 +878,13 @@ function refuseScalePastLimit(
 function zoomBehaviourReport(
 	zoom: AxcutDocument["zoomRanges"][number],
 	document: AxcutDocument,
+	lane: "screen" | "camera" = "screen",
 ): Record<string, unknown> {
-	const autoFocusAll = (document.legacyEditor as Record<string, unknown> | null)?.autoFocusAll;
+	// The global Auto-Focus toggle is the screen's: a camera zoom's focus mode is its own.
+	const autoFocusAll =
+		lane === "camera"
+			? false
+			: (document.legacyEditor as Record<string, unknown> | null)?.autoFocusAll;
 	return {
 		focusMode: autoFocusAll === true ? "auto" : (zoom.focusMode ?? "manual"),
 		...(autoFocusAll === true && zoom.focusMode !== "auto"
@@ -864,6 +893,61 @@ function zoomBehaviourReport(
 		...(zoom.hideCursor ? { hideCursor: true } : {}),
 		...(zoom.customScale != null ? { customScale: zoom.customScale } : {}),
 	};
+}
+
+type ZoomLane = z.infer<typeof zoomLaneSchema>;
+type ZoomRegions = AxcutDocument["zoomRanges"];
+
+const zoomListOf = (document: AxcutDocument, lane: ZoomLane): ZoomRegions =>
+	lane === "camera" ? ((document.cameraZoomRanges ?? []) as ZoomRegions) : document.zoomRanges;
+
+const withZoomList = (
+	document: AxcutDocument,
+	lane: ZoomLane,
+	regions: ZoomRegions,
+): AxcutDocument =>
+	lane === "camera"
+		? { ...document, cameraZoomRanges: regions as AxcutDocument["cameraZoomRanges"] }
+		: { ...document, zoomRanges: regions };
+
+/** The lane a zoom id is stored in, or null when it is in neither. */
+function zoomLaneOfId(document: AxcutDocument, id: string): ZoomLane | null {
+	if (document.zoomRanges.some((zoom) => zoom.id === id)) return "screen";
+	if ((document.cameraZoomRanges ?? []).some((zoom) => zoom.id === id)) return "camera";
+	return null;
+}
+
+/**
+ * How much of a ruler span sits on talking heads (`mainTakeIsCamera`): all the clips under it,
+ * some, or none. Over a talking head the picture is the camera, and the scene drops a screen zoom
+ * there, so a zoom on one belongs to the camera lane.
+ */
+function talkingHeadsUnder(
+	document: AxcutDocument,
+	startMs: number,
+	endMs: number,
+): { share: "all" | "some" | "none"; headClipId?: string } {
+	const under = document.timeline.clips.filter(
+		(clip) => clip.timelineStartSec * 1000 < endMs && clip.timelineEndSec * 1000 > startMs,
+	);
+	const heads = under.filter((clip) =>
+		mainTakeIsCamera(document.assets.find((asset) => asset.id === clip.assetId)),
+	);
+	if (heads.length === 0) return { share: "none" };
+	return { share: heads.length === under.length ? "all" : "some", headClipId: heads[0].id };
+}
+
+/** The refusal of a screen zoom over a talking head, where it would not show. */
+function screenZoomOnTalkingHead(
+	startMs: number,
+	endMs: number,
+	headClipId: string | undefined,
+	verb: "written" | "moved",
+): AgentToolExecution {
+	return failure(
+		`The zoom was NOT ${verb}: ${formatSec(startMs / 1000)} – ${formatSec(endMs / 1000)} sits on a talking head (clip ${headClipId}), whose picture is the camera, and a screen zoom does not show there. ` +
+			'Use lane "camera" (or leave lane out) for a zoom over it; over a span that also covers a screen take, add one zoom per clip.',
+	);
 }
 
 /** Same contract as `addTrimsArgs`: the element schema IS the unitary one, and
@@ -882,6 +966,11 @@ export const setZoomArgs = z.object({
 	focusMode: focusModeSchema.optional(),
 	hideCursor: z.boolean().optional(),
 	customScale: customScaleSchema.optional(),
+	lane: zoomLaneSchema
+		.optional()
+		.describe(
+			'Moves the zoom to this lane when given (a zoom is found on either lane by its id). When omitted it stays in its lane, except that a zoom landing wholly on a talking head goes to the camera lane, keeping its focus; "screen" on a talking head is refused. Refused when it would overlap a zoom already in that lane. A zoom taken to the camera lane with lane "camera" follows the face, else looks at the upper middle (0.5, 0.4), unless focus or focusMode is passed with it.',
+		),
 });
 
 // The bound every speed reader applies (`readSpeedRegions`): refused here, so the agent hears
@@ -1458,6 +1547,22 @@ export function documentSnapshotForModel(
 				source: z.source ?? "manual",
 			}),
 		),
+		// The camera's own zooms (`lane: "camera"`): pushes in on the camera picture, over the face
+		// when its focus is "auto". They may overlap the screen zooms above, never each other.
+		cameraZoomRanges: coalesceForAgent(document.cameraZoomRanges ?? []).map((z) => ({
+			id: z.id,
+			startSec: roundSec(z.startMs),
+			endSec: roundSec(z.endMs),
+			depth: z.depth,
+			renderedScale: effectiveZoomScale(z),
+			...(z.customScale != null ? { customScale: z.customScale, depthIsOverridden: true } : {}),
+			...(z.rotationPreset ? { rotationPreset: z.rotationPreset } : {}),
+			focus: z.focus,
+			focusMode: z.focusMode ?? "manual",
+			...(z.motion ? { motion: z.motion } : {}),
+			...(z.hideCursor ? { hideCursor: true } : {}),
+			source: z.source ?? "manual",
+		})),
 		speedRegions: coalesceForAgent(speedRegions).map((s) => ({
 			id: s.id,
 			startSec: roundSec(s.startMs),
@@ -2897,50 +3002,92 @@ export function executeAgentTool(
 			const startMs = toMs(Math.min(parsed.data.startSec, parsed.data.endSec));
 			const endMs = toMs(Math.max(parsed.data.startSec, parsed.data.endSec));
 			const level = zoomLevelArg(parsed.data.customScale);
+			// Over a talking head the picture is the camera: the zoom is the camera lane's, and a
+			// screen zoom there would never show.
+			const heads = talkingHeadsUnder(document, startMs, endMs);
+			if (heads.share !== "none" && parsed.data.lane === "screen") {
+				return screenZoomOnTalkingHead(startMs, endMs, heads.headClipId, "written");
+			}
+			if (heads.share === "some" && parsed.data.lane === undefined) {
+				return failure(
+					`The zoom was NOT written: ${formatSec(startMs / 1000)} – ${formatSec(endMs / 1000)} covers a talking head (clip ${heads.headClipId}) and a screen take. ` +
+						'A screen zoom does not show over the talking head, so add one zoom per clip (lane "camera" over the talking head), or pass lane "camera" to zoom the camera over the whole span.',
+				);
+			}
+			const laneFromTalkingHead = parsed.data.lane === undefined && heads.share === "all";
+			const lane: ZoomLane = parsed.data.lane ?? (laneFromTalkingHead ? "camera" : "screen");
+			const idPrefix = lane === "camera" ? "camzoom" : "zoom";
 			const zoom = withRotationPreset(
 				{
-					id: createId("zoom"),
+					id: createId(idPrefix),
 					startMs,
 					endMs,
 					depth: (parsed.data.depth ?? 3) as 1 | 2 | 3 | 4 | 5 | 6,
 					...level,
-					focus: parsed.data.focus,
-					focusMode: parsed.data.focusMode,
+					focus:
+						parsed.data.focus ??
+						(lane === "camera" ? cameraZoomDefaultFocus().focus : { cx: 0.5, cy: 0.5 }),
+					focusMode: parsed.data.focusMode ?? (lane === "camera" ? "auto" : "manual"),
 					...(parsed.data.hideCursor ? { hideCursor: true } : {}),
 					source: "manual" as const,
 				} as AxcutDocument["zoomRanges"][number],
 				parsed.data.rotationPreset,
 			);
-			const placed = anchorForAgent(zoom, document, "zoom");
+			const placed = anchorForAgent(zoom, document, idPrefix);
 			const landing = landingOf(placed, document);
 			if (!landing.anchored) return coversNoClip("zoom", startMs / 1000, endMs / 1000, document);
-			const next: AxcutDocument = {
-				...document,
-				zoomRanges: [...document.zoomRanges, ...placed] as AxcutDocument["zoomRanges"],
-			};
-			const pastLimit = refuseScalePastLimit(next, landing.ids, parsed.data.customScale);
+			if (lane === "camera") {
+				const wall = coalesceRegionsForRuler(zoomListOf(document, "camera")).find(
+					(pill) => pill.start * 1000 < endMs && pill.end * 1000 > startMs,
+				);
+				if (wall) {
+					return failure(
+						`The camera zoom was NOT written: ${formatSec(startMs / 1000)} – ${formatSec(endMs / 1000)} would overlap camera zoom ${wall.ids[0]} at ` +
+							`${formatSec(wall.start)} – ${formatSec(wall.end)}, and two camera zooms cannot overlap. ` +
+							"A camera zoom may overlap a screen zoom.",
+					);
+				}
+			}
+			const next = withZoomList(document, lane, [
+				...zoomListOf(document, lane),
+				...placed,
+			] as ZoomRegions);
+			// The limit is the screen's (`zoomScaleLimit` reads the screen lane): a camera zoom
+			// has none to check.
+			const pastLimit =
+				lane === "camera" ? null : refuseScalePastLimit(next, landing.ids, parsed.data.customScale);
 			if (pastLimit) return pastLimit;
 			// Measured over what was STORED, never over what was asked for: `placed`
 			// is the clamped, ventilated truth, so the report cannot end up
-			// describing a window the zoom does not occupy.
-			const anchor = cursorAnchorReport(placed, document, zoom.focus, options?.cursorTelemetry);
+			// describing a window the zoom does not occupy. A camera zoom follows the face, not
+			// the pointer: nothing to measure.
+			const anchor =
+				lane === "camera"
+					? undefined
+					: cursorAnchorReport(placed, document, zoom.focus, options?.cursorTelemetry);
 			return {
 				ok: true,
 				document: next,
 				resultJson: JSON.stringify({
 					zoomId: landing.ids[0],
+					lane,
+					...(laneFromTalkingHead
+						? {
+								laneReason: "talking head: its picture is the camera, so the zoom is a camera zoom",
+							}
+						: {}),
 					depth: zoom.depth,
 					...(zoom.rotationPreset ? { rotationPreset: zoom.rotationPreset } : {}),
 					// The depth alone is an ordinal; reported on its own it is what the
 					// model turns into "3×" for a frame that renders 1.80×.
 					renderedScale: effectiveZoomScale(zoom),
-					...zoomBehaviourReport(zoom, document),
+					...zoomBehaviourReport(zoom, document, lane),
 					...landingReport(landing, startMs / 1000, endMs / 1000),
 					...(anchor ? { cursorAnchor: anchor } : {}),
 					...cutTransitionsReport(document, next),
 				}),
 				summary:
-					`added zoom ${formatSec(landing.startSec)} – ${formatSec(landing.endSec)} ` +
+					`added ${lane === "camera" ? "camera zoom" : "zoom"} ${formatSec(landing.startSec)} – ${formatSec(landing.endSec)} ` +
 					`at ${effectiveZoomScale(zoom).toFixed(2)}×` +
 					landingSuffix(landing, startMs / 1000, endMs / 1000),
 			};
@@ -2958,12 +3105,16 @@ export function executeAgentTool(
 			const twoLevels = refuseTwoLevels(args);
 			if (twoLevels) return twoLevels;
 			const { zoomId } = parsed.data;
-			const existing = document.zoomRanges.find((z) => z.id === zoomId);
-			if (!existing) return failure(`Unknown zoom: ${zoomId}`);
+			// A zoom is found on either lane by its id; the edits below happen in that lane.
+			const fromLane = zoomLaneOfId(document, zoomId);
+			if (!fromLane) return failure(`Unknown zoom: ${zoomId}`);
+			const zooms = zoomListOf(document, fromLane);
+			const kindLabel = fromLane === "camera" ? "camera zoom" : "zoom";
+			const existing = zooms.find((z) => z.id === zoomId) as ZoomRegions[number];
 			const { startMs, endMs } = resolveSpanMs(existing, parsed.data.startSec, parsed.data.endSec);
-			const blocked = refuseIfBlocked("zoom", document.zoomRanges, zoomId, { startMs, endMs });
+			const blocked = refuseIfBlocked(kindLabel, zooms, zoomId, { startMs, endMs });
 			if (blocked) return blocked;
-			const zoomPill = new Set(resolvePillIds(document.zoomRanges, zoomId));
+			const zoomPill = new Set(resolvePillIds(zooms, zoomId));
 			// ponytail: a depth write CLEARS customScale, and that is the whole
 			// point. `effectiveZoomScale` returns customScale when it is set, so on a
 			// migrated v1.7 zoom (`migrate.ts:185` keeps both fields) a `setZoom
@@ -2975,12 +3126,12 @@ export function executeAgentTool(
 			// summary rather than done quietly.
 			const clearsCustomScale =
 				parsed.data.depth !== undefined &&
-				document.zoomRanges.some((z) => zoomPill.has(z.id) && z.customScale != null);
+				zooms.some((z) => zoomPill.has(z.id) && z.customScale != null);
 			const level = zoomLevelArg(parsed.data.customScale);
 			const { hideCursor, focusMode } = parsed.data;
 			const rebuiltZooms = replacePillSpan(
 				// payload edits first, applied to every region under the pill…
-				document.zoomRanges.map((z) => {
+				zooms.map((z) => {
 					if (!zoomPill.has(z.id)) return z;
 					const { customScale, hideCursor: wasHidden, ...rest } = z;
 					// A level the table has is written as its depth, which drops the custom scale.
@@ -3006,40 +3157,110 @@ export function executeAgentTool(
 				startMs,
 				endMs,
 				document.timeline.clips,
-				() => createId("zoom"),
-			) as AxcutDocument["zoomRanges"];
-			const landing = landingAfterPillEdit(document.zoomRanges, rebuiltZooms, zoomPill, document);
+				() => createId(fromLane === "camera" ? "camzoom" : "zoom"),
+			) as ZoomRegions;
+			const landing = landingAfterPillEdit(zooms, rebuiltZooms, zoomPill, document);
 			if (!landing.anchored) return coversNoClip("zoom", startMs / 1000, endMs / 1000, document);
-			const next: AxcutDocument = { ...document, zoomRanges: rebuiltZooms };
-			const pastLimit = refuseScalePastLimit(next, landing.ids, parsed.data.customScale);
+			const edited = withZoomList(document, fromLane, rebuiltZooms);
+			// The lane it asked to be in, when that is another one: the same rules as the editor's
+			// move between lanes. The pill goes whole, its focus is framed for where it lands. A zoom
+			// that lands wholly on a talking head goes to the camera lane when no lane is given: the
+			// picture there is the camera, and a screen zoom would not show.
+			const heads = talkingHeadsUnder(document, startMs, endMs);
+			const toLane: ZoomLane = parsed.data.lane ?? (heads.share === "all" ? "camera" : fromLane);
+			if (heads.share !== "none" && parsed.data.lane === "screen") {
+				return screenZoomOnTalkingHead(
+					startMs,
+					endMs,
+					heads.headClipId,
+					fromLane === "screen" ? "written" : "moved",
+				);
+			}
+			let next = edited;
+			let finalList = rebuiltZooms;
+			if (toLane !== fromLane) {
+				const pill = coalesceRegionsForRuler(rebuiltZooms).find((p) =>
+					p.ids.some((id) => landing.ids.includes(id)),
+				);
+				if (!pill) return failure(`Unknown zoom: ${zoomId}`);
+				const there = coalesceRegionsForRuler(zoomListOf(edited, toLane)).find(
+					(other) => other.start < pill.end && other.end > pill.start,
+				);
+				if (there) {
+					return failure(
+						`The zoom was NOT moved to the ${toLane} lane: it would overlap ${toLane === "camera" ? "camera zoom" : "zoom"} ${there.ids[0]} at ` +
+							`${formatSec(there.start)} – ${formatSec(there.end)}, and two zooms in one lane cannot overlap. ` +
+							"Move or shorten that one first.",
+					);
+				}
+				const under = new Set(pill.ids);
+				// A zoom taken to the camera follows the face, else looks at the upper middle (its
+				// point was the screen's); one taken to the screen follows the pointer when the take
+				// has one (the snapshot's `cursorAvailable`), else rests on the centre. One moved only
+				// because it sits on a talking head (no lane asked for) keeps its focus: it already
+				// framed that picture. A focus or a focus mode passed with the move is what it gets.
+				const hasPointer = Object.values(options?.cursorTelemetry?.availableByAssetId ?? {}).some(
+					Boolean,
+				);
+				const moved = rebuiltZooms
+					.filter((z) => under.has(z.id))
+					.map((z) => ({
+						...z,
+						...(parsed.data.lane === undefined
+							? {}
+							: toLane === "camera"
+								? cameraZoomDefaultFocus()
+								: hasPointer
+									? { focusMode: "auto" as const }
+									: { focus: { cx: 0.5, cy: 0.5 }, focusMode: "manual" as const }),
+						...(parsed.data.focus ? { focus: parsed.data.focus } : {}),
+						...(focusMode ? { focusMode } : {}),
+					})) as ZoomRegions;
+				finalList = moved;
+				next = withZoomList(
+					withZoomList(
+						edited,
+						fromLane,
+						rebuiltZooms.filter((z) => !under.has(z.id)),
+					),
+					toLane,
+					[...zoomListOf(edited, toLane), ...moved],
+				);
+			}
+			const pastLimit =
+				toLane === "camera"
+					? null
+					: refuseScalePastLimit(next, landing.ids, parsed.data.customScale);
 			if (pastLimit) return pastLimit;
 			// Read back off the document, not off the request: the pill may have been
 			// re-ventilated, and `renderedScale` is the only number the viewer sees.
 			const landed = new Set(landing.ids);
-			const strength = rebuiltZooms.find((z) => landed.has(z.id));
+			const strength = finalList.find((z) => landed.has(z.id));
 			// The EFFECTIVE focus, read off the document exactly like `renderedScale`
 			// is: a setZoom that moved only the span still gets told what its
 			// untouched focus now looks at, which is most of the reason to reshape a
 			// zoom at all.
-			const anchor = strength
-				? cursorAnchorReport(
-						rebuiltZooms.filter((z) => landed.has(z.id)),
-						document,
-						strength.focus,
-						options?.cursorTelemetry,
-					)
-				: undefined;
+			const anchor =
+				strength && toLane === "screen"
+					? cursorAnchorReport(
+							finalList.filter((z) => landed.has(z.id)),
+							document,
+							strength.focus,
+							options?.cursorTelemetry,
+						)
+					: undefined;
 			return {
 				ok: true,
 				document: next,
 				resultJson: JSON.stringify({
 					zoomId: landing.ids[0] ?? zoomId,
+					lane: toLane,
 					...(strength
 						? {
 								depth: strength.depth,
 								renderedScale: effectiveZoomScale(strength),
 								...(strength.rotationPreset ? { rotationPreset: strength.rotationPreset } : {}),
-								...zoomBehaviourReport(strength, document),
+								...zoomBehaviourReport(strength, next, toLane),
 							}
 						: {}),
 					...(clearsCustomScale ? { clearedCustomScale: true } : {}),
@@ -3048,9 +3269,10 @@ export function executeAgentTool(
 					...cutTransitionsReport(document, next),
 				}),
 				summary:
-					`updated zoom ${formatSec(landing.startSec)} – ${formatSec(landing.endSec)}` +
+					`updated ${kindLabel} ${formatSec(landing.startSec)} – ${formatSec(landing.endSec)}` +
 					(strength ? ` at ${effectiveZoomScale(strength).toFixed(2)}×` : "") +
 					(clearsCustomScale ? " (cleared its custom scale so the depth applies)" : "") +
+					(toLane !== fromLane ? ` (moved to the ${toLane} lane)` : "") +
 					landingSuffix(landing, startMs / 1000, endMs / 1000),
 			};
 		}
@@ -3802,6 +4024,7 @@ export function executeAgentTool(
 				(legacy.cameraFullscreenRegions as Array<{ id: string }> | undefined) ?? [];
 			let kind: ModifierKind | null = null;
 			if (document.zoomRanges.some((z) => z.id === id)) kind = "zoom";
+			else if ((document.cameraZoomRanges ?? []).some((z) => z.id === id)) kind = "cameraZoom";
 			else if (document.annotations.some((a) => a.id === id)) kind = "annotation";
 			else if (speedRegions.some((s) => s.id === id)) kind = "speed";
 			else if (cameraFullscreenRegions.some((c) => c.id === id)) kind = "cameraFullscreen";
@@ -3809,7 +4032,7 @@ export function executeAgentTool(
 			else if ((document.shaderEffectRanges ?? []).some((r) => r.id === id)) kind = "shaderEffect";
 			if (!kind) {
 				return failure(
-					`No zoom / speed / annotation / full-camera / audio / effect modifier with id ${id}. ` +
+					`No zoom / camera zoom / speed / annotation / full-camera / audio / effect modifier with id ${id}. ` +
 						`For a trim use removeTrim; for a clip use removeClip.`,
 				);
 			}

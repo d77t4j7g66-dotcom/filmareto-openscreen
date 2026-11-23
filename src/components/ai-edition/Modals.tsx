@@ -1,4 +1,16 @@
-import { AlertTriangle, Crop, FolderOpen, FolderPlus, Pencil, Plus, Trash2, X } from "lucide-react";
+import {
+	AlertTriangle,
+	Crop,
+	FolderOpen,
+	FolderPlus,
+	Monitor,
+	Pencil,
+	PictureInPicture2,
+	Plus,
+	Trash2,
+	Video,
+	X,
+} from "lucide-react";
 import {
 	type KeyboardEvent as ReactKeyboardEvent,
 	type ReactNode,
@@ -11,6 +23,7 @@ import type { CropRegion } from "@/components/video-editor/types";
 import { useScopedT } from "@/contexts/I18nContext";
 import type { AxcutClip } from "@/lib/ai-edition/schema";
 import { formatSeconds } from "@/lib/ai-edition/timeline/format";
+import type { RecordingKind } from "@/lib/recordingStart";
 import { cropDraftFromRegion, cropDraftToPct, previewBoxStyle } from "./cropDraft";
 import styles from "./NewEditorShell.module.css";
 import { ChoiceRow } from "./RightPanes";
@@ -568,6 +581,70 @@ function TemplateCell({
 			<span style={{ font: "500 13px/1.3 var(--font-body)" }}>{title}</span>
 			<span style={{ font: "400 12px/1.4 var(--font-body)", color: "var(--muted)" }}>{desc}</span>
 		</button>
+	);
+}
+
+interface RecordingKindModalProps extends BaseModalProps {
+	onPick: (kind: RecordingKind) => void;
+}
+
+/** "What are you recording?" — asked before a new project, it sets the recording mode. */
+export function RecordingKindModal({ open, onClose, onPick }: RecordingKindModalProps) {
+	const t = useScopedT("editor");
+	const tc = useScopedT("common");
+	const pick = (kind: RecordingKind) => {
+		onPick(kind);
+		onClose();
+	};
+	return (
+		<ModalShell
+			open={open}
+			onClose={onClose}
+			title={t("recordingKindDialog.title")}
+			subtitle={t("recordingKindDialog.subtitle")}
+		>
+			<div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+				<div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8 }}>
+					<TemplateCell
+						icon={<Video size={18} />}
+						title={t("recordingKindDialog.talkingHead")}
+						desc={t("recordingKindDialog.talkingHeadDesc")}
+						active={false}
+						onClick={() => pick("talking-head")}
+					/>
+					<TemplateCell
+						icon={<PictureInPicture2 size={18} />}
+						title={t("recordingKindDialog.screenCamera")}
+						desc={t("recordingKindDialog.screenCameraDesc")}
+						active={false}
+						onClick={() => pick("screen-camera")}
+					/>
+					<TemplateCell
+						icon={<Monitor size={18} />}
+						title={t("recordingKindDialog.screenOnly")}
+						desc={t("recordingKindDialog.screenOnlyDesc")}
+						active={false}
+						onClick={() => pick("screen-only")}
+					/>
+				</div>
+				<div
+					style={{
+						display: "flex",
+						justifyContent: "flex-end",
+						paddingTop: 12,
+						borderTop: "1px solid var(--border-soft)",
+					}}
+				>
+					<button
+						type="button"
+						className={`${styles.btn} ${styles.btnSecondary}`}
+						onClick={onClose}
+					>
+						{tc("actions.cancel")}
+					</button>
+				</div>
+			</div>
+		</ModalShell>
 	);
 }
 

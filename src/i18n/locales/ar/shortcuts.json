@@ -35,6 +35,7 @@
 		"cycleAnnotationsForward": "التنقل بين الشروح للأمام",
 		"cycleAnnotationsBackward": "التنقل بين الشروح للخلف",
 		"deleteSelectedAlt": "حذف المحدد (alt)",
+		"addCameraZoom": "Add Camera Zoom",
 		"panTimeline": "تحريك المخطط الزمني",
 		"zoomTimeline": "تكبير المخطط الزمني",
 		"frameBack": "إطار للخلف",

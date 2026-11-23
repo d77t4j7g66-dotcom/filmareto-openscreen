@@ -51,7 +51,9 @@
 		"unhide": "Hiển thị tất cả",
 		"saveDiagnostics": "Lưu thông tin chẩn đoán",
 		"permissions": "Quyền…",
-		"closeNotification": "Đóng thông báo"
+		"closeNotification": "Đóng thông báo",
+		"exportForResolve": "Export for Resolve…",
+		"resolveExportSetting": "Export for DaVinci Resolve (open timeline)"
 	},
 	"updates": {
 		"available": "Đã có Filmareto {{latestVersion}}. Bạn đang dùng phiên bản {{currentVersion}}.",

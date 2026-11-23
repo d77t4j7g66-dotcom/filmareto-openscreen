@@ -50,6 +50,8 @@ import {
 	removeAudioTrack as removeAudioTrackInDocument,
 	trackGroupId,
 } from "../document/audioTracks";
+import { mainTakeIsCamera } from "../document/cameraTake";
+import { cameraZoomDefaultFocus, moveTakesZoomsToCameraLane } from "../document/cameraZooms";
 import { createId } from "../document/ids";
 import { resolveAspectRatioValue } from "../document/outputFormat";
 import {
@@ -80,8 +82,10 @@ import {
 	storedShaderEffectValues,
 } from "../shaderEffects";
 import { appendAutoZoomSuggestions } from "../timeline/apply-auto-zooms";
-import { hasAnyClipWithCamera } from "../timeline/camera";
+import { assetCameraSource, hasAnyClipWithCamera } from "../timeline/camera";
+import { isCameraPunchIn, planCameraPunchIns, samePunchIns } from "../timeline/cameraPunchIns";
 import { probeAudioDuration, probeVideoDimensions, probeVideoDuration } from "../timeline/duration";
+import type { FacePoint } from "../timeline/faceTrack";
 import type { KeycapPlan } from "../timeline/keycaps";
 import type { SmartCutPlan } from "../timeline/smart-cuts";
 import {
@@ -97,6 +101,7 @@ import { MAX_ZOOM_SCALE, MIN_ZOOM_SCALE, ZOOM_DEPTH_SCALES } from "../timeline/z
 import type { AutoZoomSuggestion } from "../timeline/zoom-suggestions";
 import {
 	applyLookToAllClips,
+	clipUnderPlayhead,
 	getEditorSettings,
 	patchClipLook,
 	patchEditorSettings,
@@ -144,6 +149,26 @@ function patchRegionById<T extends { id: string; startMs: number; endMs: number;
 ): T[] {
 	const under = new Set(resolveRegionIds(regions, id));
 	return regions.map((r) => (under.has(r.id) ? { ...r, ...patch } : r));
+}
+
+/** The two lists zooms live in: the screen's, and the camera's. A zoom is on one or the other. */
+export type ZoomLane = "screen" | "camera";
+
+type ZoomRegions = AxcutDocument["zoomRanges"];
+
+/** The lane the zoom `id` is stored in. An id in neither list is read as the screen's. */
+function zoomLaneOf(doc: AxcutDocument, id: string): ZoomLane {
+	return (doc.cameraZoomRanges ?? []).some((zoom) => zoom.id === id) ? "camera" : "screen";
+}
+
+function zoomRegionsOf(doc: AxcutDocument, lane: ZoomLane): ZoomRegions {
+	return lane === "camera" ? (doc.cameraZoomRanges ?? []) : doc.zoomRanges;
+}
+
+function withZoomRegions(doc: AxcutDocument, lane: ZoomLane, regions: ZoomRegions): AxcutDocument {
+	return lane === "camera"
+		? { ...doc, cameraZoomRanges: regions }
+		: { ...doc, zoomRanges: regions };
 }
 
 /**
@@ -318,16 +343,170 @@ export function useTimeline() {
 				if (face === undefined || (await waitForDocumentSaves()) === "timeout") return;
 				const current = useProjectStore.getState().document;
 				if (current?.project.id !== originatingProjectId) return;
-				await useProjectStore.getState().saveDocument(
-					{
-						...current,
-						assets: current.assets.map((a) => (a.id === id ? { ...a, face } : a)),
-					},
-					{ history: false },
-				);
+				// With its face written the take is a talking head, whose screen zooms the scene drops:
+				// they go to the camera lane in the same write, still framing that picture.
+				const firstFace = current.assets.find((a) => a.id === id)?.face === undefined;
+				const faced: AxcutDocument = {
+					...current,
+					assets: current.assets.map((a) => (a.id === id ? { ...a, face } : a)),
+				};
+				await useProjectStore
+					.getState()
+					.saveDocument(firstFace ? moveTakesZoomsToCameraLane(faced, new Set([id])) : faced, {
+						history: false,
+					});
 			})().catch((error) => console.warn("[timeline] could not look for a face:", error));
 		}
 	}, [document]);
+
+	// Where the face is over time in each camera picture, for a camera zoom on Auto to follow: a
+	// talking head's own picture, and a screen take's separate camera file. One picture at a time (a
+	// look is many frames of work), talking heads first, once per picture, in the background.
+	// Nothing is written when the look could not be made (no helper off macOS): absent stays absent
+	// and a later run can still do it; null is written only when it looked and found no face.
+	const faceTrackTriedRef = useRef<Set<string>>(new Set());
+	// Every track a look found this session (null included: looked, no face), by project and
+	// picture. An undo restores a whole snapshot, so one taken before a track landed takes the
+	// track away again: it is put back from here, not looked for a second time.
+	const faceTrackFoundRef = useRef<Map<string, FacePoint[] | null>>(new Map());
+	const faceTrackRestoringRef = useRef(false);
+	const faceTrackRestorePendingRef = useRef(false);
+	const faceTrackBusyRef = useRef(false);
+	const [faceTrackTick, setFaceTrackTick] = useState(0);
+	// biome-ignore lint/correctness/useExhaustiveDependencies: the tick only re-runs the queue after a look ends.
+	useEffect(() => {
+		if (!document) return;
+		const originatingProjectId = document.project.id;
+		const foundKey = (key: string) => `${originatingProjectId}|${key}`;
+		type Job = {
+			key: string;
+			assetId: string;
+			path: string;
+			durationSec: number;
+			offsetSec: number;
+		};
+		const jobs: Job[] = [];
+		const restores = new Map<string, FacePoint[] | null>();
+		for (const asset of document.assets) {
+			if (
+				asset.kind !== "video" ||
+				!asset.originalPath ||
+				!asset.durationSec ||
+				asset.faceTrack !== undefined
+			) {
+				continue;
+			}
+			const pictureKey = mainTakeIsCamera(asset)
+				? `${asset.id}:head`
+				: asset.cameraTrack?.visible && asset.cameraTrack.sourcePath
+					? `${asset.id}:${asset.cameraTrack.sourcePath}`
+					: null;
+			if (pictureKey && faceTrackFoundRef.current.has(foundKey(pictureKey))) {
+				restores.set(asset.id, faceTrackFoundRef.current.get(foundKey(pictureKey)) ?? null);
+				continue;
+			}
+			if (mainTakeIsCamera(asset)) {
+				const key = `${asset.id}:head`;
+				if (!faceTrackTriedRef.current.has(key)) {
+					jobs.unshift({
+						key,
+						assetId: asset.id,
+						path: asset.originalPath,
+						durationSec: asset.durationSec,
+						offsetSec: 0,
+					});
+				}
+			} else if (asset.cameraTrack?.visible && asset.cameraTrack.sourcePath) {
+				const key = `${asset.id}:${asset.cameraTrack.sourcePath}`;
+				if (!faceTrackTriedRef.current.has(key)) {
+					// The compositor seeks the camera file to take time minus this offset, so a
+					// camera file's second t is the take's t plus it.
+					const offsetSec = assetCameraSource(asset).offsetSec;
+					jobs.push({
+						key,
+						assetId: asset.id,
+						path: asset.cameraTrack.sourcePath,
+						durationSec: asset.durationSec + Math.max(0, -offsetSec),
+						offsetSec,
+					});
+				}
+			}
+		}
+		// One put-back at a time; one asked for meanwhile runs once it is done.
+		if (restores.size > 0 && faceTrackRestoringRef.current)
+			faceTrackRestorePendingRef.current = true;
+		if (restores.size > 0 && !faceTrackRestoringRef.current) {
+			faceTrackRestoringRef.current = true;
+			void (async () => {
+				try {
+					if ((await waitForDocumentSaves()) === "timeout") return;
+					const current = useProjectStore.getState().document;
+					if (current?.project.id !== originatingProjectId) return;
+					// Only where it is still absent on the latest document: an edit made meanwhile stays.
+					if (!current.assets.some((a) => restores.has(a.id) && a.faceTrack === undefined)) return;
+					await useProjectStore.getState().saveDocument(
+						{
+							...current,
+							assets: current.assets.map((a) =>
+								restores.has(a.id) && a.faceTrack === undefined
+									? { ...a, faceTrack: restores.get(a.id) ?? null }
+									: a,
+							),
+						},
+						{ history: false },
+					);
+				} finally {
+					faceTrackRestoringRef.current = false;
+					if (faceTrackRestorePendingRef.current) {
+						faceTrackRestorePendingRef.current = false;
+						setFaceTrackTick((n) => n + 1);
+					}
+				}
+			})().catch((error) => console.warn("[timeline] could not put a face track back:", error));
+		}
+		if (faceTrackBusyRef.current) return;
+		const job = jobs[0];
+		if (!job) return;
+		faceTrackTriedRef.current.add(job.key);
+		faceTrackBusyRef.current = true;
+		let faceTrackRetry: ReturnType<typeof setTimeout> | undefined;
+		void (async () => {
+			try {
+				const track = await window.electronAPI?.findFaceTrack?.(
+					job.path,
+					job.durationSec,
+					job.offsetSec,
+				);
+				if (track === "busy") {
+					// A take is recording: keep the picture queued and ask again in a while.
+					faceTrackTriedRef.current.delete(job.key);
+					faceTrackRetry = setTimeout(() => setFaceTrackTick((n) => n + 1), 15_000);
+					return;
+				}
+				if (track === undefined) return;
+				// Kept whatever happens to the write below, so an undo past it can put it back.
+				faceTrackFoundRef.current.set(foundKey(job.key), track);
+				if ((await waitForDocumentSaves()) === "timeout") return;
+				const current = useProjectStore.getState().document;
+				if (current?.project.id !== originatingProjectId) return;
+				// Patch the latest document, not the one the look began on: an edit made meanwhile stays.
+				const latest = current.assets.find((a) => a.id === job.assetId);
+				if (!latest || latest.faceTrack !== undefined) return;
+				await useProjectStore.getState().saveDocument(
+					{
+						...current,
+						assets: current.assets.map((a) =>
+							a.id === job.assetId ? { ...a, faceTrack: track } : a,
+						),
+					},
+					{ history: false },
+				);
+			} finally {
+				faceTrackBusyRef.current = false;
+				if (!faceTrackRetry) setFaceTrackTick((n) => n + 1);
+			}
+		})().catch((error) => console.warn("[timeline] could not look for a face track:", error));
+	}, [document, faceTrackTick]);
 
 	const probedAssetIdsRef = useRef<Set<string>>(new Set());
 	useEffect(() => {
@@ -470,9 +649,62 @@ export function useTimeline() {
 	// technical-documentation/architecture/timeline-model.md) — writing only startMs/endMs
 	// would strand it. A region created across a clip boundary becomes one fragment per
 	// clip; the ruler renders them as one pill because their properties are equal.
+	/**
+	 * A zoom of the camera picture, at the playhead: it follows the face until its focus is
+	 * dragged. Refused (`null`) where it would sit on another camera zoom: a camera zoom may
+	 * overlap a screen zoom, never another camera zoom. Returns the id it was stored under; the
+	 * save follows it.
+	 */
+	const addCameraZoom = useCallback(
+		(durationSec = DEFAULT_NEW_REGION_SEC): string | null => {
+			const doc = useProjectStore.getState().document ?? document;
+			if (!doc) return null;
+			const startMs = Math.round(playheadSec() * 1000);
+			const endMs = startMs + Math.round(durationSec * 1000);
+			const taken = coalesceRegionsForRuler(doc.cameraZoomRanges ?? []);
+			if (taken.some((pill) => pill.start * 1000 < endMs && pill.end * 1000 > startMs)) {
+				return null;
+			}
+			const id = createId("camzoom");
+			const anchored = anchorRegionsWithDerivedMs(
+				[
+					{
+						id,
+						startMs,
+						endMs,
+						depth: 3 as const,
+						focus: { cx: 0.5, cy: 0.4 },
+						focusMode: "auto" as const,
+						source: "manual" as const,
+					},
+				],
+				doc.timeline.clips,
+				() => createId("camzoom"),
+			);
+			void saveDocument(
+				{
+					...doc,
+					cameraZoomRanges: [
+						...(doc.cameraZoomRanges ?? []),
+						...anchored,
+					] as AxcutDocument["cameraZoomRanges"],
+				},
+				{ history: true },
+			);
+			return anchored[0]?.id ?? id;
+		},
+		[document, saveDocument],
+	);
+
 	const addZoom = useCallback(
 		async (durationSec = DEFAULT_NEW_REGION_SEC) => {
 			if (!document) return;
+			// On a talking head the zoom is the camera's: there is no screen under it to frame.
+			const clip = clipUnderPlayhead(document, playheadSec());
+			if (clip && mainTakeIsCamera(document.assets.find((asset) => asset.id === clip.assetId))) {
+				addCameraZoom(durationSec);
+				return;
+			}
 			const timeMs = Math.round(playheadSec() * 1000);
 			const endMs = timeMs + Math.round(durationSec * 1000);
 			const anchored = anchorRegionsWithDerivedMs(
@@ -506,7 +738,7 @@ export function useTimeline() {
 			};
 			await saveDocument(next, { history: true });
 		},
-		[document, saveDocument],
+		[document, saveDocument, addCameraZoom],
 	);
 
 	// Append several auto-generated zoom regions in one save (auto-enhance).
@@ -1025,17 +1257,98 @@ export function useTimeline() {
 	// Reports not-taken for an unknown answer too, so the buttons retry.
 	const saveZoomPatch = useCallback(
 		(id: string, patch: Partial<AxcutDocument["zoomRanges"][number]>) =>
-			queueZoomWrite((doc, historyBase) =>
-				saveDocument(
-					{
-						...doc,
-						zoomRanges: patchRegionById(doc.zoomRanges, id, patch) as AxcutDocument["zoomRanges"],
-					},
+			queueZoomWrite((doc, historyBase) => {
+				const lane = zoomLaneOf(doc, id);
+				return saveDocument(
+					withZoomRegions(
+						doc,
+						lane,
+						patchRegionById(zoomRegionsOf(doc, lane), id, patch) as ZoomRegions,
+					),
 					{ history: true, historyBase },
-				),
-			).then((outcome) => outcome === true),
+				);
+			}).then((outcome) => outcome === true),
 		[queueZoomWrite, saveDocument],
 	);
+
+	/**
+	 * Move a zoom to the other lane, as one undo step, keeping its id, level, motion and timing.
+	 * What changes is how it is framed: a screen zoom taken to the camera follows the face (else
+	 * the upper middle, `cameraZoomDefaultFocus`, its old point being the screen's); a
+	 * camera zoom taken to the screen follows the pointer when the take has one, and rests on
+	 * the centre when it has not. Refused (`false`, nothing written) when it would sit on a zoom
+	 * already in the lane it is going to, or when it is already there.
+	 */
+	const moveZoomToLane = useCallback(
+		(id: string, lane: ZoomLane): Promise<boolean> =>
+			queueZoomWrite((doc, historyBase) => {
+				const from = zoomLaneOf(doc, id);
+				const source = zoomRegionsOf(doc, from);
+				if (from === lane || !source.some((zoom) => zoom.id === id)) {
+					return Promise.resolve(false);
+				}
+				const pill = coalesceRegionsForRuler(source).find((p) => p.ids.includes(id));
+				if (!pill) return Promise.resolve(false);
+				const there = coalesceRegionsForRuler(zoomRegionsOf(doc, lane));
+				if (there.some((other) => other.start < pill.end && other.end > pill.start)) {
+					return Promise.resolve(false);
+				}
+				const under = new Set(pill.ids);
+				const moved = source
+					.filter((zoom) => under.has(zoom.id))
+					.map((zoom) => ({
+						...zoom,
+						// Its point was framed for the other picture: on the camera it looks for the
+						// face, else at the upper middle.
+						...(lane === "camera"
+							? cameraZoomDefaultFocus()
+							: documentHasRecordedCursor(doc) !== false
+								? { focusMode: "auto" as const }
+								: { focus: { cx: 0.5, cy: 0.5 }, focusMode: "manual" as const }),
+					})) as ZoomRegions;
+				const without = withZoomRegions(
+					doc,
+					from,
+					source.filter((zoom) => !under.has(zoom.id)),
+				);
+				return saveDocument(
+					withZoomRegions(without, lane, [...zoomRegionsOf(without, lane), ...moved]),
+					{ history: true, historyBase },
+				);
+			}).then((outcome) => outcome === true),
+		[queueZoomWrite, saveDocument],
+	);
+
+	/**
+	 * The camera's auto zooms (`planCameraPunchIns`): the previous run's are taken out first, so a
+	 * second run replaces them and leaves every other camera zoom alone. One undo step, and none
+	 * when the run would write what is already there. Returns how many there are, or `null` when
+	 * the save failed.
+	 */
+	const addAutoCameraZooms = useCallback(async (): Promise<number | null> => {
+		let count = 0;
+		const outcome = await queueZoomWrite(async (doc, historyBase) => {
+			const kept = (doc.cameraZoomRanges ?? []).filter((zoom) => !isCameraPunchIn(zoom));
+			const planned = planCameraPunchIns(doc);
+			const previous = (doc.cameraZoomRanges ?? []).filter(isCameraPunchIn);
+			if (samePunchIns(previous, planned)) {
+				// Nothing would change: no save, so no empty undo step.
+				count = previous.length;
+				return true;
+			}
+			const ok = await saveDocument(
+				{
+					...doc,
+					cameraZoomRanges: [...kept, ...planned] as AxcutDocument["cameraZoomRanges"],
+				},
+				{ history: true, historyBase },
+			);
+			if (ok) count = planned.length;
+			return ok;
+		});
+		// `null`: the save failed, which is not "nothing to punch in on".
+		return outcome === true ? count : null;
+	}, [queueZoomWrite, saveDocument]);
 
 	// Span edits are GROUP-AWARE: dragging/resizing a pill re-anchors every fragment
 	// under the pill to the new ruler span, so an edit that crosses a clip
@@ -1045,22 +1358,26 @@ export function useTimeline() {
 		(id: string, startMs: number, endMs: number) => {
 			const s = finiteMs(startMs);
 			const e = finiteMs(endMs);
-			return queueZoomWrite((doc, historyBase) =>
-				saveDocument(
-					{
-						...doc,
-						zoomRanges: replacePillSpan(
-							doc.zoomRanges,
+			return queueZoomWrite((doc, historyBase) => {
+				// Clamped against the zooms of its own lane only: a camera zoom and a screen zoom
+				// may overlap.
+				const lane = zoomLaneOf(doc, id);
+				return saveDocument(
+					withZoomRegions(
+						doc,
+						lane,
+						replacePillSpan(
+							zoomRegionsOf(doc, lane),
 							id,
 							Math.min(s, e),
 							Math.max(s, e),
 							doc.timeline.clips,
-							() => createId("zoom"),
-						) as AxcutDocument["zoomRanges"],
-					},
+							() => createId(lane === "camera" ? "camzoom" : "zoom"),
+						) as ZoomRegions,
+					),
 					{ history: true, historyBase },
-				),
-			);
+				);
+			});
 		},
 		[queueZoomWrite, saveDocument],
 	);
@@ -1087,12 +1404,14 @@ export function useTimeline() {
 				focus: { cx: finiteFraction(focus.cx), cy: finiteFraction(focus.cy) },
 				epoch: currentWriteEpoch(),
 			};
-			const next: AxcutDocument = {
-				...doc,
-				zoomRanges: patchRegionById(doc.zoomRanges, id, {
+			const lane = zoomLaneOf(doc, id);
+			const next = withZoomRegions(
+				doc,
+				lane,
+				patchRegionById(zoomRegionsOf(doc, lane), id, {
 					focus: edit.focus,
-				}) as AxcutDocument["zoomRanges"],
-			};
+				}) as ZoomRegions,
+			);
 			setDocument(next, { history: false });
 			zoomFocusLiveRef.current = next;
 			zoomFocusEditRef.current = edit;
@@ -1133,7 +1452,10 @@ export function useTimeline() {
 			// nothing, which is right: nothing changed.
 			let next = doc;
 			let historyBase = doc === live ? rollback : null;
-			const pill = edit ? doc.zoomRanges.find((zoom) => zoom.id === edit.id) : undefined;
+			const editLane = edit ? zoomLaneOf(doc, edit.id) : "screen";
+			const pill = edit
+				? zoomRegionsOf(doc, editLane).find((zoom) => zoom.id === edit.id)
+				: undefined;
 			if (
 				doc !== live &&
 				edit &&
@@ -1143,12 +1465,13 @@ export function useTimeline() {
 				// A zoom write landed over the drag and took its focus off screen. The focus goes
 				// back on top of that write, so both stay, and one Ctrl+Z takes the focus off it
 				// again. When the writes since carried the focus along, there is nothing to add.
-				next = {
-					...doc,
-					zoomRanges: patchRegionById(doc.zoomRanges, edit.id, {
+				next = withZoomRegions(
+					doc,
+					editLane,
+					patchRegionById(zoomRegionsOf(doc, editLane), edit.id, {
 						focus: edit.focus,
-					}) as AxcutDocument["zoomRanges"],
-				};
+					}) as ZoomRegions,
+				);
 				historyBase = doc;
 			}
 			pending.save = saveDocument(next, { history: true, historyBase });
@@ -1238,8 +1561,21 @@ export function useTimeline() {
 				const video = start.assets.find((asset) => asset.id === assetId)?.video;
 				return video?.width && video.height ? coverAxis(video.width / video.height, aspect) : null;
 			};
-			const zooms = plans.flatMap(({ assetId, plan, face }) =>
-				plan.zooms.flatMap((zoom) =>
+			// A zoom on a talking head pushes in on the camera, so it is the camera lane's; a zoom
+			// on a screen take stays on the screen's.
+			// Judged on the asset as it will be saved (a found face is written to it below), the way
+			// the renderer judges it: a talking head whose face was not found is still a camera take.
+			const savedAsset = (
+				assetId: string,
+				face: { x: number; y: number } | null,
+				whole: boolean,
+			) => {
+				const asset = start.assets.find((candidate) => candidate.id === assetId);
+				return asset && whole ? { ...asset, face } : asset;
+			};
+			const placed = plans.map(({ assetId, plan, face, talkingHeadOnly }) => ({
+				onCamera: mainTakeIsCamera(savedAsset(assetId, face, talkingHeadOnly && !!face)),
+				zooms: plan.zooms.flatMap((zoom) =>
 					sourceSpanToTimelineSpans(assetId, zoom.start, zoom.end, clips).flatMap((span) =>
 						anchorRegionsWithDerivedMs(
 							[
@@ -1260,7 +1596,10 @@ export function useTimeline() {
 						),
 					),
 				),
-			);
+			}));
+			const zooms = placed.filter((p) => !p.onCamera).flatMap((p) => p.zooms);
+			const cameraZooms = placed.filter((p) => p.onCamera).flatMap((p) => p.zooms);
+			const notYapping = (zoom: { id: string }) => !zoom.id.startsWith(`${YAPPING_ZOOM_PREFIX}_`);
 			// A take of the camera alone is the whole picture: no frame round it, and it fills the
 			// format, resting on the face. A project with a screen take too keeps the frame on that one.
 			const whole = plans.filter((plan) => plan.talkingHeadOnly && plan.face);
@@ -1272,6 +1611,14 @@ export function useTimeline() {
 				if (!whole.some((plan) => plan.assetId === clip.assetId)) continue;
 				if (!allOfIt) doc = patchClipLook(doc, clip.id, noFrame);
 			}
+			// The takes whose face this edit writes first: they become talking heads (`mainTakeIsCamera`).
+			const firstFaced = new Set(
+				whole
+					.filter(
+						(plan) => doc.assets.find((asset) => asset.id === plan.assetId)?.face === undefined,
+					)
+					.map((plan) => plan.assetId),
+			);
 			doc = {
 				...doc,
 				assets: doc.assets.map((asset) => {
@@ -1285,11 +1632,15 @@ export function useTimeline() {
 						...trims,
 					],
 				},
-				zoomRanges: [
-					...doc.zoomRanges.filter((zoom) => !zoom.id.startsWith(`${YAPPING_ZOOM_PREFIX}_`)),
-					...zooms,
-				] as AxcutDocument["zoomRanges"],
+				// The previous run's zooms are taken out of both lanes.
+				zoomRanges: [...doc.zoomRanges.filter(notYapping), ...zooms] as AxcutDocument["zoomRanges"],
+				cameraZoomRanges: [
+					...(doc.cameraZoomRanges ?? []).filter(notYapping),
+					...cameraZooms,
+				] as AxcutDocument["cameraZoomRanges"],
 			};
+			// Their screen zooms would no longer show: the camera lane takes them, in this same save.
+			doc = moveTakesZoomsToCameraLane(doc, firstFaced);
 			// A style the user picked stays. Otherwise an edit like this one wants words that light up.
 			doc = patchCaptionSettings(
 				doc,
@@ -1839,6 +2190,9 @@ export function useTimeline() {
 		async (handles: RegionHandle[]) => {
 			if (!document || handles.length === 0) return;
 			const zoomIds = new Set(handles.filter((h) => h.kind === "zoom").map((h) => h.id));
+			const cameraZoomIds = new Set(
+				handles.filter((h) => h.kind === "cameraZoom").map((h) => h.id),
+			);
 			const trimIds = new Set(handles.filter((h) => h.kind === "trim").map((h) => h.id));
 			const annotationIds = new Set(
 				handles.filter((h) => h.kind === "annotation").map((h) => h.id),
@@ -1863,6 +2217,14 @@ export function useTimeline() {
 			const next: AxcutDocument = pruneUnusedShaderEffects({
 				...document,
 				zoomRanges: dropPillsByIds(document.zoomRanges, zoomIds) as AxcutDocument["zoomRanges"],
+				...(cameraZoomIds.size > 0
+					? {
+							cameraZoomRanges: dropPillsByIds(
+								document.cameraZoomRanges ?? [],
+								cameraZoomIds,
+							) as AxcutDocument["cameraZoomRanges"],
+						}
+					: {}),
 				annotations: dropPillsByIds(document.annotations, annotationIds),
 				...(shaderEffectIds.size > 0
 					? {
@@ -2373,6 +2735,7 @@ export function useTimeline() {
 
 	return {
 		zoomRegions: document?.zoomRanges ?? [],
+		cameraZoomRegions: document?.cameraZoomRanges ?? [],
 		trimRanges: document?.timeline.trimRanges ?? [],
 		audioTracks: document?.audioTracks ?? [],
 		// The pauses added words created. The ruler counts them; nothing else in the
@@ -2393,6 +2756,9 @@ export function useTimeline() {
 		multiSelection,
 		clipSelection,
 		addZoom,
+		addCameraZoom,
+		moveZoomToLane,
+		addAutoCameraZooms,
 		addZoomsBulk,
 		addTrim,
 		addAnnotation,

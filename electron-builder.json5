@@ -217,6 +217,13 @@
         "from": "electron/graphics",
         "to": "electron/graphics",
         "filter": ["templates/**/*", "hyperframe.runtime.iife.js"]
+      },
+      {
+        // "Export for DaVinci Resolve" copies these into Resolve's user folder
+        // (electron/resolve-export/install.ts): the Fuse, the macro and the import script.
+        "from": "resolve",
+        "to": "resolve",
+        "filter": ["FilmaretoScreen.fuse", "Filmareto Screen.setting", "Filmareto Import.lua"]
       }
     ],
     "extendInfo": {

@@ -10,7 +10,14 @@ import { SETTING_BOUNDS } from "@/lib/projectDefaults";
 import { ROUNDNESS_SLIDER_MAX_PX } from "@/native/paramUnits";
 import type { AxcutDocument } from "../schema";
 import { axcutSchemaVersion } from "../schema";
-import { DEFAULT_EDITOR_SETTINGS, getEditorSettings, patchEditorSettings } from "./editorSettings";
+import {
+	DEFAULT_EDITOR_SETTINGS,
+	getClipEditorSettings,
+	getEditorSettings,
+	patchClipLook,
+	patchEditorSettings,
+	SEGMENT_LOOK_KEYS,
+} from "./editorSettings";
 
 const baseDoc: AxcutDocument = {
 	schemaVersion: axcutSchemaVersion,
@@ -439,5 +446,79 @@ describe("patchEditorSettings", () => {
 		expect(getEditorSettings(tooHigh).webcamBlurIntensity).toBe(1);
 		const negative = { ...baseDoc, legacyEditor: { webcamBlurIntensity: -3 } } as typeof baseDoc;
 		expect(getEditorSettings(negative).webcamBlurIntensity).toBe(0);
+	});
+});
+
+describe("webcamCoverPan", () => {
+	it("is null (centred) in every document that never set it, and is its own key", () => {
+		expect(getEditorSettings(baseDoc).webcamCoverPan).toBeNull();
+		const stale = {
+			...baseDoc,
+			legacyEditor: { webcamCropPan: { x: 0.9, y: 0.1 } },
+		} as typeof baseDoc;
+		expect(getEditorSettings(stale).webcamCoverPan).toBeNull();
+		const set = patchEditorSettings(baseDoc, { webcamCoverPan: { x: 0.2, y: 0.4 } });
+		expect(getEditorSettings(set).webcamCoverPan).toEqual({ x: 0.2, y: 0.4 });
+		expect(getEditorSettings(set).webcamCropPan).toEqual({ x: 0.5, y: 0.5 });
+		expect(SEGMENT_LOOK_KEYS).toContain("webcamCoverPan");
+	});
+});
+
+describe("fillPosition", () => {
+	const at = (legacyEditor: Record<string, unknown>) =>
+		getEditorSettings({ ...baseDoc, legacyEditor } as typeof baseDoc).fillPosition;
+
+	it("is Auto (null) for a project saved before it existed, and by default", () => {
+		expect(DEFAULT_EDITOR_SETTINGS.fillPosition).toBeNull();
+		expect(getEditorSettings(baseDoc).fillPosition).toBeNull();
+		expect(at({ aspectRatio: "9:16", formatFollowCursor: true })).toBeNull();
+	});
+
+	it("reads a stored position, held to 0..1 per axis", () => {
+		expect(at({ fillPosition: { x: 0.25, y: 0.75 } })).toEqual({ x: 0.25, y: 0.75 });
+		expect(at({ fillPosition: { x: -3, y: 9 } })).toEqual({ x: 0, y: 1 });
+	});
+
+	it("reads anything that is not a pair of numbers as Auto", () => {
+		for (const bad of [null, "left", 4, [], { x: 0.5 }, { x: "a", y: 0.5 }, { x: NaN, y: 0 }]) {
+			expect(at({ fillPosition: bad })).toBeNull();
+		}
+	});
+
+	it("is written by a patch, and put back on Auto by null", () => {
+		const placed = patchEditorSettings(baseDoc, { fillPosition: { x: 0.2, y: 0.5 } });
+		expect(getEditorSettings(placed).fillPosition).toEqual({ x: 0.2, y: 0.5 });
+		const auto = patchEditorSettings(placed, { fillPosition: null });
+		expect(getEditorSettings(auto).fillPosition).toBeNull();
+		// A patch that does not mention it leaves it alone.
+		const other = patchEditorSettings(placed, { padding: 10 });
+		expect(getEditorSettings(other).fillPosition).toEqual({ x: 0.2, y: 0.5 });
+	});
+
+	it("can differ per clip through the clip's look, null included", () => {
+		const doc = {
+			...baseDoc,
+			timeline: {
+				...baseDoc.timeline,
+				clips: [
+					{ id: "c1", look: { fillPosition: { x: 0.9, y: 0.5 } } },
+					{ id: "c2", look: { fillPosition: null } },
+					{ id: "c3" },
+				],
+			},
+			legacyEditor: { fillPosition: { x: 0.1, y: 0.5 } },
+		} as unknown as typeof baseDoc;
+		const [c1, c2, c3] = doc.timeline.clips;
+		expect(getClipEditorSettings(doc, c1).fillPosition).toEqual({ x: 0.9, y: 0.5 });
+		expect(getClipEditorSettings(doc, c2).fillPosition).toBeNull();
+		expect(getClipEditorSettings(doc, c3).fillPosition).toEqual({ x: 0.1, y: 0.5 });
+		expect(SEGMENT_LOOK_KEYS).toContain("fillPosition");
+		// Writing it for one clip keeps it off the project.
+		const next = patchClipLook(doc, "c3", { fillPosition: { x: 0.6, y: 0.5 } });
+		expect(getClipEditorSettings(next, next.timeline.clips[2]).fillPosition).toEqual({
+			x: 0.6,
+			y: 0.5,
+		});
+		expect(getEditorSettings(next).fillPosition).toEqual({ x: 0.1, y: 0.5 });
 	});
 });

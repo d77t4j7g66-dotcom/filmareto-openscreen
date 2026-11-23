@@ -1,6 +1,8 @@
 {
 	"buttons": {
 		"addZoom": "Přidat přiblížení v aktuálním čase",
+		"addCameraZoom": "Add camera zoom",
+		"autoCameraZooms": "Auto camera zooms",
 		"autoFocusAll": "Automatické zaostření všech přiblížení",
 		"autoFocusAllTip": "Všechna přiblížení sledují kurzor. Vypnuto: zaostření každého přiblížení volíte sami.",
 		"clearTimeline": "Odstranit všechna přiblížení, oříznutí, změny rychlosti, anotace a Celou kameru. Klipy, zvuk a titulky zůstanou.",
@@ -11,6 +13,7 @@
 	},
 	"hints": {
 		"pressZoom": "Stiskněte {{key}} pro přidání přiblížení",
+		"pressCameraZoom": "Press Shift+Z to zoom the camera",
 		"pressTrim": "Stiskněte {{key}} pro přidání oříznutí",
 		"pressAnnotation": "Stiskněte {{key}} pro přidání anotace",
 		"pressAudio": "Stiskněte {{audioKey}} pro přidání zvuku, {{voiceoverKey}} pro nahrání komentáře",
@@ -25,6 +28,7 @@
 		"trim": "Oříznutí",
 		"speed": "Rychlost",
 		"zoomItem": "Přiblížení {{index}}",
+		"cameraZoom": "Camera zoom",
 		"trimItem": "Oříznutí {{index}}",
 		"speedItem": "Rychlost {{index}}",
 		"annotationItem": "Anotace",
@@ -86,6 +90,8 @@
 		"importRecordingFirst": "Nejprve importujte nahrávku",
 		"noAutoZoomMoments": "Žádné momenty pro automatické přiblížení nenalezeny",
 		"noAutoZoomMomentsDescription": "Tato nahrávka neobsahuje žádná zaznamenaná kliknutí, nebo žádné, u kterého je místo pro přiblížení.",
+		"noAutoCameraZooms": "No cuts to punch in on",
+		"noAutoCameraZoomsDescription": "Needs two or more touching clips where the camera fills the frame.",
 		"addedAutoZoom": "Přidáno {{count}} automatické přiblížení",
 		"addedAutoZoomPlural": "Přidáno {{count}} automatických přiblížení",
 		"autoZoomFailed": "Automatické přiblížení selhalo",

@@ -51,7 +51,9 @@
 		"unhide": "Zobrazit vše",
 		"saveDiagnostics": "Uložit diagnostiku",
 		"permissions": "Oprávnění…",
-		"closeNotification": "Zavřít oznámení"
+		"closeNotification": "Zavřít oznámení",
+		"exportForResolve": "Export for Resolve…",
+		"resolveExportSetting": "Export for DaVinci Resolve (open timeline)"
 	},
 	"updates": {
 		"available": "Filmareto {{latestVersion}} je k dispozici. Používáte verzi {{currentVersion}}.",

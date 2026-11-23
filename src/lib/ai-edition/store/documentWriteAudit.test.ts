@@ -123,6 +123,8 @@ const DECLARED: WritePath[] = [
 
 	// The project's names and terms for Whisper (#1023), saved when the field loses focus.
 	w("src/components/ai-edition/v4/MediaStage.tsx", "MediaStage", "save", "gesture"),
+	// Remove from project / Delete from disk in the Media tab: one undoable step.
+	w("src/components/ai-edition/v4/MediaStage.tsx", "removeAssetFromProject", "save", "gesture"),
 
 	// The persist that follows an undo. Recording it would undo the undo.
 	w("src/components/ai-edition/NewEditorShell.tsx", "NewEditorShell", "save", "automatic"),
@@ -164,7 +166,8 @@ const DECLARED: WritePath[] = [
 	// "Save" chosen on the way out of Ctrl+N and Ctrl+O.
 	w("src/components/ai-edition/NewEditorShell.tsx", "onKey", "save", "gesture"),
 	w("src/components/ai-edition/NewEditorShell.tsx", "onKey", "save", "gesture"),
-	// Ctrl+V of a copied region: an audio track, zoom, annotation, or a legacy span.
+	// Ctrl+V of a copied region: an audio track, zoom, camera zoom, annotation, or a legacy span.
+	w("src/components/ai-edition/NewEditorShell.tsx", "pasteRegion", "save", "gesture"),
 	w("src/components/ai-edition/NewEditorShell.tsx", "pasteRegion", "save", "gesture"),
 	w("src/components/ai-edition/NewEditorShell.tsx", "pasteRegion", "save", "gesture"),
 	w("src/components/ai-edition/NewEditorShell.tsx", "pasteRegion", "save", "gesture"),
@@ -244,6 +247,9 @@ const DECLARED: WritePath[] = [
 	w("src/lib/ai-edition/store/useEditorSettings.ts", "set", "save", "gesture"),
 	w("src/lib/ai-edition/store/useEditorSettings.ts", "set", "set", "automatic"),
 	w("src/lib/ai-edition/store/useEditorSettings.ts", "setLive", "set", "automatic"),
+	// A change that spans several clips ("Use project position"): one gesture, one undo step.
+	w("src/lib/ai-edition/store/useEditorSettings.ts", "edit", "save", "gesture"),
+	w("src/lib/ai-edition/store/useEditorSettings.ts", "edit", "set", "automatic"),
 
 	// Opening a take with separate tracks writes where its voice speaks, once. Part of opening,
 	// not an edit: no history, or undoing it would only run the analysis again.
@@ -263,6 +269,8 @@ const DECLARED: WritePath[] = [
 	w("src/lib/ai-edition/store/useTimeline.ts", "addKeycaps", "save", "gesture"),
 	w("src/lib/ai-edition/store/useTimeline.ts", "applySmartCuts", "save", "gesture"),
 	w("src/lib/ai-edition/store/useTimeline.ts", "addCameraFullscreen", "save", "gesture"),
+	w("src/lib/ai-edition/store/useTimeline.ts", "addCameraZoom", "save", "gesture"),
+	w("src/lib/ai-edition/store/useTimeline.ts", "addAutoCameraZooms", "save", "gesture"),
 	w("src/lib/ai-edition/store/useTimeline.ts", "applyLookToAll", "save", "gesture"),
 	w("src/lib/ai-edition/store/useTimeline.ts", "applyYapping", "save", "gesture"),
 	w("src/lib/ai-edition/store/useTimeline.ts", "useTimeline", "save", "automatic"),
@@ -296,6 +304,8 @@ const DECLARED: WritePath[] = [
 	w("src/lib/ai-edition/store/useTimeline.ts", "duplicateClip", "save", "gesture"),
 	w("src/lib/ai-edition/store/useTimeline.ts", "insertClipAt", "save", "gesture"),
 	w("src/lib/ai-edition/store/useTimeline.ts", "moveClip", "save", "gesture"),
+	// A zoom taken to the other lane: one undo step.
+	w("src/lib/ai-edition/store/useTimeline.ts", "moveZoomToLane", "save", "gesture"),
 	// Timeline audio tracks (issue #350). Each is a direct user edit — drag or resize
 	// the track (placeAudioTrack), change its payload (updateAudioTrack, which
 	// setAudioTrackGain routes through), or delete it — one undo step apiece.
@@ -340,6 +350,11 @@ const DECLARED: WritePath[] = [
 	w("src/lib/ai-edition/store/useTimeline.ts", "useTimeline", "save", "automatic"),
 	// Audio-duration backfill (issue #350) — the same on-load, un-asked-for probe
 	// for imported audio assets whose duration didn't stamp at import.
+	w("src/lib/ai-edition/store/useTimeline.ts", "useTimeline", "save", "automatic"),
+	// The face track of each camera picture, looked for once in the background (`history: false`).
+	w("src/lib/ai-edition/store/useTimeline.ts", "useTimeline", "save", "automatic"),
+	// The same track put back after an undo restored a snapshot from before it landed
+	// (`history: false`, never looked for twice).
 	w("src/lib/ai-edition/store/useTimeline.ts", "useTimeline", "save", "automatic"),
 ];
 

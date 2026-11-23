@@ -13,6 +13,9 @@ import {
 	splitLookPatch,
 } from "./editorSettings";
 
+/** Where a control writes when the user names it: the whole project, or the clip being shown. */
+export type PatchScope = "project" | "clip";
+
 /**
  * `patchEditorSettings`, plus what a new frame shape does to the annotations placed on the frame:
  * each keeps its centre, and a text its fit to its words (`refitFrameAnnotations`), in the same
@@ -60,4 +63,21 @@ export function applySegmentSettingsPatch(
 	const { look, rest } = splitLookPatch(patch);
 	const next = Object.keys(rest).length > 0 ? applySettingsPatch(doc, rest, measure) : doc;
 	return Object.keys(look).length > 0 ? patchClipLook(next, clip.id, look) : next;
+}
+
+/**
+ * `applySegmentSettingsPatch` with the target named: "project" writes the project's own setting and
+ * "clip" the look of the clip under the playhead, whatever the number of clips. A look keeps only
+ * what differs from the project (`patchClipLook`).
+ */
+export function applyScopedSettingsPatch(
+	doc: AxcutDocument,
+	patch: EditorSettingsPatch,
+	scope: PatchScope,
+	timeSec: number,
+	measure?: MeasureText,
+): AxcutDocument {
+	const clip = clipUnderPlayhead(doc, timeSec);
+	if (scope === "project" || !clip) return applySettingsPatch(doc, patch, measure);
+	return patchClipLook(doc, clip.id, patch);
 }

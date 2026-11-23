@@ -1,5 +1,3 @@
-import { useSceneLabels } from "@/lib/ai-edition/timeline/useSceneLabels";
-import { useHasRecordedCursor } from "../recordedCursorTypes";
 import {
 	AudioLines,
 	Clock,
@@ -12,6 +10,7 @@ import {
 	Mic,
 	Music,
 	Pencil,
+	ScanFace,
 	Scissors,
 	Sparkles,
 	Trash2,
@@ -59,7 +58,11 @@ import { useTranscriptionStore } from "@/lib/ai-edition/store/transcriptionStore
 import { useEditorSettings } from "@/lib/ai-edition/store/useEditorSettings";
 import type { useTimeline } from "@/lib/ai-edition/store/useTimeline";
 import { collectAutoZoomSuggestionsForLatestDocument } from "@/lib/ai-edition/timeline/apply-auto-zooms";
-import { hasAnyClipWithCamera } from "@/lib/ai-edition/timeline/camera";
+import {
+	hasAnyCameraPicture,
+	hasAnyClipWithCamera,
+	zoomLanesShown,
+} from "@/lib/ai-edition/timeline/camera";
 import { formatSec } from "@/lib/ai-edition/timeline/format";
 import {
 	newRegionDurationSec,
@@ -79,6 +82,7 @@ import {
 	resolveTimelineSpanToTrim,
 	ventilateTimelineSpanToTrims,
 } from "@/lib/ai-edition/timeline/trim-mapping";
+import { useSceneLabels } from "@/lib/ai-edition/timeline/useSceneLabels";
 import {
 	piecesIn,
 	planYapping,
@@ -94,6 +98,7 @@ import {
 import { segmentsFromStt, transcriptFromSegments } from "@/lib/ai-edition/transcription/fromStt";
 import { formatBinding } from "@/lib/shortcuts";
 import { nativeBridgeClient } from "@/native/client";
+import { useHasRecordedCursor } from "../recordedCursorTypes";
 import { TransportBar } from "../TransportBar";
 import type { VideoSource } from "../VirtualPreview";
 import styles from "./EditorShellV4.module.css";
@@ -600,7 +605,14 @@ const AudioLanePill = memo(function AudioLanePill({
 
 interface LanePill {
 	id: string;
-	kind: "annotation" | "speed" | "trim" | "zoom" | "cameraFullscreen" | "shaderEffect";
+	kind:
+		| "annotation"
+		| "speed"
+		| "trim"
+		| "zoom"
+		| "cameraZoom"
+		| "cameraFullscreen"
+		| "shaderEffect";
 	start: number;
 	end: number;
 	label: string;
@@ -717,6 +729,11 @@ export function V4Timeline({
 	// clicked instead of looking like it worked. Same question, same helper as the Layout
 	// pane: is a camera attached anywhere on this timeline?
 	const hasAnyCamera = useMemo(() => hasAnyClipWithCamera(tl.assets, clips), [tl.assets, clips]);
+	// The camera has a zoom lane of its own whenever there is a camera picture to zoom (a camera
+	// beside a screen take, or a talking head); a project of talking heads alone has no screen
+	// to zoom, so it loses the screen's. `NewEditorShell` grows the timeline by the second lane.
+	const zoomLanes = useMemo(() => zoomLanesShown(tl.assets, clips), [tl.assets, clips]);
+	const hasCameraPicture = useMemo(() => hasAnyCameraPicture(tl.assets, clips), [tl.assets, clips]);
 	// The pauses added words created, placed on the ruler. Everything below measures the
 	// EXPANDED ruler — stored clip geometry plus the time those pauses add — because that
 	// is the film's real length and the one the playhead runs along. Stored geometry is
@@ -803,6 +820,16 @@ export function V4Timeline({
 		// Matches RightPanelStack's effectiveZoomScale: a custom scale (from the
 		// slider) overrides the depth preset; otherwise show the depth's actual
 		// preset value, not a fabricated linear approximation of it.
+		label: `${(p.member.customScale ?? ZOOM_DEPTH_SCALES[p.member.depth]).toFixed(2)}×`,
+		sourceIds: p.ids,
+	}));
+
+	const cameraZoomRuns = coalesceRegionsForRuler(tl.cameraZoomRegions);
+	const cameraZoomPills: LanePill[] = cameraZoomRuns.map((p) => ({
+		id: p.ids[0],
+		kind: "cameraZoom",
+		start: p.start,
+		end: p.end,
 		label: `${(p.member.customScale ?? ZOOM_DEPTH_SCALES[p.member.depth]).toFixed(2)}×`,
 		sourceIds: p.ids,
 	}));
@@ -966,6 +993,7 @@ export function V4Timeline({
 				annotation: tl.annotationRegions,
 				speed: tl.speedRegions,
 				zoom: tl.zoomRegions,
+				cameraZoom: tl.cameraZoomRegions,
 				cameraFullscreen: tl.cameraFullscreenRegions,
 				shaderEffect: tl.shaderEffectRanges,
 				// Nothing to edit on a trim but its span, and a span edit moves the whole pill.
@@ -1037,7 +1065,8 @@ export function V4Timeline({
 			const apply = async (start: number, end: number): Promise<void> => {
 				const s = Math.max(0, Math.min(end - MIN_REGION_SEC, start));
 				const en = Math.min(total, Math.max(s + MIN_REGION_SEC, end));
-				if (pill.kind === "zoom") await tl.updateZoomSpan(grabbed, s * 1000, en * 1000);
+				if (pill.kind === "zoom" || pill.kind === "cameraZoom")
+					await tl.updateZoomSpan(grabbed, s * 1000, en * 1000);
 				else if (pill.kind === "speed") await tl.updateSpeedSpan(grabbed, s * 1000, en * 1000);
 				else if (pill.kind === "annotation")
 					await tl.updateAnnotationSpan(grabbed, s * 1000, en * 1000);
@@ -1474,9 +1503,11 @@ export function V4Timeline({
 					? styles.laneTrim
 					: kind === "cameraFullscreen"
 						? styles.laneCameraFullscreen
-						: kind === "shaderEffect"
-							? styles.laneShaderEffect
-							: styles.laneZoom;
+						: kind === "cameraZoom"
+							? styles.laneCameraZoom
+							: kind === "shaderEffect"
+								? styles.laneShaderEffect
+								: styles.laneZoom;
 	const pillIcon = (kind: LanePill["kind"]) =>
 		kind === "annotation" ? (
 			<MessageSquare size={12} />
@@ -1488,6 +1519,8 @@ export function V4Timeline({
 			<Maximize2 size={12} />
 		) : kind === "shaderEffect" ? (
 			<Sparkles size={12} />
+		) : kind === "cameraZoom" ? (
+			<ScanFace size={12} />
 		) : (
 			<ZoomIn size={12} />
 		);
@@ -1762,10 +1795,9 @@ export function V4Timeline({
 			const cutSec = plans.reduce((sum, p) => sum + p.plan.stats.cutSec, 0);
 			const bad = plans.reduce((sum, p) => sum + p.plan.stats.badPieces, 0);
 			const zooms = plans.reduce((sum, p) => sum + p.plan.zooms.length, 0);
-			toast.success(
-				t("yapping.done", { seconds: Math.round(cutSec), bad, zooms }),
-				{ description: heardWords ? undefined : t("yapping.noTranscript") },
-			);
+			toast.success(t("yapping.done", { seconds: Math.round(cutSec), bad, zooms }), {
+				description: heardWords ? undefined : t("yapping.noTranscript"),
+			});
 		} catch (err) {
 			toast.error(t("yapping.failed"), {
 				description: err instanceof Error ? err.message : String(err),
@@ -2060,7 +2092,7 @@ export function V4Timeline({
 	// easing. The timeline's own end is no junction: nothing plays after it to jump to. Chained
 	// zooms get one pan trail between them instead of a zoom-out and a zoom-in. Display only,
 	// not a control. Hidden while a clip is dragged, when the pills split and slide.
-	const renderZoomTrails = () => {
+	const renderZoomTrails = (zoomRuns: typeof cameraZoomRuns, laneClass: string) => {
 		if (clipDrag) return null;
 		const ms = (span: { start: number; end: number }) => ({
 			startMs: span.start * 1000,
@@ -2135,7 +2167,7 @@ export function V4Timeline({
 								role="img"
 								aria-label={trail.text}
 								data-zoom-trail={trail.side}
-								className={`${styles.zoomTrail} ${styles.laneZoom}`}
+								className={`${styles.zoomTrail} ${laneClass}`}
 								style={{
 									left: `${pctAt(trail.fromMs / 1000)}%`,
 									width: `${pctOf(lengthMs / 1000)}%`,
@@ -2214,53 +2246,53 @@ export function V4Timeline({
 											</span>
 										</button>
 										{hasCursor ? (
-<button
-											type="button"
-											className={styles.recMenuRow}
-											onClick={() => void runAutoZooms()}
-										>
-											<ZoomIn size={16} style={{ flexShrink: 0 }} />
-											<span style={{ display: "flex", flexDirection: "column", gap: 1 }}>
-												<span style={{ fontWeight: 600 }}>{t("toolbar.automaticZooms")}</span>
-												<span style={{ fontSize: 12, color: "var(--muted)" }}>
-													{t("toolbar.automaticZoomsHint")}
+											<button
+												type="button"
+												className={styles.recMenuRow}
+												onClick={() => void runAutoZooms()}
+											>
+												<ZoomIn size={16} style={{ flexShrink: 0 }} />
+												<span style={{ display: "flex", flexDirection: "column", gap: 1 }}>
+													<span style={{ fontWeight: 600 }}>{t("toolbar.automaticZooms")}</span>
+													<span style={{ fontSize: 12, color: "var(--muted)" }}>
+														{t("toolbar.automaticZoomsHint")}
+													</span>
 												</span>
-											</span>
-										</button>
-) : null}
+											</button>
+										) : null}
 										{hasCursor ? (
-<button
-											type="button"
-											className={styles.recMenuRow}
-											onClick={() => void runSmartCuts()}
-										>
-											<Scissors size={16} style={{ flexShrink: 0 }} />
-											<span style={{ display: "flex", flexDirection: "column", gap: 1 }}>
-												<span style={{ fontWeight: 600 }}>{t("toolbar.smartCutsLocal")}</span>
-												<span style={{ fontSize: 12, color: "var(--muted)" }}>
-													{t("toolbar.smartCutsLocalHint")}
+											<button
+												type="button"
+												className={styles.recMenuRow}
+												onClick={() => void runSmartCuts()}
+											>
+												<Scissors size={16} style={{ flexShrink: 0 }} />
+												<span style={{ display: "flex", flexDirection: "column", gap: 1 }}>
+													<span style={{ fontWeight: 600 }}>{t("toolbar.smartCutsLocal")}</span>
+													<span style={{ fontSize: 12, color: "var(--muted)" }}>
+														{t("toolbar.smartCutsLocalHint")}
+													</span>
 												</span>
-											</span>
-										</button>
-) : null}
+											</button>
+										) : null}
 										{hasCursor ? (
-<button
-											type="button"
-											className={styles.recMenuRow}
-											onClick={() => {
-												setAutoEnhanceOpen(false);
-												setKeycapsOpen(true);
-											}}
-										>
-											<Keyboard size={16} style={{ flexShrink: 0 }} />
-											<span style={{ display: "flex", flexDirection: "column", gap: 1 }}>
-												<span style={{ fontWeight: 600 }}>{t("toolbar.keycaps")}</span>
-												<span style={{ fontSize: 12, color: "var(--muted)" }}>
-													{t("toolbar.keycapsHint")}
+											<button
+												type="button"
+												className={styles.recMenuRow}
+												onClick={() => {
+													setAutoEnhanceOpen(false);
+													setKeycapsOpen(true);
+												}}
+											>
+												<Keyboard size={16} style={{ flexShrink: 0 }} />
+												<span style={{ display: "flex", flexDirection: "column", gap: 1 }}>
+													<span style={{ fontWeight: 600 }}>{t("toolbar.keycaps")}</span>
+													<span style={{ fontSize: 12, color: "var(--muted)" }}>
+														{t("toolbar.keycapsHint")}
+													</span>
 												</span>
-											</span>
-										</button>
-) : null}
+											</button>
+										) : null}
 									</div>
 								</PopoverContent>
 							</Popover>
@@ -2378,20 +2410,57 @@ export function V4Timeline({
 									<ZoomIn size={16} />
 								</button>
 							</Tooltip>
+							{/* Absent, not greyed out, in a project with no camera: nothing to zoom. */}
+							{hasCameraPicture ? (
+								<Tooltip
+									content={t("buttons.addCameraZoom")}
+									shortcut={formatBinding({ key: "z", shift: true }, isMac)}
+								>
+									<button
+										type="button"
+										className={styles.tlToolBtn}
+										aria-label={t("buttons.addCameraZoom")}
+										onClick={() => void tl.addCameraZoom(newRegionDurationSec())}
+									>
+										<ScanFace size={16} />
+									</button>
+								</Tooltip>
+							) : null}
+							{/* Same condition as the camera zoom lane. */}
+							{zoomLanes.camera ? (
+								<Tooltip content={t("buttons.autoCameraZooms")}>
+									<button
+										type="button"
+										className={styles.tlToolBtn}
+										aria-label={t("buttons.autoCameraZooms")}
+										onClick={() => {
+											void tl.addAutoCameraZooms().then((count) => {
+												if (count === 0) {
+													toast.info(t("toolbar.noAutoCameraZooms"), {
+														description: t("toolbar.noAutoCameraZoomsDescription"),
+													});
+												}
+											});
+										}}
+									>
+										<Wand2 size={16} />
+									</button>
+								</Tooltip>
+							) : null}
 							{/* One name and one tip for both states: `aria-pressed` carries which one it is. */}
 							{hasCursor ? (
-<Tooltip content={t("buttons.autoFocusAllTip")}>
-								<button
-									type="button"
-									className={styles.tlToolBtn}
-									aria-pressed={settings.autoFocusAll}
-									aria-label={t("buttons.autoFocusAll")}
-									onClick={() => void setSettings({ autoFocusAll: !settings.autoFocusAll })}
-								>
-									<Crosshair size={16} />
-								</button>
-							</Tooltip>
-) : null}
+								<Tooltip content={t("buttons.autoFocusAllTip")}>
+									<button
+										type="button"
+										className={styles.tlToolBtn}
+										aria-pressed={settings.autoFocusAll}
+										aria-label={t("buttons.autoFocusAll")}
+										onClick={() => void setSettings({ autoFocusAll: !settings.autoFocusAll })}
+									>
+										<Crosshair size={16} />
+									</button>
+								</Tooltip>
+							) : null}
 							{/* Absent, not greyed out, in a project with no camera: nothing to show full screen. */}
 							{hasAnyCamera && cameraFullscreenPills.length > 0 ? (
 								<Tooltip
@@ -2533,14 +2602,28 @@ export function V4Timeline({
 										t("hints.pressTrim", { key: formatBinding(shortcuts.addTrim, isMac) }),
 									)}
 								</div>
-								<div className={styles.tlLane}>
-									{/* Its own provider, like the toolbar's: see the note there. */}
-									<TooltipProvider>{renderZoomTrails()}</TooltipProvider>
-									{renderPills(
-										zoomPills,
-										t("hints.pressZoom", { key: formatBinding(shortcuts.addZoom, isMac) }),
-									)}
-								</div>
+								{/* Hidden when every clip is a talking head: there is no screen to zoom. */}
+								{zoomLanes.screen ? (
+									<div className={styles.tlLane} data-lane="zoom">
+										{/* Its own provider, like the toolbar's: see the note there. */}
+										<TooltipProvider>{renderZoomTrails(zoomRuns, styles.laneZoom)}</TooltipProvider>
+										{renderPills(
+											zoomPills,
+											t("hints.pressZoom", { key: formatBinding(shortcuts.addZoom, isMac) }),
+										)}
+									</div>
+								) : null}
+								{/* The camera's zooms, under the screen's: they may overlap it. Only when
+								    there is a camera picture to zoom. The shell grows by its height
+								    (`CAMERA_ZOOM_LANE_EXPANSION_PX`) when both zoom lanes show. */}
+								{zoomLanes.camera ? (
+									<div className={styles.tlLane} data-lane="camera-zoom">
+										<TooltipProvider>
+											{renderZoomTrails(cameraZoomRuns, styles.laneCameraZoom)}
+										</TooltipProvider>
+										{renderPills(cameraZoomPills, t("hints.pressCameraZoom"))}
+									</div>
+								) : null}
 								{/* The scenes over the clips, as the script names them. */}
 								<div className={styles.tlSceneNames}>
 									{tl.clips.map((clip, index) =>

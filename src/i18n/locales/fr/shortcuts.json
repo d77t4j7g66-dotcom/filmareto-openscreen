@@ -35,6 +35,7 @@
 		"cycleAnnotationsForward": "Parcourir les annotations en avant",
 		"cycleAnnotationsBackward": "Parcourir les annotations en arrière",
 		"deleteSelectedAlt": "Supprimer la sélection (alt)",
+		"addCameraZoom": "Add Camera Zoom",
 		"panTimeline": "Panoramique de la timeline",
 		"zoomTimeline": "Zoom de la timeline",
 		"frameBack": "Image précédente",

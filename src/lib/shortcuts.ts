@@ -62,6 +62,12 @@ export const FIXED_SHORTCUTS: FixedShortcut[] = [
 		bindings: [{ key: "delete" }, { key: "backspace" }],
 	},
 	{
+		i18nKey: "addCameraZoom",
+		label: "Add Camera Zoom",
+		display: "Shift + Z",
+		bindings: [{ key: "z", shift: true }],
+	},
+	{
 		i18nKey: "panTimeline",
 		label: "Pan Timeline",
 		display: "Scroll",

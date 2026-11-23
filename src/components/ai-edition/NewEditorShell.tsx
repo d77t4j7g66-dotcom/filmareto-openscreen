@@ -45,6 +45,7 @@ import { future as redoStack, past as undoStack } from "@/lib/ai-edition/store/u
 import { useChatPromptBus } from "@/lib/ai-edition/store/useChatPromptBus";
 import { useSequentialTimelineOps } from "@/lib/ai-edition/store/useSequentialTimelineOps";
 import { useTimeline } from "@/lib/ai-edition/store/useTimeline";
+import { hasAnyCameraPicture, zoomLanesShown } from "@/lib/ai-edition/timeline/camera";
 import { isGeneratedAssetId } from "@/lib/ai-edition/timeline/clip-parts";
 import { mergeCloseCuts } from "@/lib/ai-edition/timeline/cut-breath";
 import { newRegionDurationSec } from "@/lib/ai-edition/timeline/newRegionDuration";
@@ -54,6 +55,15 @@ import {
 	ventilateTimelineSpanToTrims,
 } from "@/lib/ai-edition/timeline/trim-mapping";
 import { firstTimelineBusyView } from "@/lib/ai-edition/transcription/status";
+import { canTurnCameraOn } from "@/lib/cameraAvailability";
+import { canTurnMicrophoneOn } from "@/lib/microphoneAvailability";
+import { writeCameraOnly } from "@/lib/recordingMode";
+import {
+	launchStartsOnRecord,
+	launchStartsOnScript,
+	type RecordingKind,
+	recordingSetupFor,
+} from "@/lib/recordingStart";
 import { matchesShortcut } from "@/lib/shortcuts";
 import { nativeBridgeClient } from "@/native";
 import type { AiEditionProjectSummary } from "@/native/contracts";
@@ -66,19 +76,20 @@ import { insertionsEnabled } from "./insertionsEnabled";
 import { ChatStripPanel } from "./LeftPanel";
 import {
 	EditClipModal,
-	NewProjectModal,
 	OpenProjectModal,
-	type StartingPoint,
+	RecordingKindModal,
 	UnsavedChangesModal,
 	type UnsavedChoice,
 } from "./Modals";
 import { Preview } from "./Preview";
+import { ResolveExportDialog } from "./ResolveExportDialog";
 import {
 	importPendingRecording,
 	maybeSaveFreshRecordingAutoZooms,
 	setTakeTargetProject,
 } from "./recordingImport";
 import { useEditorPackage } from "./useEditorPackage";
+import { useResolveExport } from "./useResolveExport";
 import { AddAudioLayerDialog } from "./v4/AddAudioLayerDialog";
 import v4 from "./v4/EditorShellV4.module.css";
 import { type EditorMode, EditorTopBar } from "./v4/EditorTopBar";
@@ -137,6 +148,8 @@ export const MAX_TIMELINE_HEIGHT_PX = 560;
 /** The Effects lane's height (`.tlLane`: 24px and a 5px margin), added while the project has an
  *  effect: the lane only shows then (`V4Timeline`). */
 export const EFFECT_LANE_EXPANSION_PX = 29;
+/** The camera zoom lane's height (the same `.tlLane`), added while it shows under the screen's. */
+export const CAMERA_ZOOM_LANE_EXPANSION_PX = 29;
 
 /**
  * What one `loadedmetadata` event does, from the front of the write queue.
@@ -234,7 +247,13 @@ export function NewEditorShell() {
 	const [videoElement, setVideoElement] = useState<HTMLVideoElement | null>(null);
 	// v4 shell: three modes (Media / Edit / Rec), a collapsible agent (chat)
 	// column, and a floating facet inspector over the stage.
-	const [mode, setMode] = useState<EditorMode>("edit");
+	// The app's launch window opens on Record with no project (electron/main.ts, createLaunchWindow).
+	const [launchedOnRecord] = useState(() => launchStartsOnRecord(window.location.search));
+	const [mode, setMode] = useState<EditorMode>(() =>
+		launchedOnRecord ? "rec" : launchStartsOnScript(window.location.search) ? "script" : "edit",
+	);
+	// The Record tab reads "Screen Off" once, as it mounts: a new project that sets it remounts the tab.
+	const [recStageKey, setRecStageKey] = useState(0);
 	const [chatOpen, setChatOpen] = useState(false);
 	const pendingChatPrompt = useChatPromptBus((s) => s.pending);
 	useEffect(() => {
@@ -275,9 +294,16 @@ export function NewEditorShell() {
 		[document?.audioTracks],
 	);
 	const hasEffects = (document?.shaderEffectRanges?.length ?? 0) > 0;
+	// Both zoom lanes show on a project with a screen take and a camera picture: one lane more
+	// than the base height was made for (`V4Timeline`: `zoomLanesShown`).
+	const bothZoomLanes = useMemo(() => {
+		const lanes = zoomLanesShown(document?.assets ?? [], document?.timeline.clips ?? []);
+		return lanes.screen && lanes.camera;
+	}, [document?.assets, document?.timeline.clips]);
 	const extraLaneHeightPx =
 		Math.max(0, audioRowCount - 1) * AUDIO_ROW_EXPANSION_PX +
-		(hasEffects ? EFFECT_LANE_EXPANSION_PX : 0);
+		(hasEffects ? EFFECT_LANE_EXPANSION_PX : 0) +
+		(bothZoomLanes ? CAMERA_ZOOM_LANE_EXPANSION_PX : 0);
 	const timelineHeightPx = Math.min(
 		MAX_TIMELINE_HEIGHT_PX,
 		Math.max(MIN_TIMELINE_HEIGHT_PX, timelineBaseHeightPx + extraLaneHeightPx),
@@ -414,6 +440,8 @@ export function NewEditorShell() {
 					toast.success(
 						imported === "take" ? te("studio.takeAdded") : "Recording added to a new project",
 					);
+					// A take waiting at launch is a project to edit, not the empty Record tab.
+					setMode("edit");
 					return;
 				}
 			} catch (err) {
@@ -430,6 +458,8 @@ export function NewEditorShell() {
 			// consumed on import, it is also what reopening the editor after a
 			// recording lands on: the project that recording went into, settings and
 			// all, instead of a second project on the same file.
+			// The launch window is the Record tab with "No project", not the last project.
+			if (launchedOnRecord) return;
 			try {
 				const projects = await nativeBridgeClient.aiEdition.listProjects();
 				console.info("[editor] listProjects returned", projects);
@@ -450,7 +480,7 @@ export function NewEditorShell() {
 				console.warn("[editor] auto-load failed", e);
 			}
 		})();
-	}, [loadProject]);
+	}, [loadProject, launchedOnRecord]);
 
 	// Warn on close when dirty
 	useEffect(() => {
@@ -857,17 +887,26 @@ export function NewEditorShell() {
 	// The dialog's starting point picks the tab the fresh project opens on:
 	// "import" → Media (browse/drop assets), "screen-recording" → Rec (capture).
 	const handleCreateProject = useCallback(
-		async (title: string, startingPoint: StartingPoint) => {
+		async (kind: RecordingKind) => {
 			try {
-				await createProject(title);
-				setMode(startingPoint === "screen-recording" ? "rec" : "media");
+				await createProject(te("newProjectDialog.defaultTitle"));
+				// The kind sets the recording mode the Record tab and the bar use. Camera and
+				// microphone go through the same checks as their toggles: one that cannot be
+				// opened is never stored as on.
+				const setup = recordingSetupFor(kind);
+				writeCameraOnly(setup.cameraOnly);
+				const camEnabled = setup.prefs.camEnabled && (await canTurnCameraOn(te));
+				const micEnabled = setup.prefs.micEnabled && (await canTurnMicrophoneOn(te));
+				await window.electronAPI?.setRecordingPrefs?.({ camEnabled, micEnabled });
+				setRecStageKey((k) => k + 1);
+				setMode("rec");
 			} catch (err) {
 				toast.error("Could not create project", {
 					description: err instanceof Error ? err.message : String(err),
 				});
 			}
 		},
-		[createProject],
+		[createProject, te],
 	);
 
 	// The only way to get rid of a project short of deleting its file by hand.
@@ -900,6 +939,7 @@ export function NewEditorShell() {
 	}, [saveDocument]);
 
 	const editorPackage = useEditorPackage({ save: handleSave, loadProject });
+	const resolveExport = useResolveExport({ save: handleSave });
 
 	// Native File menu (electron/main.ts) → v4 actions. The menu is shown via
 	// Menu.setApplicationMenu and dispatches these IPC events; the old editor
@@ -982,6 +1022,20 @@ export function NewEditorShell() {
 			});
 		}
 	}, [promptUnsaved]);
+
+	// The teleprompter shows the open project's script: it gets it when the project opens and
+	// after each edit of the script. Main ignores it while a run of scenes holds the prompter.
+	const lastPrompterText = useRef<string | null>(null);
+	useEffect(() => {
+		const timer = setTimeout(() => {
+			const text = document ? prompterTextOf(scenesOf(document)) : "";
+			if (text === lastPrompterText.current) return;
+			lastPrompterText.current = text;
+			// No prompter on this platform: the call may have no handler.
+			void Promise.resolve(window.electronAPI.teleprompter?.setText?.(text)).catch(() => {});
+		}, 300);
+		return () => clearTimeout(timer);
+	}, [document]);
 
 	// Record on a scene: the script goes to the prompter at that scene, and the bar takes over.
 	const startSceneRun = useCallback(
@@ -1173,7 +1227,33 @@ export function NewEditorShell() {
 			() => createId(prefix),
 		);
 
-		if (snapshot.kind === "zoom") {
+		if (snapshot.kind === "cameraZoom") {
+			// One camera zoom at a time, like the screen's neighbours: refused onto another.
+			const { coalesceRegionsForRuler } = await import("@/lib/ai-edition/timeline/timelineMap");
+			const first = (anchored as Array<{ startMs: number }>)[0]?.startMs ?? timeMs;
+			const last = Math.max(
+				...(anchored as Array<{ endMs: number }>).map((fragment) => fragment.endMs),
+				timeMs,
+			);
+			if (
+				coalesceRegionsForRuler(doc.cameraZoomRanges ?? []).some(
+					(pill) => pill.start * 1000 < last && pill.end * 1000 > first,
+				)
+			) {
+				toast.error(te("regionClipboard.pasteCameraZoomOverlap"));
+				return;
+			}
+			await saveDocument(
+				{
+					...doc,
+					cameraZoomRanges: [
+						...(doc.cameraZoomRanges ?? []),
+						...anchored,
+					] as typeof doc.cameraZoomRanges,
+				},
+				{ history: true },
+			);
+		} else if (snapshot.kind === "zoom") {
 			await saveDocument(
 				{
 					...doc,
@@ -1283,11 +1363,13 @@ export function NewEditorShell() {
 		const source =
 			sel.kind === "zoom"
 				? tl.zoomRegions
-				: sel.kind === "annotation"
-					? tl.annotationRegions
-					: sel.kind === "speed"
-						? tl.speedRegions
-						: tl.cameraFullscreenRegions;
+				: sel.kind === "cameraZoom"
+					? tl.cameraZoomRegions
+					: sel.kind === "annotation"
+						? tl.annotationRegions
+						: sel.kind === "speed"
+							? tl.speedRegions
+							: tl.cameraFullscreenRegions;
 		const region = wholePillOf(
 			source as Array<{ id: string; startMs: number; endMs: number }>,
 			sel.id,
@@ -1443,6 +1525,13 @@ export function NewEditorShell() {
 			if (matchesShortcut(e, shortcuts.addZoom, isMac)) {
 				e.preventDefault();
 				void tl.addZoom(newRegionDurationSec());
+				return;
+			}
+			// Shift+Z always zooms the camera (Z zooms the clip under the playhead: the camera on a
+			// talking head, the screen otherwise), and only where there is a camera picture.
+			if (matchesShortcut(e, { key: "z", shift: true }, isMac)) {
+				e.preventDefault();
+				if (hasAnyCameraPicture(tl.assets, tl.clips)) tl.addCameraZoom(newRegionDurationSec());
 				return;
 			}
 			if (matchesShortcut(e, shortcuts.addTrim, isMac)) {
@@ -1628,6 +1717,9 @@ export function NewEditorShell() {
 					save: () => void handleSave(),
 					packageForEditing: () => void editorPackage.packageForEditing(),
 					openPackage: () => void editorPackage.openPackage(),
+					...(resolveExport.enabled
+						? { exportForResolve: () => void resolveExport.exportForResolve() }
+						: {}),
 					export: handleExport,
 					openSettings: handleOpenSettings,
 					renameProject: handleRenameProject,
@@ -1709,6 +1801,10 @@ export function NewEditorShell() {
 									cameraFullscreenRegions={tl.cameraFullscreenRegions}
 									trimRanges={tl.trimRanges}
 									selectedZoomRegionId={tl.selection?.kind === "zoom" ? tl.selection.id : null}
+									cameraZoomRegions={tl.cameraZoomRegions}
+									selectedCameraZoomId={
+										tl.selection?.kind === "cameraZoom" ? tl.selection.id : null
+									}
 									onZoomFocusChange={tl.updateZoomFocusLive}
 									onZoomFocusCommit={() => void tl.commitZoomFocus()}
 									annotationRegions={tl.annotationRegions}
@@ -1753,6 +1849,7 @@ export function NewEditorShell() {
 						<ScriptStage onContinue={() => setMode("rec")} />
 					) : (
 						<RecStage
+							key={recStageKey}
 							scenes={
 								scenesOf(document).length > 0 ? (
 									<SceneCards
@@ -1826,10 +1923,15 @@ export function NewEditorShell() {
 				onChoose={editorPackage.choose}
 				onClose={editorPackage.close}
 			/>
-			<NewProjectModal
+			<ResolveExportDialog
+				state={resolveExport.dialog}
+				onReveal={resolveExport.reveal}
+				onClose={resolveExport.close}
+			/>
+			<RecordingKindModal
 				open={newProjectOpen}
 				onClose={() => setNewProjectOpen(false)}
-				onCreate={handleCreateProject}
+				onPick={(kind) => void handleCreateProject(kind)}
 			/>
 			<EditClipModal
 				open={editClipTarget !== null}

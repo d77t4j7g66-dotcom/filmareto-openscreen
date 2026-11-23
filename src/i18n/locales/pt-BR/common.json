@@ -51,7 +51,9 @@
 		"unhide": "Mostrar Todos",
 		"saveDiagnostics": "Salvar Diagnósticos",
 		"permissions": "Permissões…",
-		"closeNotification": "Fechar a notificação"
+		"closeNotification": "Fechar a notificação",
+		"exportForResolve": "Export for Resolve…",
+		"resolveExportSetting": "Export for DaVinci Resolve (open timeline)"
 	},
 	"updates": {
 		"available": "O Filmareto {{latestVersion}} está disponível. Você está usando a versão {{currentVersion}}.",

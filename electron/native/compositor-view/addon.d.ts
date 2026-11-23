@@ -267,6 +267,30 @@ export interface CompositorViewAddon {
 		frames: number[],
 		maxWidth: number,
 	): Promise<Array<{ index: number; width: number; height: number; jpeg: Buffer }>>;
+	/** Per-media-frame framing for the Resolve export: 19 numbers per entry of `sourceTimes`
+	 *  (seconds of the clip's screen source), straight from `plan_frame` / `plan_cursor`.
+	 *  Order: box(4) rest(4) crop(4) radius unit cursorX cursorY cursorSize cursorAlpha cursorKind.
+	 *  Lengths by output height. Cursor kind = 1-based index of the plan's cursor type in
+	 *  `cursorKinds` (index of "arrow" when unlisted, 0 when none or alpha 0). A zero
+	 *  `webcamW`/`webcamH` means the clip has no camera (an error for the camera role). Throws on
+	 *  a `clipIndex` outside the scene's clips. Pass `cursorPath` for BOTH roles (the camera dodges
+	 *  the pointer); `null` also turns off cursor-follow zoom. No GPU. Absent from older builds. */
+	sampleResolveFrames?(
+		sceneJson: string,
+		cursorPath: string | null,
+		clipIndex: number,
+		role: "screen" | "camera",
+		sourceTimes: Float64Array,
+		cursorKinds: string[],
+		params: {
+			renderW: number;
+			renderH: number;
+			screenW: number;
+			screenH: number;
+			webcamW: number;
+			webcamH: number;
+		},
+	): Float32Array;
 	/** Native GIF export. Identical inputs to `exportMulti` — same clips, same
 	 *  scene — because it is the same render: both drive `walk_composited_timeline`
 	 *  in the compositor crate and differ only in the encoder. Cursor, background,

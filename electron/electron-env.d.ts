@@ -26,8 +26,18 @@ interface Window {
 	electronAPI: {
 		teleprompter: {
 			perform: (action: string) => Promise<unknown>;
+			/** Pushed by main on every prompter change. */
+			onState?: (
+				listener: (
+					state: Awaited<ReturnType<Window["electronAPI"]["teleprompter"]["state"]>>,
+				) => void,
+			) => () => void;
+			setText?: (text: string) => Promise<void>;
 			state: () => Promise<{
 				open: boolean;
+				playing?: boolean;
+				/** The prompter's settings; the bar shows the scroll speed. */
+				settings?: { speed: number };
 				stageIndex: number;
 				stageCount: number;
 				take: number;
@@ -91,6 +101,8 @@ interface Window {
 		) => () => void;
 		getSources: (opts: Electron.SourcesOptions) => Promise<ProcessedDesktopSource[]>;
 		switchToEditor: () => Promise<void>;
+		/** The editor on the Script tab of the current project, from the recording bar. */
+		openScriptEditor: () => Promise<void>;
 		switchToHud: () => Promise<void>;
 		startNewRecording: () => Promise<{ success: boolean; error?: string }>;
 		openSourceSelector: () => Promise<{
@@ -237,11 +249,26 @@ interface Window {
 			request: import("../src/lib/nativeMacRecording").NativeMacRecordingRequest,
 		) => Promise<import("../src/lib/nativeMacRecording").NativeMacRecordingStartResult>;
 		onNativeMacSystemAudioUnavailable: (callback: () => void) => () => void;
+		/** 1.2.0: the capture helper holds the camera; previews let it go until it is released. */
+		onNativeCameraClaim?: (callback: (claimed: boolean) => void) => () => void;
+		isNativeCameraClaimed?: () => Promise<boolean>;
 		pauseNativeMacRecording: () => Promise<{
 			success: boolean;
 			error?: string;
 		}>;
 		resumeNativeMacRecording: () => Promise<{
+			success: boolean;
+			error?: string;
+		}>;
+		/**
+		 * Ends the countdown hold of a take started with `holdUntilResume`: the take starts now,
+		 * or with `cancel` it is dropped (its start then fails, leaving nothing behind). With
+		 * `recordingId`, only that take's hold is released.
+		 */
+		releaseNativeMacHold: (
+			cancel?: boolean,
+			recordingId?: number,
+		) => Promise<{
 			success: boolean;
 			error?: string;
 		}>;
@@ -357,6 +384,24 @@ interface Window {
 			message?: string;
 			error?: string;
 		}>;
+		/**
+		 * Media tab, "Delete from disk", in two steps; the renderer names ids, never paths. Prepare
+		 * (before the asset is removed) lists the files that will go; commit (after the removal is
+		 * saved) moves them to the Trash unless a project still uses them (`shared`).
+		 * Absent in the browser shim.
+		 */
+		prepareMediaTrash?: (
+			projectId: string,
+			assetId: string,
+		) => Promise<{ token: string; files: string[] } | null>;
+		cancelMediaTrash?: (token: string) => Promise<void>;
+		commitMediaTrash?: (token: string) => Promise<{
+			trashed: string[];
+			kept: string[];
+			shared: boolean;
+			failedClosed: boolean;
+			refused?: boolean;
+		}>;
 		openVideoFilePicker: () => Promise<{
 			success: boolean;
 			path?: string;
@@ -442,6 +487,13 @@ interface Window {
 		claudeStatus: () => Promise<import("./ai-edition/claude-subscription").ClaudeStatus>;
 		claudeSignIn: () => Promise<void>;
 		findFace: (filePath: string, durationSec: number) => Promise<{ x: number; y: number } | null>;
+		findFaceTrack: (
+			filePath: string,
+			durationSec: number,
+			offsetSec?: number,
+		) => Promise<
+			Array<{ t: number; x: number; y: number; h?: number }> | null | undefined | "busy"
+		>;
 		hearTalkingHead: (
 			filePath: string,
 			spans: { start: number; end: number }[],
@@ -531,6 +583,15 @@ interface Window {
 		onEditorPackageProgress: (
 			callback: (progress: import("./package/buildPackage").PackageProgress) => void,
 		) => () => void;
+		onMenuExportForResolve: (callback: () => void) => () => void;
+		exportForResolve: (
+			projectId: string,
+		) => Promise<import("./resolve-export/ipc").ResolveExportIpcResult>;
+		onResolveExportProgress: (
+			callback: (progress: import("./resolve-export/build").ResolveExportProgress) => void,
+		) => () => void;
+		getResolveExportEnabled: () => Promise<boolean>;
+		onResolveExportEnabledChanged: (callback: (enabled: boolean) => void) => () => void;
 		/** Edit > Undo / Redo. On macOS the menu is the only route Cmd+Z has to the
 		 *  renderer at all — see `electron/edit-menu.ts`. */
 		onMenuUndo: (callback: () => void) => () => void;

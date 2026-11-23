@@ -5,14 +5,31 @@ import Vision
 /// The eye line of the largest face in an image, 0-1 from the top left, and the face's height, as
 /// "x y h". Nothing when there is no face. The same look Filmareto's Resolve chain takes before it places a zoom.
 func printEyes(imagePath: String) {
-    guard let image = CIImage(contentsOf: URL(fileURLWithPath: imagePath)) else { return }
+    if let line = eyesLine(imagePath: imagePath) { print(line) }
+}
+
+/// Every image in a folder, in name order, one process for the whole take: "<name> x y h" per
+/// image, or "<name> none" when there is no face or the image can't be read. A bad frame never
+/// stops the rest.
+func printEyesBatch(directory: String) {
+    let names = ((try? FileManager.default.contentsOfDirectory(atPath: directory)) ?? [])
+        .filter { ["png", "jpg", "jpeg"].contains(($0 as NSString).pathExtension.lowercased()) }
+        .sorted()
+    for name in names {
+        let path = (directory as NSString).appendingPathComponent(name)
+        print("\(name) \(eyesLine(imagePath: path) ?? "none")")
+    }
+}
+
+func eyesLine(imagePath: String) -> String? {
+    guard let image = CIImage(contentsOf: URL(fileURLWithPath: imagePath)) else { return nil }
     let request = VNDetectFaceLandmarksRequest()
     let handler = VNImageRequestHandler(ciImage: image, options: [:])
     guard (try? handler.perform([request])) != nil,
           let face = request.results?.max(by: {
               $0.boundingBox.width * $0.boundingBox.height < $1.boundingBox.width * $1.boundingBox.height
           })
-    else { return }
+    else { return nil }
     let box = face.boundingBox
     func centre(_ region: VNFaceLandmarkRegion2D?) -> CGPoint? {
         guard let region, region.pointCount > 0 else { return nil }
@@ -30,5 +47,5 @@ func printEyes(imagePath: String) {
     } else {
         point = CGPoint(x: box.midX, y: box.origin.y + box.height * 0.62)
     }
-    print(String(format: "%.5f %.5f %.5f", point.x, 1 - point.y, box.height))
+    return String(format: "%.5f %.5f %.5f", point.x, 1 - point.y, box.height)
 }

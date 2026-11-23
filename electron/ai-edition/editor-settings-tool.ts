@@ -14,6 +14,7 @@ import {
 	WALLPAPER_MOTIONS,
 	WEBCAM_BACKGROUND_MODES,
 } from "../../src/components/video-editor/types";
+import { documentHasTiltedZoom } from "../../src/lib/ai-edition/document/cameraZooms";
 import {
 	collectNativeFormats,
 	type FormatFillAvailability,
@@ -268,7 +269,7 @@ export function inactiveSettings(
 	if (s.padding === 0 && s.frame === "none") {
 		out.borderRadius = "At padding 0 with no frame the corners are square.";
 	}
-	if (!document.zoomRanges.some((zoom) => zoom.rotationPreset != null)) {
+	if (!documentHasTiltedZoom(document)) {
 		out.depthOfField = "It only blurs a 3D-tilted zoom (rotationPreset), and there is none.";
 	}
 
@@ -330,7 +331,7 @@ export function editorSettingsSnapshot(
 			aspectRatios: [...(autoAvailable ? ["auto"] : []), ...ASPECT_RATIO_PRESETS],
 			originalAspectRatios: collectNativeFormats(document).map(({ ratio: _ratio, ...f }) => f),
 			formatFill: formatFillAvailability(document),
-			hasTiltedZoom: document.zoomRanges.some((zoom) => zoom.rotationPreset != null),
+			hasTiltedZoom: documentHasTiltedZoom(document),
 			bundledWallpapers: WALLPAPER_PATHS,
 			cursorThemes: [
 				{ id: DEFAULT_CURSOR_THEME_ID, name: "Default" },

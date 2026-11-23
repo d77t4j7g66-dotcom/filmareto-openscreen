@@ -21,6 +21,14 @@ public enum Geometry {
         return (CGRect(x: x, y: screenFrame.maxY - menuBarHeight - contentHeight, width: w, height: contentHeight), 0)
     }
 
+    /// The "Top" position: anchored to the top edge of the display's visible area, centred
+    /// horizontally. Width and height are capped to the visible area.
+    public static func topFrame(visibleFrame: CGRect, width: CGFloat, height: CGFloat) -> CGRect {
+        let w = min(width, visibleFrame.width)
+        let h = min(height, visibleFrame.height)
+        return CGRect(x: visibleFrame.midX - w / 2, y: visibleFrame.maxY - h, width: w, height: h)
+    }
+
     public static func centeredFrame(visibleFrame: CGRect, width: CGFloat, height: CGFloat) -> CGRect {
         CGRect(x: visibleFrame.midX - width / 2, y: visibleFrame.midY - height / 2, width: width, height: height)
     }

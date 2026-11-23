@@ -1,6 +1,6 @@
 import type { RecognizedWord } from "./speechTypes";
 
-export type PrompterPosition = "notch" | "free" | "screen" | "fullscreen";
+export type PrompterPosition = "screen" | "fullscreen";
 export type PrompterMode = "voice" | "manual" | "bullets";
 
 export type PrompterSettings = {
@@ -19,12 +19,16 @@ export type PrompterSettings = {
 	speed: number;
 	/** Display chosen for the top and full-screen positions. Null follows the notch, then the mouse. */
 	displayId: number | null;
+	/** The user chose the display themselves; until then it follows the position's default. */
+	displayPicked: boolean;
 	/** Height of the reading line in the text area, 0 at the top and 1 at the bottom. */
 	activeLine: number;
 	paddingH: number;
 	paddingV: number;
 	lineSpacing: number;
 	showGuide: boolean;
+	/** Live camera behind the text (full screen on another display only): 0 hides it, 1 is full. */
+	cameraOpacity: number;
 };
 
 export type PrompterWord = { text: string; bold: boolean };
@@ -59,6 +63,7 @@ export const HOTKEY_ACTIONS = [
 ] as const;
 export type HotkeyAction = (typeof HOTKEY_ACTIONS)[number];
 export type HotkeyModifier = "ctrl" | "alt" | "shift" | "cmd";
+/** An empty `key` is a shortcut the user cleared: it is kept in the settings and never registered. */
 export type HotkeyBinding = { action: HotkeyAction; key: string; modifiers: HotkeyModifier[] };
 export type AudioDevice = { id: string; name: string; isDefault: boolean };
 
@@ -81,12 +86,26 @@ export type ToHelper =
 	| { type: "prompter.open"; stage: PrompterStage; startLineId: string; settings: PrompterSettings }
 	| { type: "prompter.setCursor"; lineId: string; wordIndex: number }
 	| { type: "prompter.setSettings"; settings: PrompterSettings }
+	/** The camera to show behind the text, as Chromium labels it. Null while the camera is off. */
+	| { type: "prompter.setCamera"; name: string | null }
 	| { type: "prompter.setPlaying"; playing: boolean }
 	| { type: "prompter.setVisible"; visible: boolean }
 	| { type: "prompter.stageEnd"; hint: string }
 	| { type: "prompter.countdown"; seconds: number }
 	| { type: "prompter.status"; text: string | null }
 	| { type: "prompter.close" }
+	/**
+	 * The camera, full screen on a display of its own. Not the prompter's: it needs no prompter open.
+	 * `enabled` is false while the camera is off or none is chosen; `displayId` is a CGDirectDisplayID
+	 * as a string, like `prompter.state`'s.
+	 */
+	| {
+			type: "cameraPreview.set";
+			enabled: boolean;
+			displayId: string | null;
+			cameraName: string | null;
+			mirror: boolean;
+	  }
 	| {
 			type: "speech.start";
 			sessionId: number;
@@ -121,6 +140,8 @@ export type FromHelper =
 	| { type: "prompter.countdownDone" }
 	| { type: "prompter.window"; windowId: number }
 	| { type: "audio.devices"; devices: AudioDevice[] }
+	/** The camera window opened or closed; `windowId` is there only while it is open. */
+	| { type: "cameraPreview.state"; active: boolean; windowId?: number }
 	| { type: "error"; code: string; message: string };
 
 export function encodeMessage(msg: ToHelper): string {

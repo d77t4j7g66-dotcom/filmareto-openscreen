@@ -53,7 +53,8 @@
 		"permissionDenied": "Recording permission denied. Please allow screen recording.",
 		"accessibilityAllowAndRetry": "Allow Accessibility access for Filmareto, then press record again to start the countdown.",
 		"cursorAccessibilityUnavailable": "Accessibility is off. Recording will continue, but cursor effects may be limited. Enable it in System Settings for full cursor effects.",
-		"selectSource": "Choose a screen or window to record"
+		"selectSource": "Choose a screen or window to record",
+		"cameraNotBroadcast": "Camera recorded in standard quality: the broadcast recorder could not open it."
 	},
 	"emptyState": {
 		"title": "Start with a recording",
@@ -81,6 +82,7 @@
 		"nothingToPaste": "No attributes copied yet",
 		"pasteAssetMissing": "That audio track's file isn't in this project",
 		"pasteEffectOverlap": "Another effect already plays there: one effect at a time",
+		"pasteCameraZoomOverlap": "Another camera zoom already plays there: one camera zoom at a time",
 		"kinds": {
 			"zoom": "Zoom",
 			"speed": "Speed",
@@ -109,7 +111,8 @@
 			"script": "Script",
 			"edit": "Edit",
 			"rec": "Record"
-		}
+		},
+		"exportForResolve": "Export for Resolve…"
 	},
 	"rec": {
 		"source": "Source",
@@ -155,6 +158,17 @@
 		"recordingsFolderFailed": "Couldn't switch to that folder"
 	},
 	"mediaStage": {
+		"moreActions": "More actions",
+		"removeFromProject": "Remove from project",
+		"deleteFromDisk": "Delete from disk…",
+		"removedFromProject": "Removed {{label}} from the project",
+		"deleteDialogTitle": "Delete {{name}} from disk?",
+		"deleteDialogBody": "These files move to the Trash, and every clip that uses {{name}} is removed from this project. Undo brings the clips back, not the files: restore them from the Trash.",
+		"cannotDelete": "{{label}} can't be deleted from the disk here",
+		"deleteDialogConfirm": "Move to the Trash",
+		"movedToTrash": "Moved {{label}} to the Trash — restore it from the Trash",
+		"removedStillUsed": "Removed {{label}} from this project. A project still uses the file, so it stays on disk.",
+		"trashFailed": "Removed {{label}} from the project, but the file could not be moved to the Trash",
 		"openProjectFirst": "Open a project first",
 		"couldNotAddAsset": "Could not add asset",
 		"searchPlaceholder": "Search media…",
@@ -230,6 +244,10 @@
 	},
 	"inspector": {
 		"resetFocusPoint": "Reset focus point",
+		"moveToCameraZoom": "Move to camera zoom",
+		"moveToScreenZoom": "Move to screen zoom",
+		"cameraFocusAuto": "Follows your face",
+		"moveZoomBlocked": "There is already a zoom there. Move or shorten one first.",
 		"setColor": "Set color {{color}}",
 		"trimHiddenDuration": "{{duration}}s of source media hidden from the edited timeline.",
 		"restoreDeleteTrim": "Bring this part back",
@@ -346,6 +364,16 @@
 			"screenRecordingDesc": "Start system capture",
 			"importMediaDesc": "Video, audio, images from disk"
 		}
+	},
+	"recordingKindDialog": {
+		"title": "What are you recording?",
+		"subtitle": "Sets the camera, screen and microphone for the recording bar",
+		"talkingHead": "Talking head",
+		"talkingHeadDesc": "Camera only, with your microphone",
+		"screenCamera": "Screen + camera",
+		"screenCameraDesc": "Your screen with you on camera",
+		"screenOnly": "Screen only",
+		"screenOnlyDesc": "Your screen and microphone, no camera"
 	},
 	"openProjectDialog": {
 		"title": "Open project",
@@ -538,5 +566,19 @@
 		"unsafePath": "Some paths in the project point outside its folder, so it was not packaged.",
 		"notFound": "The project could not be found. Save it and try again.",
 		"reloadFailed": "The project could not be reloaded after opening the package."
+	},
+	"resolveExport": {
+		"runningTitle": "Exporting for DaVinci Resolve",
+		"runningBody": "Preparing the media and the framing data. This can take a few minutes.",
+		"doneTitle": "Ready for DaVinci Resolve",
+		"doneBody": "The export is in {{path}}.",
+		"reveal": "Show in Finder",
+		"restartNeeded": "Restart DaVinci Resolve once first, so it loads the Filmareto Screen effect.",
+		"nextStep": "In DaVinci Resolve: Workspace → Scripts → Filmareto Import.",
+		"errorTitle": "Export for Resolve failed",
+		"notFound": "The project could not be found.",
+		"disabled": "Export for DaVinci Resolve is switched off in the app menu.",
+		"noFfmpeg": "ffmpeg was not found, so the media cannot be prepared.",
+		"noClips": "The project has no clip to export."
 	}
 }

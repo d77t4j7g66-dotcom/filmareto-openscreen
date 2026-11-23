@@ -35,6 +35,7 @@
 		"cycleAnnotationsForward": "Chuyển tiếp qua các chú thích",
 		"cycleAnnotationsBackward": "Chuyển lùi qua các chú thích",
 		"deleteSelectedAlt": "Xóa mục đã chọn (alt)",
+		"addCameraZoom": "Add Camera Zoom",
 		"panTimeline": "Xoay Trục thời gian",
 		"zoomTimeline": "Thu phóng Trục thời gian",
 		"frameBack": "Lùi một khung hình",

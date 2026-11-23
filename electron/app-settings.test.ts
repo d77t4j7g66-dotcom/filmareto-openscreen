@@ -170,4 +170,16 @@ describe("app settings store", () => {
 
 		expect(new AppSettingsStore(dir).getSnapshot().recording.camQuality).toBe("2160p");
 	});
+
+	it("keeps the Resolve export off by default, persists it and leaves other settings alone", () => {
+		const dir = temp();
+		const store = new AppSettingsStore(dir);
+		expect(store.getSnapshot().resolveExportEnabled).toBe(false);
+		store.setRecordingPreferences({ micEnabled: true });
+		expect(store.setResolveExportEnabled(true).resolveExportEnabled).toBe(true);
+		const reread = new AppSettingsStore(dir).getSnapshot();
+		expect(reread.resolveExportEnabled).toBe(true);
+		expect(reread.recording.micEnabled).toBe(true);
+		expect(store.setResolveExportEnabled(false).resolveExportEnabled).toBe(false);
+	});
 });

@@ -46,8 +46,14 @@ export function contextualStrings(script: Script, stageIndex: number, max = 100)
 }
 
 export function stageEndHint(bindings: HotkeyBinding[], isLastStage: boolean): string {
-	const retake = `${formatHotkey(bindings, "retakeStage")} again`;
-	return isLastStage
-		? `End of script\n${retake}`
-		: `End of segment\n${formatHotkey(bindings, "nextStage")} next · ${retake}`;
+	// A cleared shortcut has no keys to show, so its part of the hint is left out.
+	const part = (action: "retakeStage" | "nextStage", word: string) => {
+		const keys = formatHotkey(bindings, action);
+		return keys ? `${keys} ${word}` : "";
+	};
+	const hints = [isLastStage ? "" : part("nextStage", "next"), part("retakeStage", "again")].filter(
+		Boolean,
+	);
+	const title = isLastStage ? "End of script" : "End of segment";
+	return hints.length > 0 ? `${title}\n${hints.join(" · ")}` : title;
 }

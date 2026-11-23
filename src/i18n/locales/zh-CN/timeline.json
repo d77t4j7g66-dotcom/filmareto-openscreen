@@ -1,6 +1,8 @@
 {
 	"buttons": {
 		"addZoom": "在当前时间添加缩放效果",
+		"addCameraZoom": "Add camera zoom",
+		"autoCameraZooms": "Auto camera zooms",
 		"autoFocusAll": "所有缩放自动对焦",
 		"autoFocusAllTip": "开启后，所有缩放效果自动跟随光标；关闭后，可分别设置对焦位置",
 		"clearTimeline": "清除所有缩放、删减区间、变速、标注和全屏摄像头效果，保留视频片段、音频和字幕",
@@ -11,6 +13,7 @@
 	},
 	"hints": {
 		"pressZoom": "按 {{key}} 添加缩放",
+		"pressCameraZoom": "Press Shift+Z to zoom the camera",
 		"pressTrim": "按 {{key}} 添加删减区间",
 		"pressAnnotation": "按 {{key}} 添加标注",
 		"pressAudio": "按 {{audioKey}} 添加音频，按 {{voiceoverKey}} 录制配音",
@@ -25,6 +28,7 @@
 		"trim": "删减区间",
 		"speed": "速度",
 		"zoomItem": "缩放 {{index}}",
+		"cameraZoom": "Camera zoom",
 		"trimItem": "删减区间 {{index}}",
 		"speedItem": "速度 {{index}}",
 		"annotationItem": "标注",
@@ -86,6 +90,8 @@
 		"importRecordingFirst": "请先导入录制内容",
 		"noAutoZoomMoments": "未找到自动缩放时刻",
 		"noAutoZoomMomentsDescription": "此录制没有记录到点击，或没有点击留有缩放的空间。",
+		"noAutoCameraZooms": "No cuts to punch in on",
+		"noAutoCameraZoomsDescription": "Needs two or more touching clips where the camera fills the frame.",
 		"addedAutoZoom": "已添加 {{count}} 个自动缩放",
 		"addedAutoZoomPlural": "已添加 {{count}} 个自动缩放",
 		"autoZoomFailed": "自动缩放失败",

@@ -35,6 +35,7 @@
 		"cycleAnnotationsForward": "Anmerkungen vorwärts durchlaufen",
 		"cycleAnnotationsBackward": "Anmerkungen rückwärts durchlaufen",
 		"deleteSelectedAlt": "Auswahl löschen (Alternative)",
+		"addCameraZoom": "Add Camera Zoom",
 		"panTimeline": "Timeline verschieben",
 		"zoomTimeline": "Timeline zoomen",
 		"frameBack": "Ein Bild zurück",

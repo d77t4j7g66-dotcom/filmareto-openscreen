@@ -95,6 +95,8 @@
 	/* zoom pills: blue, so the most common effect never reads as the clip under it.
 	   Light enough to carry the pills' dark ink. */
 	--zoom: #3b82f6;
+	/* camera zoom pills: lime, apart from the screen's blue and from --warn's amber. */
+	--camera-zoom: #84cc16;
 	/* strength of the coloured glow under candy pills and clips: on a light surface
 	   a glow reads as an outline, so it is much fainter there than on dark. */
 	--candy-glow: 12%;

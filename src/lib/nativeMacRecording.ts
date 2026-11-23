@@ -1,7 +1,8 @@
 import type { Rectangle } from "electron";
 import type { CursorCaptureMode } from "./recordingSession";
 
-export type NativeMacSourceType = "display" | "window";
+/** "camera": a talking-head take, the camera and the microphone with no screen (1.2.0). */
+export type NativeMacSourceType = "display" | "window" | "camera";
 
 export type NativeMacRecordingRequest = {
 	schemaVersion: 1;
@@ -10,6 +11,16 @@ export type NativeMacRecordingRequest = {
 	excludedWindowIds?: number[];
 	/** Display captures: leave Finder's desktop icons out. Notifications are always left out. */
 	hideDesktopIcons?: boolean;
+	/**
+	 * 1.2.0, camera-only takes: the take starts warm during the countdown and the renderer marks
+	 * the app as recording (the teleprompter's start) itself, when the countdown ends.
+	 */
+	deferAppRecording?: boolean;
+	/**
+	 * 1.2.0: started during the countdown and held there, so the camera has woken up and settled
+	 * its exposure by zero; `releaseNativeMacHold` starts the take. The start resolves only then.
+	 */
+	holdUntilResume?: boolean;
 	source: {
 		type: NativeMacSourceType;
 		sourceId: string;
@@ -49,6 +60,10 @@ export type NativeMacRecordingRequest = {
 	outputs: {
 		screenPath: string;
 		manifestPath?: string;
+		/** 1.2.0: the camera's own `.mov` (HEVC Main 10, 50 Mbps, constant 30 fps). */
+		webcamPath?: string;
+		/** 1.2.0: the microphone as a 48 kHz 24-bit WAV at unity. */
+		micWavPath?: string;
 	};
 };
 
@@ -68,6 +83,10 @@ export type NativeMacHelperRecordingStoppedEvent = {
 	screenPath: string;
 	/** Frames the writer was not ready for or refused. Absent from helpers built before #937. */
 	droppedVideoFrames?: number;
+	/** 1.2.0: the camera's file, when the helper recorded the camera. */
+	webcamPath?: string;
+	/** 1.2.0: the microphone WAV, when one was written. */
+	micWavPath?: string;
 };
 
 export type NativeMacHelperWarningEvent = {
@@ -102,6 +121,8 @@ export type NativeMacRecordingStartResult = {
 	microphoneUnavailable?: boolean;
 	/** The microphone was asked for, but macOS lists no audio input: the take has no voice. */
 	microphoneNotFound?: boolean;
+	/** 1.2.0: the helper is recording the camera itself; the renderer records none. */
+	webcamNative?: boolean;
 	error?: string;
 };
 

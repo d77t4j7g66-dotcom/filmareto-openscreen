@@ -1,6 +1,8 @@
 {
 	"buttons": {
 		"addZoom": "Thêm thu phóng tại thời điểm hiện tại",
+		"addCameraZoom": "Add camera zoom",
+		"autoCameraZooms": "Auto camera zooms",
 		"autoFocusAll": "Lấy nét tự động cho mọi thu phóng",
 		"autoFocusAllTip": "Mọi thu phóng đều theo con trỏ. Tắt: bạn chọn điểm lấy nét cho từng thu phóng.",
 		"clearTimeline": "Xóa mọi thu phóng, đoạn cắt, thay đổi tốc độ, chú thích và Camera Toàn màn hình. Clip, âm thanh và phụ đề được giữ lại.",
@@ -11,6 +13,7 @@
 	},
 	"hints": {
 		"pressZoom": "Nhấn {{key}} để thêm thu phóng",
+		"pressCameraZoom": "Press Shift+Z to zoom the camera",
 		"pressTrim": "Nhấn {{key}} để thêm cắt",
 		"pressAnnotation": "Nhấn {{key}} để thêm chú thích",
 		"pressAudio": "Nhấn {{audioKey}} để thêm âm thanh, {{voiceoverKey}} để ghi âm lời thuyết minh",
@@ -25,6 +28,7 @@
 		"trim": "Cắt",
 		"speed": "Tốc độ",
 		"zoomItem": "Thu phóng {{index}}",
+		"cameraZoom": "Camera zoom",
 		"trimItem": "Cắt {{index}}",
 		"speedItem": "Tốc độ {{index}}",
 		"annotationItem": "Chú thích",
@@ -86,6 +90,8 @@
 		"importRecordingFirst": "Hãy nhập một bản ghi trước",
 		"noAutoZoomMoments": "Không tìm thấy khoảnh khắc thu phóng tự động",
 		"noAutoZoomMomentsDescription": "Bản ghi này không có cú nhấp nào được ghi lại, hoặc không có cú nhấp nào còn chỗ cho thu phóng.",
+		"noAutoCameraZooms": "No cuts to punch in on",
+		"noAutoCameraZoomsDescription": "Needs two or more touching clips where the camera fills the frame.",
 		"addedAutoZoom": "Đã thêm {{count}} thu phóng tự động",
 		"addedAutoZoomPlural": "Đã thêm {{count}} thu phóng tự động",
 		"autoZoomFailed": "Thu phóng tự động thất bại",

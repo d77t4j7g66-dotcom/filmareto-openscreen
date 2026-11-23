@@ -769,6 +769,67 @@ fn export_cfg_and_scene(scene_json: Option<&str>) -> (config::Cfg, Option<Scene>
     (cfg, scene)
 }
 
+/// Sizes (px) the Resolve sampler plans against: the output, and the visible frames of the screen
+/// and camera sources. A zero `webcam_w`/`webcam_h` means the clip has no camera.
+#[napi(object)]
+pub struct ResolveSampleParams {
+    pub render_w: f64,
+    pub render_h: f64,
+    pub screen_w: f64,
+    pub screen_h: f64,
+    pub webcam_w: f64,
+    pub webcam_h: f64,
+}
+
+/// Per-media-frame framing for the Resolve export: one 19-number sample per entry of
+/// `source_times` (seconds of the clip's screen source), the same numbers `plan_frame` /
+/// `plan_cursor` give the compositor for that time. `role` is `"screen"` or `"camera"`;
+/// `cursor_kinds` is the atlas order (the cursor kind is the 1-based index of the plan's type, the
+/// index of `"arrow"` when it is not listed). Pure: no GPU, no decoder. Returns
+/// `source_times.len() * 19` floats. Errors on a `clip_index` outside the scene's clips, and on
+/// the camera role with a zero webcam size. `cursor_path` is needed for BOTH roles: the camera
+/// dodges the pointer, and a `null` path also turns off cursor-follow zoom (as an export with no
+/// track would); a missing or unreadable file counts as `null`.
+#[napi]
+pub fn sample_resolve_frames(
+    scene_json: String,
+    cursor_path: Option<String>,
+    clip_index: u32,
+    role: String,
+    source_times: Float64Array,
+    cursor_kinds: Vec<String>,
+    params: ResolveSampleParams,
+) -> Result<Float32Array> {
+    use openscreen_compositor::resolve_samples::{sample_frames, Role};
+    let role = match role.as_str() {
+        "screen" => Role::Screen,
+        "camera" => Role::Camera,
+        other => return Err(Error::from_reason(format!("role must be \"screen\" or \"camera\", got \"{other}\""))),
+    };
+    let (cfg, scene) = export_cfg_and_scene(Some(&scene_json));
+    let scene = scene.ok_or_else(|| Error::from_reason("scene JSON is not a valid scene"))?;
+    // As the export loads it (`timeline_walk`): offset 0, then smoothed by the scene's setting. A
+    // missing or unreadable track is no cursor, not an error.
+    // Both roles get it: the camera dodges the pointer.
+    let track = cursor_path
+        .and_then(|path| openscreen_compositor::cursor::CursorTrack::load(&path, 0.0, 24.0 * 3600.0).ok())
+        .map(|raw| raw.smoothed(scene.cursor.smoothing));
+    let samples = sample_frames(
+        &scene,
+        &cfg,
+        track.as_ref(),
+        &cursor_kinds,
+        clip_index as usize,
+        role,
+        &source_times,
+        [params.render_w as f32, params.render_h as f32],
+        [params.screen_w as f32, params.screen_h as f32],
+        [params.webcam_w as f32, params.webcam_h as f32],
+    )
+    .map_err(Error::from_reason)?;
+    Ok(Float32Array::new(samples.into_iter().flatten().collect()))
+}
+
 fn clip_sources(clips: Vec<ClipInput>) -> Vec<pipeline::ClipSource> {
     clips
         .into_iter()

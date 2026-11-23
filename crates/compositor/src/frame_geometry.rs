@@ -339,32 +339,76 @@ pub(crate) fn webcam_source_rect(
     crop: Option<SceneCrop>,
     box_ar: f32,
 ) -> [f32; 4] {
-    let u_max = visible[0].max(1.0) / tex[0].max(1.0);
-    let v_max = visible[1].max(1.0) / tex[1].max(1.0);
-    cover_uv_rect(
-        screen_source_rect(u_max, v_max, crop, 1.0, [0.5, 0.5]),
-        tex,
-        box_ar,
-    )
+    webcam_source_rect_zoomed(visible, tex, crop, box_ar, 1.0, CAMERA_ZOOM_FOCUS)
 }
-/// Where a zoom on the camera closes in, in the camera's own frame: centred across and a little
-/// above the middle, where a face sits in a talking-head shot. The zoom's own focus is a point
-/// of the SCREEN (the pointer, or a spot picked on it) and means nothing on the camera.
+/// Where a zoom on the camera closes in by default: centred across and a little above the middle
+/// of the whole camera picture, where a face sits in a talking-head shot. A camera zoom brings its
+/// own focus (`FrameGeometry::webcam_focus`: its point, or the face track); this is the focus with
+/// none, which only a test zooms on (at 1x the focus does not matter).
 pub(crate) const CAMERA_ZOOM_FOCUS: [f32; 2] = [0.5, 0.4];
 
-/// `webcam_source_rect` under a zoom: the authored crop, closed in by `zoom` on
-/// `CAMERA_ZOOM_FOCUS`, then cover-cropped to the box. At 1x it is `webcam_source_rect` exactly.
+/// `webcam_source_rect` under a camera zoom. The camera's cut is first placed exactly as with no
+/// zoom (the crop, then the Frame position's cover pan, or the plain cover), and the zoom then
+/// pushes in from there: the cut, smaller by `zoom`, about `focus`, kept inside the un-zoomed cut.
+///
+/// `focus` is 0..1 of the WHOLE camera picture (the source frame before any crop), the space of
+/// the face track and of a camera zoom's manual point; it is mapped into the cut here. A focus the
+/// un-zoomed cut does not show is framed by the cut's edge nearest it. At 1x it is
+/// `webcam_source_rect` exactly, whatever the focus.
 pub(crate) fn webcam_source_rect_zoomed(
     visible: [f32; 2],
     tex: [f32; 2],
     crop: Option<SceneCrop>,
     box_ar: f32,
     zoom: f32,
+    focus: [f32; 2],
 ) -> [f32; 4] {
     let u_max = visible[0].max(1.0) / tex[0].max(1.0);
     let v_max = visible[1].max(1.0) / tex[1].max(1.0);
-    let focus = if zoom > 1.0 { CAMERA_ZOOM_FOCUS } else { [0.5, 0.5] };
-    cover_uv_rect(screen_source_rect(u_max, v_max, crop, zoom, focus), tex, box_ar)
+    let uv = screen_source_rect(u_max, v_max, crop, 1.0, [0.5, 0.5]);
+    // A crop that is the whole frame has no room to pan in, so its position places the cover
+    // window instead of centring it. A smaller crop is already placed by its own offset.
+    let whole = {
+        let [x0, y0, x1, y1] = normalized_crop(crop);
+        x1 - x0 >= 0.999 && y1 - y0 >= 0.999
+    };
+    // A centred pan is the plain cover.
+    let cut = match crop
+        .and_then(|c| c.pan)
+        .filter(|p| whole && !(p[0] == 0.5 && p[1] == 0.5))
+    {
+        Some(pan) => pan_cover_uv_rect(uv, tex, box_ar, pan),
+        None => cover_uv_rect(uv, tex, box_ar),
+    };
+    zoom_within(cut, zoom, [focus[0] * u_max, focus[1] * v_max])
+}
+
+/// `cut` (UV) closed in by `zoom` about the point `at` (UV), with the same shape and kept inside
+/// `cut`: a point outside it is framed by its nearest edge. At 1x, or a zoom that is not a number
+/// above 1, `cut` itself, to the bit.
+fn zoom_within(cut: [f32; 4], zoom: f32, at: [f32; 2]) -> [f32; 4] {
+    if !(zoom.is_finite() && zoom > 1.0) {
+        return cut;
+    }
+    let (w, h) = ((cut[2] - cut[0]) / zoom, (cut[3] - cut[1]) / zoom);
+    // `(hi - size).max(lo)`: at a zoom just above 1, rounding can leave `size` a hair over the cut,
+    // and `clamp` needs its upper bound at or above its lower one.
+    let place = |c: f32, lo: f32, hi: f32, size: f32| {
+        let c = if c.is_finite() { c } else { (lo + hi) * 0.5 };
+        (c - size * 0.5).clamp(lo, (hi - size).max(lo))
+    };
+    let (x0, y0) = (place(at[0], cut[0], cut[2], w), place(at[1], cut[1], cut[3], h));
+    [x0, y0, x0 + w, y0 + h]
+}
+/// `cover_uv_rect`, the window placed at `pan` (0..1 per axis) of the room the cover leaves in
+/// `uv` instead of centred. A pan of 0.5 is the centred window.
+pub(crate) fn pan_cover_uv_rect(uv: [f32; 4], tex: [f32; 2], box_ar: f32, pan: [f32; 2]) -> [f32; 4] {
+    let c = cover_uv_rect(uv, tex, box_ar);
+    let share = |v: f32| if v.is_finite() { v.clamp(0.0, 1.0) } else { 0.5 };
+    let (px, py) = (share(pan[0]), share(pan[1]));
+    let (room_x, room_y) = (((uv[2] - uv[0]) - (c[2] - c[0])).max(0.0), ((uv[3] - uv[1]) - (c[3] - c[1])).max(0.0));
+    let (x0, y0) = (uv[0] + px * room_x, uv[1] + py * room_y);
+    [x0, y0, x0 + (c[2] - c[0]), y0 + (c[3] - c[1])]
 }
 /// Rétrécit un rect SOURCE déjà exprimé en UV (`[u0, v0, u1, v1]`) autour de son
 /// centre pour qu'il porte le ratio `box_ar` une fois rapporté aux pixels de la
@@ -1937,9 +1981,12 @@ pub struct FrameGeometry {
     /// 0..1: how far the camera has taken the whole frame (Full Camera). The cutout stack
     /// reads it to let go of its cutout as the camera fills the frame.
     pub camera_fullscreen_progress: f32,
-    /// The zoom the camera takes, 1 for none. While the camera fills the frame (Full Camera, or a
-    /// Camera layout), the zoom in force is the camera's: the screen under it is out of sight.
+    /// The camera zoom's scale (`Scene::camera_zoom_regions`), 1 for none or with no camera drawn.
+    /// A screen zoom never reaches it, even while the camera fills the frame.
     pub webcam_zoom: f32,
+    /// Where the camera zoom closes in, in 0..1 of the whole camera picture (before any crop;
+    /// `webcam_source_rect_zoomed` maps it into the cut): `CAMERA_ZOOM_FOCUS` with no camera zoom.
+    pub webcam_focus: [f32; 2],
     /// Where a cutout's camera turns back to as filmed, when this frame's layout cuts it out only
     /// over the screen.
     pub webcam_cutout_line: Option<f32>,
@@ -3140,6 +3187,8 @@ pub fn plan_frame(input: &FrameGeometryInput) -> FrameGeometry {
         let empty_zoom: Vec<crate::scene::SceneZoomRegion> = Vec::new();
         let empty_cam: Vec<crate::scene::SceneCameraFullscreenRegion> = Vec::new();
         let zoom_regions = scene.map(|s| &s.zoom_regions).unwrap_or(&empty_zoom);
+        // The camera's own zooms: a second lane, evaluated apart (see `webcam_zoom` below).
+        let camera_zoom_regions = scene.map(|s| &s.camera_zoom_regions).unwrap_or(&empty_zoom);
         let cam_regions =
             scene.map(|s| &s.camera_fullscreen_regions).unwrap_or(&empty_cam);
         let webcam_reactive = scene.map(|s| s.layout.webcam_reactive_zoom).unwrap_or(false);
@@ -3185,16 +3234,21 @@ pub fn plan_frame(input: &FrameGeometryInput) -> FrameGeometry {
         let active_crop = scene.and_then(|scene| {
             scene.crop_by_clip.get(scene.active_clip_index).copied().flatten()
         });
+        let active_clip = scene.and_then(|s| s.clips.get(s.active_clip_index));
+        let clip_window = active_clip
+            .map(|c| [c.source_start_sec as f32, c.source_end_sec as f32])
+            .unwrap_or([f32::NEG_INFINITY, f32::INFINITY]);
+        // The active clip's face track, in its source seconds like the regions: a zoom in focus
+        // mode "face" reads it at `source_t`, on the screen as on the camera.
+        let face_track: &[[f32; 3]] = active_clip.map(|c| c.face_track.as_slice()).unwrap_or(&[]);
         if !zoom_regions.is_empty() {
             // L'orbite en focus auto lit le curseur dans l'image SOURCE recadrée — pas dans la
             // coupe zoomée, qu'un focus auto recentre sur lui — et ignore ce qu'une coupe retire.
             let camera = crate::regions::CameraFrame {
                 track: parallax_track,
                 crop: normalized_crop(active_crop),
-                window: scene
-                    .and_then(|s| s.clips.get(s.active_clip_index))
-                    .map(|c| [c.source_start_sec as f32, c.source_end_sec as f32])
-                    .unwrap_or([f32::NEG_INFINITY, f32::INFINITY]),
+                window: clip_window,
+                face: face_track,
             };
             let zs =
                 crate::regions::zoom_state_in(zoom_regions, source_t, cursor_for_zoom, &camera, &clock);
@@ -3402,10 +3456,14 @@ pub fn plan_frame(input: &FrameGeometryInput) -> FrameGeometry {
         // en UV. Sans piste, elle se pose sur `screen_rest`, ou reste centrée.
         let follow = cover_box_ar.is_some() && scene.is_some_and(|s| s.layout.screen_follow);
         let rest = scene.and_then(|s| s.layout.screen_rest).filter(|_| follow);
+        // Une position choisie à la main passe avant le pointeur et le visage (`screen_fixed`) ;
+        // `follow_cover_uv_rect` la borne à l'enregistrement. Le zoom en focus manuel garde la main
+        // par-dessus, comme sur le pointeur.
+        let fixed = scene.and_then(|s| s.layout.screen_fixed).filter(|_| follow);
         let follow_at = |t: f32| -> Option<[f32; 2]> {
-            let (x, y) = cursor
-                .filter(|_| follow)
-                .and_then(|track| track.follow_at(t))
+            let (x, y) = fixed
+                .map(|f| (f[0], f[1]))
+                .or_else(|| cursor.filter(|_| follow).and_then(|track| track.follow_at(t)))
                 .or(rest.map(|r| (r[0], r[1])))?;
             // Un zoom en focus manuel tient la fenêtre sur son point, et le curseur la reprend à sa
             // sortie : le mélange suit la force du zoom, donc l'entrée et la sortie glissent.
@@ -3713,18 +3771,42 @@ pub fn plan_frame(input: &FrameGeometryInput) -> FrameGeometry {
                 },
             };
 
+        // The camera's own zoom (`Scene::camera_zoom_regions`), a second evaluation independent of
+        // the screen's: it pushes in on the camera's picture inside its box, wherever the camera is
+        // (picture-in-picture, a block, the cutout, the full frame), and the screen does not move. A
+        // screen zoom never reaches the camera any more, even when it fills the frame. Only while the
+        // camera is drawn (the backends' own test); without it, as filmed on the default focus.
+        let camera_drawn = lp.has_webcam && w_dst[2] > 0.0005 && w_dst[3] > 0.0005;
+        let webcam_crop = scene.and_then(|s| s.layout.webcam_crop);
+        let camera_zoom = (camera_drawn && !camera_zoom_regions.is_empty()).then(|| {
+            // The camera's view: its cut at 1x (crop, then pan or cover, for this box), in fractions
+            // of the whole picture (visible frame as the texture: the cut, so normalised, does not
+            // depend on the texture's padding). Every camera focus, a manual point as the face, is a
+            // point of the whole picture; the zoom eases it as a fraction of this view, about the
+            // view's centre (`camera_zoom_state_in`), and it comes back to the whole picture here.
+            let box_ar = w_px[0] / w_px[1].max(0.0001);
+            let view = webcam_source_rect_zoomed([wcw, wch], [wcw, wch], webcam_crop, box_ar, 1.0, CAMERA_ZOOM_FOCUS);
+            let frame = crate::regions::CameraFrame {
+                track: None,
+                crop: view,
+                window: clip_window,
+                face: face_track,
+            };
+            let z = crate::regions::camera_zoom_state_in(camera_zoom_regions, source_t, &frame, &clock);
+            let whole = |f: f32, a: f32, b: f32| a + f * (b - a);
+            let focus = [whole(z.focus[0], view[0], view[2]), whole(z.focus[1], view[1], view[3])];
+            (z, focus)
+        });
+        let (webcam_zoom, webcam_focus) = match camera_zoom {
+            Some((z, focus)) if z.strength > 0.0 => (z.scale.max(1.0), focus),
+            _ => (1.0, CAMERA_ZOOM_FOCUS),
+        };
+
     FrameGeometry {
         scene_preset,
         camera_fullscreen_progress: cam_progress,
-        // How far the camera fills the frame: Full Camera, or a layout that hands the camera a rect
-        // over the whole frame (the editor's Camera layout). Only a camera covering it takes the zoom.
-        webcam_zoom: 1.0
-            + (p.zoom - 1.0).max(0.0)
-                * cam_progress.clamp(0.0, 1.0).max(crate::regions::smoothstep(
-                    0.9,
-                    1.0,
-                    (w_dst[2] * w_dst[3]).clamp(0.0, 1.0),
-                )),
+        webcam_zoom,
+        webcam_focus,
         webcam_cutout_line: scene
             .filter(|s| s.layout.webcam_cutout_over_screen)
             .and_then(|s| s.layout.webcam_cutout_line),
@@ -3734,7 +3816,7 @@ pub fn plan_frame(input: &FrameGeometryInput) -> FrameGeometry {
             webcam_effect: s.layout.webcam_effect_mode.clone(),
             webcam_blur: s.layout.webcam_blur,
         }),
-        webcam_crop: scene.and_then(|s| s.layout.webcam_crop),
+        webcam_crop,
         webcam_shadow: scene.and_then(|s| s.layout.webcam_shadow),
         mb_taps,
         mb_amount,
@@ -5132,48 +5214,370 @@ mod tests {
         assert_eq!(g.w_dst_prev, g.w_dst, "pas de traînée depuis le trou du trim");
     }
 
-    /// A zoom while the camera fills the frame belongs to the camera: the screen is under it and
-    /// out of sight, so a zoom kept there did nothing anyone could see. In a corner the camera stays
-    /// as filmed and the zoom is the screen's, as before.
+    /// Kostas' 9:16 project: a camera scene (0 -> 10.36 s) cut to a cutout-stack scene. The camera
+    /// scene's own layout keeps the camera's PiP corner, hidden under the full frame. The camera
+    /// used to ease from that hidden corner AND from the full frame at once (two eased lerps
+    /// multiplied), so it shrank to ~0.8 wide and moved in by ~0.19 before growing back into the
+    /// strip. It now goes straight from the full frame to the strip, each side monotonic.
     #[test]
-    fn a_zoom_goes_to_the_camera_while_it_fills_the_frame() {
+    fn a_camera_scene_eases_straight_into_the_next_scene() {
         let cfg = crate::config::all().pop().expect("au moins une config");
-        let scene_with = |full_camera: &str| {
-            Scene::from_json(&format!(
-                r##"{{
-                "clips":[{{"screenPath":"/s.mp4","webcamPath":"/w.mp4","sourceStartSec":0,"sourceEndSec":10,"webcamOffsetSec":0,"hasAudio":true}}],
-                "layout":{{"preset":"picture-in-picture","webcamSize":0.44,"webcamShape":"circle","webcamMirror":false,
-                          "webcamPosition":{{"cx":0.8577,"cy":0.8159}},"webcamReactiveZoom":false}},
-                "effects":{{"padding":0.1,"blur":false,"shadow":0.0,"roundnessFrac":0.0,"motionBlur":0.0}},
-                "background":{{"kind":"color","color":"#1e1e2e"}},
-                "zoomRegions":[{{"clipIndex":0,"startSec":1.0,"endSec":8.0,"scale":1.8,"focusX":0.2,"focusY":0.2,"rotation":"none"}}],
-                "cameraFullscreenRegions":[{full_camera}],
-                "cursor":{{"show":false,"size":1,"smoothing":0,"motionBlur":0,"clickBounce":0,"clipToBounds":false,"theme":"default"}},
-                "output":{{"width":1080,"height":1920,"fps":60}}
-            }}"##
-            ))
-            .expect("scene")
+        let camera_scene = r#"{"screenRect":{"x":0,"y":0,"width":1,"height":1},"webcamRect":{"x":0.75,"y":0.8,"width":0.23,"height":0.13},"webcamRadiusFrac":0.5}"#;
+        let stack_scene = r#"{"screenRect":{"x":-0.49,"y":0,"width":1.82,"height":0.683},"webcamRect":{"x":0,"y":0.683,"width":1,"height":0.317},"webcamRadiusFrac":0,"screenCover":true}"#;
+        let scene = Scene::from_json(&format!(
+            r##"{{
+            "clips":[{{"screenPath":"/s.mp4","webcamPath":"/w.mp4","sourceStartSec":0,"sourceEndSec":20.9,"webcamOffsetSec":0,"hasAudio":true}}],
+            "layout":{{"preset":"picture-in-picture","webcamSize":0.44,"webcamShape":"rectangle","webcamMirror":false,"webcamPosition":null,"webcamReactiveZoom":false,
+                      "screenRect":{{"x":0,"y":0,"width":1,"height":1}},"webcamRect":{{"x":0.75,"y":0.8,"width":0.23,"height":0.13}}}},
+            "effects":{{"padding":0,"blur":false,"shadow":0,"roundnessFrac":0,"motionBlur":0}},
+            "background":{{"kind":"color","color":"#000000"}},
+            "zoomRegions":[],
+            "cameraFullscreenRegions":[
+                {{"clipIndex":0,"startSec":0,"endSec":10.36,"continuesBefore":true,"continuesAfter":true,"layout":{camera_scene},"fullCamera":true}},
+                {{"clipIndex":0,"startSec":10.36,"endSec":20.9,"continuesAfter":true,"layout":{stack_scene},"fullCamera":false,
+                  "fromLayout":{camera_scene},"fromFullCamera":true}}],
+            "cursor":{{"show":false,"size":1,"smoothing":0,"motionBlur":0,"clickBounce":0,"clipToBounds":false,"theme":"default"}},
+            "output":{{"width":1080,"height":1920,"fps":30}}
+        }}"##
+        ))
+        .expect("two scenes");
+        let w_at = |frame: u32| {
+            let mut input = golden_input(&scene, &cfg);
+            input.render_px = [1080.0, 1920.0];
+            input.timeline_t_override = Some(frame as f32 / 30.0);
+            plan_frame(&input).w_dst
         };
-        let at = |scene: &Scene, t: f32| {
-            let mut input = golden_input(scene, &cfg);
-            input.timeline_t_override = Some(t);
-            plan_frame(&input)
-        };
-
-        let full = scene_with(r#"{"clipIndex":0,"startSec":0,"endSec":10}"#);
-        let g = at(&full, 4.5);
-        assert_eq!(g.w_dst, [0.0, 0.0, 1.0, 1.0], "the camera fills the frame");
-        assert!((g.webcam_zoom - 1.8).abs() < 0.01, "the camera takes the zoom: {}", g.webcam_zoom);
-        assert!((at(&full, 9.5).webcam_zoom - 1.0).abs() < 1e-6, "no zoom after the region");
-
-        let corner = scene_with("");
-        assert_eq!(at(&corner, 4.5).webcam_zoom, 1.0, "in a corner the camera stays as filmed");
+        let (start, end) = ([0.0, 0.0, 1.0, 1.0], [0.0, 0.683, 1.0, 0.317]);
+        assert_eq!(w_at(310), start, "the last frame of the camera scene fills the frame");
+        let path: Vec<[f32; 4]> = (310..=360).map(w_at).collect();
+        for k in 0..4 {
+            let (lo, hi) = (start[k].min(end[k]), start[k].max(end[k]));
+            let dir = (end[k] - start[k]).signum();
+            for (i, pair) in path.windows(2).enumerate() {
+                let (a, b) = (pair[0][k], pair[1][k]);
+                assert!(
+                    (lo - 1e-4..=hi + 1e-4).contains(&b),
+                    "component {k} leaves its start..end span at frame {}: {b}",
+                    311 + i
+                );
+                assert!(
+                    (b - a) * dir >= -1e-4,
+                    "component {k} turns back at frame {}: {a} -> {b}",
+                    311 + i
+                );
+            }
+            assert!((path[path.len() - 1][k] - end[k]).abs() < 1e-3, "component {k} reaches the strip");
+        }
+        // Continuous across the cut: just past it the box is still the full frame, and the first
+        // frame of the new scene is a step no bigger than the one after it (the curve's own pace).
+        let mut input = golden_input(&scene, &cfg);
+        input.render_px = [1080.0, 1920.0];
+        input.timeline_t_override = Some(10.36 + 1e-4);
+        let just_after = plan_frame(&input).w_dst;
+        let step = |a: [f32; 4], b: [f32; 4]| (0..4).map(|k| (b[k] - a[k]).abs()).fold(0.0f32, f32::max);
+        assert!(step(start, just_after) < 1e-2, "a jump at the cut: {just_after:?}");
+        assert!(step(path[0], path[1]) <= step(path[1], path[2]), "a jump at the cut");
     }
 
-    /// The editor's Camera layout does not use Full Camera: it hands the camera a rect over the
-    /// whole frame. That is the camera filling the frame all the same, and it takes the zoom.
+    /// The same cut after Kostas trimmed the project: the stack scene's clip now starts on a frame,
+    /// at 328/30 s, and the scene starts with it. On that very frame its phase was 0, so the scene
+    /// was dropped and the clip's own layout (the strip) drew: one frame of the end state between
+    /// the full camera before the cut and the eased move after it. The scene now holds the layout
+    /// it eases from on its first frame.
     #[test]
-    fn a_camera_layout_over_the_whole_frame_takes_the_zoom() {
+    fn a_scene_starting_on_a_frame_holds_the_layout_it_eases_from() {
+        let cfg = crate::config::all().pop().expect("au moins une config");
+        let camera_scene = r#"{"screenRect":{"x":0,"y":0,"width":1,"height":1},"webcamRect":{"x":0.75,"y":0.8,"width":0.23,"height":0.13},"webcamRadiusFrac":0.5}"#;
+        let stack_scene = r#"{"screenRect":{"x":-0.49,"y":0,"width":1.82,"height":0.683},"webcamRect":{"x":0,"y":0.683,"width":1,"height":0.317},"webcamRadiusFrac":0,"screenCover":true}"#;
+        let start = 328.0f64 / 30.0;
+        let scene = Scene::from_json(&format!(
+            r##"{{
+            "clips":[{{"screenPath":"/s.mp4","webcamPath":"/w.mp4","sourceStartSec":0,"sourceEndSec":10.355,"webcamOffsetSec":0,"hasAudio":true}},
+                     {{"screenPath":"/s.mp4","webcamPath":"/w.mp4","sourceStartSec":{start},"sourceEndSec":20.9,"webcamOffsetSec":0,"hasAudio":true}}],
+            "layout":{{"preset":"picture-in-picture","webcamSize":0.44,"webcamShape":"rectangle","webcamMirror":false,"webcamPosition":null,"webcamReactiveZoom":false,
+                      "screenRect":{{"x":-0.49,"y":0,"width":1.82,"height":0.683}},"webcamRect":{{"x":0,"y":0.683,"width":1,"height":0.317}}}},
+            "effects":{{"padding":0,"blur":false,"shadow":0,"roundnessFrac":0,"motionBlur":0}},
+            "background":{{"kind":"color","color":"#000000"}},
+            "zoomRegions":[],
+            "cameraFullscreenRegions":[
+                {{"clipIndex":0,"startSec":0,"endSec":10.355,"continuesBefore":true,"continuesAfter":true,"layout":{camera_scene},"fullCamera":true}},
+                {{"clipIndex":1,"startSec":{start},"endSec":20.9,"continuesAfter":true,"layout":{stack_scene},"fullCamera":false,
+                  "fromLayout":{camera_scene},"fromFullCamera":true}}],
+            "cursor":{{"show":false,"size":1,"smoothing":0,"motionBlur":0,"clickBounce":0,"clipToBounds":false,"theme":"default"}},
+            "output":{{"width":1080,"height":1920,"fps":30}}
+        }}"##
+        ))
+        .expect("two scenes")
+        .for_clip_window(1, start, 20.9);
+        let w_at = |t: f32| {
+            let mut input = golden_input(&scene, &cfg);
+            input.render_px = [1080.0, 1920.0];
+            input.timeline_t_override = Some(t);
+            plan_frame(&input).w_dst
+        };
+        assert_eq!(w_at(start as f32), [0.0, 0.0, 1.0, 1.0], "the first frame is the camera scene's");
+        let next = w_at(329.0 / 30.0);
+        assert!(next[1] > 0.0 && next[1] < 0.3, "then the move starts from it: {next:?}");
+    }
+
+    /// The mirror case: a cutout-stack scene cut to a camera scene. The camera grows straight from
+    /// its strip to the full frame, instead of first easing towards the camera scene's hidden
+    /// corner rect.
+    #[test]
+    fn a_scene_eases_straight_into_a_camera_scene() {
+        let cfg = crate::config::all().pop().expect("au moins une config");
+        let camera_scene = r#"{"screenRect":{"x":0,"y":0,"width":1,"height":1},"webcamRect":{"x":0.75,"y":0.8,"width":0.23,"height":0.13},"webcamRadiusFrac":0.5}"#;
+        let stack_scene = r#"{"screenRect":{"x":-0.49,"y":0,"width":1.82,"height":0.683},"webcamRect":{"x":0,"y":0.683,"width":1,"height":0.317},"webcamRadiusFrac":0,"screenCover":true}"#;
+        let scene = Scene::from_json(&format!(
+            r##"{{
+            "clips":[{{"screenPath":"/s.mp4","webcamPath":"/w.mp4","sourceStartSec":0,"sourceEndSec":20.9,"webcamOffsetSec":0,"hasAudio":true}}],
+            "layout":{{"preset":"picture-in-picture","webcamSize":0.44,"webcamShape":"rectangle","webcamMirror":false,"webcamPosition":null,"webcamReactiveZoom":false,
+                      "screenRect":{{"x":0,"y":0,"width":1,"height":1}},"webcamRect":{{"x":0.75,"y":0.8,"width":0.23,"height":0.13}}}},
+            "effects":{{"padding":0,"blur":false,"shadow":0,"roundnessFrac":0,"motionBlur":0}},
+            "background":{{"kind":"color","color":"#000000"}},
+            "zoomRegions":[],
+            "cameraFullscreenRegions":[
+                {{"clipIndex":0,"startSec":0,"endSec":10.36,"continuesBefore":true,"continuesAfter":true,"layout":{stack_scene},"fullCamera":false}},
+                {{"clipIndex":0,"startSec":10.36,"endSec":20.9,"continuesAfter":true,"layout":{camera_scene},"fullCamera":true,
+                  "fromLayout":{stack_scene},"fromFullCamera":false}}],
+            "cursor":{{"show":false,"size":1,"smoothing":0,"motionBlur":0,"clickBounce":0,"clipToBounds":false,"theme":"default"}},
+            "output":{{"width":1080,"height":1920,"fps":30}}
+        }}"##
+        ))
+        .expect("two scenes");
+        let w_at = |frame: u32| {
+            let mut input = golden_input(&scene, &cfg);
+            input.render_px = [1080.0, 1920.0];
+            input.timeline_t_override = Some(frame as f32 / 30.0);
+            plan_frame(&input).w_dst
+        };
+        let (start, end) = ([0.0, 0.683, 1.0, 0.317], [0.0, 0.0, 1.0, 1.0]);
+        for k in 0..4 {
+            assert!((w_at(310)[k] - start[k]).abs() < 1e-4, "the stack's strip before the cut");
+        }
+        let path: Vec<[f32; 4]> = (310..=360).map(w_at).collect();
+        for k in 0..4 {
+            let (lo, hi) = (start[k].min(end[k]), start[k].max(end[k]));
+            let dir = (end[k] - start[k]).signum();
+            for (i, pair) in path.windows(2).enumerate() {
+                let (a, b) = (pair[0][k], pair[1][k]);
+                assert!((lo - 1e-4..=hi + 1e-4).contains(&b), "component {k} detours at frame {}: {b}", 311 + i);
+                assert!((b - a) * dir >= -1e-4, "component {k} turns back at frame {}: {a} -> {b}", 311 + i);
+            }
+            assert!((path[path.len() - 1][k] - end[k]).abs() < 1e-3, "component {k} reaches the full frame");
+        }
+    }
+
+    /// The camera scene / stack scene pair of the tests above, cut at 10.36 s in one clip:
+    /// `first` then `second`, each `(layout json, full camera)`, the second easing from the first.
+    fn two_scenes(first: (&str, bool), second: (&str, bool), cursor_show: bool) -> Scene {
+        let ((a, a_full), (b, b_full)) = (first, second);
+        Scene::from_json(&format!(
+            r##"{{
+            "clips":[{{"screenPath":"/s.mp4","webcamPath":"/w.mp4","sourceStartSec":0,"sourceEndSec":20.9,"webcamOffsetSec":0,"hasAudio":true}}],
+            "layout":{{"preset":"picture-in-picture","webcamSize":0.44,"webcamShape":"rectangle","webcamMirror":false,"webcamPosition":null,"webcamReactiveZoom":false,
+                      "screenRect":{{"x":0,"y":0,"width":1,"height":1}},"webcamRect":{{"x":0.75,"y":0.8,"width":0.23,"height":0.13}}}},
+            "effects":{{"padding":0,"blur":false,"shadow":0,"roundnessFrac":0,"motionBlur":0}},
+            "background":{{"kind":"color","color":"#000000"}},
+            "zoomRegions":[],
+            "cameraFullscreenRegions":[
+                {{"clipIndex":0,"startSec":0,"endSec":10.36,"continuesBefore":true,"continuesAfter":true,"layout":{a},"fullCamera":{a_full}}},
+                {{"clipIndex":0,"startSec":10.36,"endSec":20.9,"continuesAfter":true,"layout":{b},"fullCamera":{b_full},
+                  "fromLayout":{a},"fromFullCamera":{a_full}}}],
+            "cursor":{{"show":{cursor_show},"size":1,"smoothing":0,"motionBlur":0,"clickBounce":0,"clipToBounds":false,"theme":"default"}},
+            "output":{{"width":1080,"height":1920,"fps":30}}
+        }}"##
+        ))
+        .expect("two scenes")
+    }
+
+    /// The camera's corners follow its visible box through a move into or out of a camera scene:
+    /// the full-camera side's corner fraction belongs to its hidden PiP box, so easing to it grew
+    /// the corners on a near-full camera (about 295 px instead of 123 px at 1080x1920). The radius
+    /// is now the visible side's fraction of the visible box, dissolved by `shape_fade` only.
+    #[test]
+    fn a_camera_scene_move_keeps_the_visible_sides_corner_radius() {
+        let cfg = crate::config::all().pop().expect("au moins une config");
+        let camera_scene = r#"{"screenRect":{"x":0,"y":0,"width":1,"height":1},"webcamRect":{"x":0.75,"y":0.8,"width":0.23,"height":0.13},"webcamRadiusFrac":0.5}"#;
+        let pip_scene = r#"{"screenRect":{"x":0,"y":0,"width":1,"height":1},"webcamRect":{"x":0.05,"y":0.7,"width":0.4,"height":0.25},"webcamRadiusFrac":0.2}"#;
+        let plan_at = |scene: &Scene, frame: u32| {
+            let mut input = golden_input(scene, &cfg);
+            input.render_px = [1080.0, 1920.0];
+            input.timeline_t_override = Some(frame as f32 / 30.0);
+            plan_frame(&input)
+        };
+        // Into the camera scene (settled on the PiP before the cut), then out of it (settled after).
+        let into = two_scenes((pip_scene, false), (camera_scene, true), false);
+        let out_of = two_scenes((camera_scene, true), (pip_scene, false), false);
+        for (name, scene, settled) in [("into", &into, 300), ("out of", &out_of, 400)] {
+            let rest = plan_at(scene, settled);
+            assert_eq!(rest.shape_fade, 1.0, "{name}: settled on the PiP");
+            let full = 0.2 * (0.4f32 * 1080.0).min(0.25 * 1920.0);
+            assert!((rest.w_radius - full).abs() < 1e-2, "{name}: the PiP's own radius: {}", rest.w_radius);
+            for frame in 311..=360 {
+                let g = plan_at(scene, frame);
+                let want = g.shape_fade * full;
+                assert!(
+                    (g.w_radius - want).abs() < 1e-2,
+                    "{name}: frame {frame}: radius {} instead of {want} (shape fade {})",
+                    g.w_radius,
+                    g.shape_fade
+                );
+            }
+        }
+        // Part way in the corners are still there: not dissolved by dropping them.
+        assert!(plan_at(&into, 314).w_radius > 0.9 * 0.2 * 432.0);
+    }
+
+    /// A PiP camera scene cut to a stack whose camera dodges the pointer: with the pointer over
+    /// the strip, the box eases from the full frame to the strip's dodge rect. The dodge rect used
+    /// to come from the nearer layout, the camera scene's (a small box) for the first half of the
+    /// ease, so the box was pulled towards it and snapped to full width half way.
+    #[test]
+    fn a_camera_scene_move_dodges_towards_the_visible_sides_dodge_rect() {
+        let cfg = crate::config::all().pop().expect("au moins une config");
+        let camera_scene = r#"{"screenRect":{"x":0,"y":0,"width":1,"height":1},"webcamRect":{"x":0.75,"y":0.8,"width":0.23,"height":0.13},"webcamDodgeRect":{"x":0.02,"y":0.8,"width":0.23,"height":0.13},"webcamRadiusFrac":0.5}"#;
+        let stack_scene = r#"{"screenRect":{"x":0,"y":0,"width":1,"height":1},"webcamRect":{"x":0,"y":0.683,"width":1,"height":0.317},"webcamDodgeRect":{"x":0,"y":0,"width":1,"height":0.317},"webcamRadiusFrac":0}"#;
+        let scene = two_scenes((camera_scene, true), (stack_scene, false), true);
+        // The pointer sits low in the middle of the screen, over the strip, the whole time.
+        let track: &'static crate::cursor::CursorTrack = Box::leak(Box::new(crate::cursor::CursorTrack::new(
+            (0..=900).map(|i| (i as f32 / 30.0, 0.5, 0.85)).collect(),
+            vec![],
+            vec![],
+        )));
+        let w_at = |frame: u32| {
+            let mut input = golden_input(&scene, &cfg);
+            input.render_px = [1080.0, 1920.0];
+            input.cursor = Some(track);
+            input.timeline_t_override = Some(frame as f32 / 30.0);
+            plan_frame(&input).w_dst
+        };
+        let (start, end): ([f32; 4], [f32; 4]) = ([0.0, 0.0, 1.0, 1.0], [0.0, 0.0, 1.0, 0.317]);
+        let path: Vec<[f32; 4]> = (310..=400).map(w_at).collect();
+        for k in 0..4 {
+            let (lo, hi) = (start[k].min(end[k]), start[k].max(end[k]));
+            let dir = (end[k] - start[k]).signum();
+            for (i, pair) in path.windows(2).enumerate() {
+                let (a, b) = (pair[0][k], pair[1][k]);
+                assert!((lo - 1e-4..=hi + 1e-4).contains(&b), "component {k} detours at frame {}: {b}", 311 + i);
+                assert!((b - a) * dir >= -1e-4, "component {k} turns back at frame {}: {a} -> {b}", 311 + i);
+            }
+            assert!((path[path.len() - 1][k] - end[k]).abs() < 1e-3, "component {k} reaches the dodge rect");
+        }
+    }
+
+    /// A clip whose source starts off the 30 fps grid, at 10.34 s, right after a camera scene's
+    /// clip. Its first sample can come before the scene's start: the Resolve export samples a
+    /// non-retimed clip at whole media frames (310/30 = 10.3333 s here, and up to one frame plus
+    /// 1 ms early in general), and a scene counts as touching a cut within 50 ms of it. The scene
+    /// was held only on its exact start, so that first sample drew the clip's own layout: one
+    /// frame of the end state before the move. It now holds the camera scene's layout there.
+    #[test]
+    fn a_scene_holds_the_layout_it_eases_from_just_before_its_start() {
+        let cfg = crate::config::all().pop().expect("au moins une config");
+        let camera_scene = r#"{"screenRect":{"x":0,"y":0,"width":1,"height":1},"webcamRect":{"x":0.75,"y":0.8,"width":0.23,"height":0.13},"webcamRadiusFrac":0.5}"#;
+        let stack_scene = r#"{"screenRect":{"x":-0.49,"y":0,"width":1.82,"height":0.683},"webcamRect":{"x":0,"y":0.683,"width":1,"height":0.317},"webcamRadiusFrac":0,"screenCover":true}"#;
+        let start = 10.34f64;
+        let scene = Scene::from_json(&format!(
+            r##"{{
+            "clips":[{{"screenPath":"/s.mp4","webcamPath":"/w.mp4","sourceStartSec":0,"sourceEndSec":5.2,"webcamOffsetSec":0,"hasAudio":true}},
+                     {{"screenPath":"/s.mp4","webcamPath":"/w.mp4","sourceStartSec":{start},"sourceEndSec":20.9,"webcamOffsetSec":0,"hasAudio":true}}],
+            "layout":{{"preset":"picture-in-picture","webcamSize":0.44,"webcamShape":"rectangle","webcamMirror":false,"webcamPosition":null,"webcamReactiveZoom":false,
+                      "screenRect":{{"x":-0.49,"y":0,"width":1.82,"height":0.683}},"webcamRect":{{"x":0,"y":0.683,"width":1,"height":0.317}}}},
+            "effects":{{"padding":0,"blur":false,"shadow":0,"roundnessFrac":0,"motionBlur":0}},
+            "background":{{"kind":"color","color":"#000000"}},
+            "zoomRegions":[],
+            "cameraFullscreenRegions":[
+                {{"clipIndex":0,"startSec":0,"endSec":5.2,"continuesBefore":true,"continuesAfter":true,"layout":{camera_scene},"fullCamera":true}},
+                {{"clipIndex":1,"startSec":{start},"endSec":20.9,"continuesAfter":true,"layout":{stack_scene},"fullCamera":false,
+                  "fromLayout":{camera_scene},"fromFullCamera":true}}],
+            "cursor":{{"show":false,"size":1,"smoothing":0,"motionBlur":0,"clickBounce":0,"clipToBounds":false,"theme":"default"}},
+            "output":{{"width":1080,"height":1920,"fps":30}}
+        }}"##
+        ))
+        .expect("two scenes")
+        .for_clip_window(1, start, 20.9);
+        let w_at = |t: f64| {
+            let mut input = golden_input(&scene, &cfg);
+            input.render_px = [1080.0, 1920.0];
+            input.timeline_t_override = Some(t as f32);
+            plan_frame(&input).w_dst
+        };
+        let full = [0.0, 0.0, 1.0, 1.0];
+        assert_eq!(w_at(310.0 / 30.0), full, "Resolve's first media frame, 10.3333 s");
+        assert_eq!(w_at(start - 1.0 / 30.0 - 0.001), full, "the earliest a first sample can be");
+        assert_eq!(w_at(start), full, "the start itself");
+        let next = w_at(311.0 / 30.0);
+        assert!(next[1] > 0.0 && next[1] < 0.3, "then the move starts from it: {next:?}");
+        // Well before the scene, nothing holds it: the clip's own layout (the strip) stands.
+        let strip = w_at(start - 0.2);
+        assert!((strip[1] - 0.683).abs() < 1e-3, "the clip's own layout: {strip:?}");
+    }
+
+    /// The camera zoom tests' layouts, as the tail of the scene's `layout`.
+    const PIP: &str = r#""preset":"picture-in-picture","webcamSize":0.44,"webcamShape":"circle","webcamPosition":{"cx":0.8577,"cy":0.8159}"#;
+    const STACK: &str = r#""preset":"vertical-stack","webcamSize":1,"webcamShape":"rectangle","webcamPosition":null,"screenRect":{"x":0,"y":0,"width":1,"height":0.5},"webcamRect":{"x":0,"y":0.5,"width":1,"height":0.5}"#;
+    const NO_CAMERA: &str = r#""preset":"no-webcam","webcamSize":1,"webcamShape":"rectangle","webcamPosition":null"#;
+    /// A camera zoom at depth 3 (1.8x) over 1 -> 8 s of clip 0, on the camera's upper middle.
+    const CAMERA_ZOOM: &str = r#"{"clipIndex":0,"startSec":1.0,"endSec":8.0,"scale":1.8,"focusX":0.5,"focusY":0.4,"rotation":null}"#;
+    /// A screen zoom (1.8x) over the same span, on a point of the screen.
+    const SCREEN_ZOOM: &str = r#"{"clipIndex":0,"startSec":1.0,"endSec":8.0,"scale":1.8,"focusX":0.2,"focusY":0.2,"rotation":"none"}"#;
+    const FULL_CAMERA: &str = r#"{"clipIndex":0,"startSec":0,"endSec":10}"#;
+
+    /// One clip with a camera, a 9:16 output, `layout` as the layout's tail, `clip` appended to the
+    /// clip, and the two zoom lanes and the Full Camera regions as given.
+    fn zoom_lanes_scene(layout: &str, clip: &str, screen_zooms: &str, camera_zooms: &str, full_camera: &str) -> Scene {
+        Scene::from_json(&format!(
+            r##"{{
+            "clips":[{{"screenPath":"/s.mp4","webcamPath":"/w.mp4","sourceStartSec":0,"sourceEndSec":10,"webcamOffsetSec":0,"hasAudio":true{clip}}}],
+            "layout":{{{layout},"webcamMirror":false,"webcamReactiveZoom":false}},
+            "effects":{{"padding":0.1,"blur":false,"shadow":0.0,"roundnessFrac":0.0,"motionBlur":0.0}},
+            "background":{{"kind":"color","color":"#1e1e2e"}},
+            "zoomRegions":[{screen_zooms}],
+            "cameraZoomRegions":[{camera_zooms}],
+            "cameraFullscreenRegions":[{full_camera}],
+            "cursor":{{"show":false,"size":1,"smoothing":0,"motionBlur":0,"clickBounce":0,"clipToBounds":false,"theme":"default"}},
+            "output":{{"width":1080,"height":1920,"fps":60}}
+        }}"##
+        ))
+        .expect("scene")
+    }
+
+    /// `plan_frame` at source second `t`, the camera's file present or not.
+    fn plan_lanes_with(scene: &Scene, t: f32, has_webcam: bool) -> FrameGeometry {
+        let cfg = crate::config::all().pop().expect("au moins une config");
+        let mut input = golden_input(scene, &cfg);
+        input.render_px = [1080.0, 1920.0];
+        input.timeline_t_override = Some(t);
+        input.live.has_webcam = has_webcam;
+        plan_frame(&input)
+    }
+
+    fn plan_lanes(scene: &Scene, t: f32) -> FrameGeometry {
+        plan_lanes_with(scene, t, true)
+    }
+
+    /// A screen zoom never zooms the camera, even while the camera fills the frame and the screen
+    /// under it is out of sight (it used to take the zoom then: this is
+    /// `a_zoom_goes_to_the_camera_while_it_fills_the_frame`, inverted). In a corner the camera stays
+    /// as filmed, as before.
+    #[test]
+    fn a_screen_zoom_no_longer_reaches_a_full_camera() {
+        let full = zoom_lanes_scene(PIP, "", SCREEN_ZOOM, "", FULL_CAMERA);
+        let g = plan_lanes(&full, 4.5);
+        assert_eq!(g.w_dst, [0.0, 0.0, 1.0, 1.0], "the camera fills the frame");
+        assert_eq!(g.webcam_zoom, 1.0, "a screen zoom leaves the camera as filmed");
+        assert_eq!(g.webcam_focus, CAMERA_ZOOM_FOCUS);
+        assert_eq!(plan_lanes(&full, 9.5).webcam_zoom, 1.0, "nor after the region");
+        let corner = zoom_lanes_scene(PIP, "", SCREEN_ZOOM, "", "");
+        assert_eq!(plan_lanes(&corner, 4.5).webcam_zoom, 1.0, "in a corner the camera stays as filmed");
+    }
+
+    /// The editor's Camera layout hands the camera a rect over the whole frame. It used to take the
+    /// screen's zoom then, as a Full Camera did (`a_camera_layout_over_the_whole_frame_takes_the_zoom`):
+    /// now a screen zoom stays on the screen in every layout.
+    #[test]
+    fn a_camera_layout_over_the_whole_frame_no_longer_takes_the_screen_zoom() {
         let cfg = crate::config::all().pop().expect("au moins une config");
         let scene_with = |rect: &str| {
             Scene::from_json(&format!(
@@ -5197,24 +5601,438 @@ mod tests {
             plan_frame(&input)
         };
         let whole = at(&scene_with(r#"{"x":0,"y":0,"width":1,"height":1}"#), 4.5);
-        assert!((whole.webcam_zoom - 1.8).abs() < 0.01, "camera over the frame: {}", whole.webcam_zoom);
+        assert_eq!(whole.webcam_zoom, 1.0, "camera over the frame: as filmed");
         let half = at(&scene_with(r#"{"x":0,"y":0.5,"width":1,"height":0.5}"#), 4.5);
         assert_eq!(half.webcam_zoom, 1.0, "a camera on half the frame (stacked) stays as filmed");
     }
 
-    /// The camera's crop under a zoom: smaller by the zoom, on the face (a little above centre),
-    /// and still the box's ratio, so the camera is never stretched.
+    /// A camera zoom pushes in on the camera's picture wherever the camera is, its box keeping its
+    /// size, and the screen does not move: its zoom stays 1, so its box and cut are those of the
+    /// same scene with no zoom at all.
+    #[test]
+    fn a_camera_zoom_pushes_in_on_the_camera_in_every_layout() {
+        for (name, layout, full_camera) in [
+            ("picture-in-picture", PIP, ""),
+            ("vertical stack", STACK, ""),
+            ("full camera", PIP, FULL_CAMERA),
+        ] {
+            let zoomed = zoom_lanes_scene(layout, "", "", CAMERA_ZOOM, full_camera);
+            let plain = zoom_lanes_scene(layout, "", "", "", full_camera);
+            let (g, g0) = (plan_lanes(&zoomed, 4.5), plan_lanes(&plain, 4.5));
+            assert!(g.w_dst[2] > 0.0005 && g.w_dst[3] > 0.0005, "{name}: the camera is drawn");
+            assert!((g.webcam_zoom - 1.8).abs() < 1e-4, "{name}: depth 3 is 1.8x: {}", g.webcam_zoom);
+            assert_eq!(g0.webcam_zoom, 1.0, "{name}: no camera zoom, as filmed");
+            assert_eq!(g.w_dst, g0.w_dst, "{name}: the camera's box keeps its size");
+            assert_eq!(g.s_dst, g0.s_dst, "{name}: the screen's box does not move");
+            assert_eq!(g.s_dst_prev, g0.s_dst_prev, "{name}: nor a frame earlier");
+            assert_eq!(g.cut, g0.cut, "{name}: the screen's cut does not move");
+            assert_eq!(plan_lanes(&zoomed, 9.9).webcam_zoom, 1.0, "{name}: as filmed after the region");
+        }
+        // A screen zoom and a camera zoom over the same span: each moves only its own picture.
+        let both = plan_lanes(&zoom_lanes_scene(PIP, "", SCREEN_ZOOM, CAMERA_ZOOM, ""), 4.5);
+        let screen_only = plan_lanes(&zoom_lanes_scene(PIP, "", SCREEN_ZOOM, "", ""), 4.5);
+        assert!((both.webcam_zoom - 1.8).abs() < 1e-4, "the camera's own zoom: {}", both.webcam_zoom);
+        assert_eq!(both.s_dst, screen_only.s_dst, "the screen keeps its own zoom");
+        assert_eq!(both.cut, screen_only.cut);
+    }
+
+    /// A camera zoom in focus mode "face" closes in on the clip's face track at the frame's source
+    /// time; "auto" on the camera is the face too (the pointer is a point of the screen); manual
+    /// keeps its point; with a camera crop the face is a fraction of the crop; with no track, the
+    /// region's own point.
+    #[test]
+    fn a_camera_zoom_follows_the_face_track() {
+        let track = r#","faceTrack":[[0,0.3,0.4],[2,0.7,0.4]]"#;
+        let zoom = |mode: &str| {
+            format!(r#"{{"clipIndex":0,"startSec":0.0,"endSec":2.0,"scale":1.8,"focusX":0.2,"focusY":0.8,"focusMode":"{mode}","rotation":null}}"#)
+        };
+        let focus_at = |layout: &str, clip: &str, mode: &str, t: f32| {
+            plan_lanes(&zoom_lanes_scene(layout, clip, "", &zoom(mode), ""), t).webcam_focus
+        };
+        let near = |a: [f32; 2], b: [f32; 2], what: &str| {
+            assert!((a[0] - b[0]).abs() < 1e-4 && (a[1] - b[1]).abs() < 1e-4, "{what}: {a:?} != {b:?}");
+        };
+        near(focus_at(PIP, track, "face", 1.0), [0.5, 0.4], "the face at source second 1");
+        near(focus_at(PIP, track, "face", 0.5), [0.4, 0.4], "the face moves, the zoom follows");
+        near(focus_at(PIP, track, "face", 1.5), [0.6, 0.4], "and on");
+        near(focus_at(PIP, track, "auto", 1.5), [0.6, 0.4], "auto on the camera is the face");
+        near(focus_at(PIP, track, "manual", 1.5), [0.2, 0.8], "manual keeps its point");
+        near(focus_at(PIP, "", "face", 1.0), [0.2, 0.8], "no track: the region's point");
+        // A camera crop of x 0.2..0.8. Every camera focus, the face and a manual point alike, is a
+        // point of the WHOLE picture: the focus stays one, and the cut, which the crop places, is
+        // centred on it.
+        let cropped = format!(r#"{PIP},"webcamCrop":{{"x":0.2,"y":0,"width":0.6,"height":1}}"#);
+        let cut_at = |zoom: &str, t: f32| {
+            let g = plan_lanes(&zoom_lanes_scene(&cropped, track, "", zoom, ""), t);
+            let ar = g.w_px[0] / g.w_px[1].max(0.0001);
+            (g.webcam_focus, webcam_source_rect_zoomed([1280.0, 720.0], [1280.0, 720.0], g.webcam_crop, ar, g.webcam_zoom, g.webcam_focus))
+        };
+        let (focus, cut) = cut_at(&zoom("face"), 1.5);
+        near(focus, [0.6, 0.4], "the face, a point of the whole picture");
+        near([(cut[0] + cut[2]) / 2.0, (cut[1] + cut[3]) / 2.0], [0.6, 0.4], "the cut on the face");
+        let manual = r#"{"clipIndex":0,"startSec":0.0,"endSec":2.0,"scale":1.8,"focusX":0.45,"focusY":0.5,"focusMode":"manual","rotation":null}"#;
+        let (focus, cut) = cut_at(manual, 1.5);
+        near(focus, [0.45, 0.5], "a manual point of the whole picture");
+        near([(cut[0] + cut[2]) / 2.0, (cut[1] + cut[3]) / 2.0], [0.45, 0.5], "the cut on that point");
+    }
+
+    /// A camera zoom glides the face to the middle of the camera's box and back with no sway, when
+    /// the camera's cut is off-centre in its picture: a Frame position pan, an off-centre crop, and
+    /// a zoom with a `motion`. The ease runs about the cut's centre, as the screen's runs about the
+    /// screen's. It used to run about the picture's centre, which a panned cut does not show: the
+    /// window ran into the cut's edge, then slid back.
+    #[test]
+    fn a_camera_zoom_glides_the_face_to_the_centre_without_swaying() {
+        // A static face, so only the zoom moves it in the box. The camera fills a 9:16 frame.
+        let scene_with = |crop: &str, region_extra: &str, face: [f32; 2]| {
+            let [x, y] = face;
+            let track = format!(r#","faceTrack":[[0,{x},{y}],[10,{x},{y}]]"#);
+            let layout = format!(r#"{PIP},"webcamCrop":{crop}"#);
+            let zoom = format!(
+                r#"{{"clipIndex":0,"startSec":2.0,"endSec":6.0,"scale":1.8,"focusX":0.5,"focusY":0.5,"focusMode":"face","rotation":null{region_extra}}}"#
+            );
+            // Full from the first frame (no ease of its own), so the box keeps its 9:16 shape.
+            let full = r#"{"clipIndex":0,"startSec":0,"endSec":10,"continuesBefore":true,"continuesAfter":true}"#;
+            zoom_lanes_scene(&layout, &track, "", &zoom, full)
+        };
+        // Where the face sits across and down the camera's box (0..1) at `t`.
+        let seen = |scene: &Scene, face: [f32; 2], t: f32| {
+            let g = plan_lanes(scene, t);
+            assert_eq!(g.w_dst, [0.0, 0.0, 1.0, 1.0], "the camera fills the frame");
+            let ar = g.w_px[0] / g.w_px[1].max(0.0001);
+            let c = webcam_source_rect_zoomed([1280.0, 720.0], [1280.0, 720.0], g.webcam_crop, ar, g.webcam_zoom, g.webcam_focus);
+            [(face[0] - c[0]) / (c[2] - c[0]), (face[1] - c[1]) / (c[3] - c[1])]
+        };
+        // From where the face is at 1x to the middle of the box, monotonically, with no overshoot.
+        let glides = |what: &str, path: &[[f32; 2]]| {
+            let (first, last) = (path[0], path[path.len() - 1]);
+            assert!((first[0] - 0.5).abs() > 0.1, "{what}: the face starts off the middle: {first:?}");
+            for k in 0..2 {
+                assert!((last[k] - 0.5).abs() < 1e-3, "{what}: axis {k} ends in the middle: {last:?}");
+                let dir = (0.5 - first[k]).signum();
+                let (lo, hi) = (first[k].min(0.5) - 1e-4, first[k].max(0.5) + 1e-4);
+                for w in path.windows(2) {
+                    assert!((w[1][k] - w[0][k]) * dir >= -1e-5, "{what}: axis {k} turns back: {:?} -> {:?}", w[0], w[1]);
+                    assert!(w[1][k] >= lo && w[1][k] <= hi, "{what}: axis {k} overshoots: {:?}", w[1]);
+                }
+            }
+        };
+        let times = |from: f32, to: f32| (0..=80).map(move |i| from + (to - from) * i as f32 / 80.0);
+        // The controller's case: a pan of 0.21 puts the 1x cut at x 0.144..0.460, the face at 0.25.
+        let panned = r#"{"x":0,"y":0,"width":1,"height":1,"pan":[0.21,0.5]}"#;
+        // A crop off the picture's centre: the 1x cut is x 0.255..0.445, y 0.1..0.7.
+        let off_centre = r#"{"x":0.1,"y":0.1,"width":0.5,"height":0.6}"#;
+        for (what, crop, face) in [("a panned cut", panned, [0.25, 0.4]), ("an off-centre crop", off_centre, [0.33, 0.45])] {
+            let scene = scene_with(crop, "", face);
+            // In: from before the ease-in to the region's start, where the zoom is in full.
+            let path: Vec<_> = times(0.9, 2.0).map(|t| seen(&scene, face, t)).collect();
+            glides(&format!("{what}, in"), &path);
+            // Out: from after the ease-out back to the region's end, so it too ends in the middle.
+            let mut path: Vec<_> = times(6.0, 7.1).map(|t| seen(&scene, face, t)).collect();
+            path.reverse();
+            glides(&format!("{what}, out"), &path);
+        }
+        // A motion: "in" drifts from 1x to 1.8x over its span, the face from its place to the middle.
+        let face = [0.25, 0.4];
+        let drifting = scene_with(panned, r#","motion":"in""#, face);
+        let path: Vec<_> = times(2.0, 5.999).map(|t| seen(&drifting, face, t)).collect();
+        glides("motion in", &path);
+        // "hold" plays at 1.8x through its span, the face held in the middle.
+        let holding = scene_with(panned, r#","motion":"hold""#, face);
+        for t in times(2.0, 5.99) {
+            let p = seen(&holding, face, t);
+            assert!((p[0] - 0.5).abs() < 1e-3 && (p[1] - 0.5).abs() < 1e-3, "motion hold at {t}: {p:?}");
+        }
+    }
+
+    /// A screen zoom in focus mode "face" (a talking head's main picture) holds a filled 9:16 window
+    /// on the face, as a manual zoom holds it on its point: the face is a known point, so the window
+    /// does not go back to the resting point (`screenRest`) while the zoom is on.
+    #[test]
+    fn a_face_zoom_holds_the_filled_window_on_the_face() {
+        let plan = |mode: &str| {
+            let scene = Scene::from_json(&format!(
+                r##"{{
+                "clips":[{{"screenPath":"/s.mp4","webcamPath":"","sourceStartSec":0,"sourceEndSec":10,"webcamOffsetSec":0,"hasAudio":false,
+                          "faceTrack":[[0,0.25,0.4],[3,0.35,0.4]]}}],
+                "layout":{{"preset":"no-webcam","webcamSize":1,"webcamShape":"rounded","webcamMirror":false,"webcamPosition":null,
+                          "webcamReactiveZoom":false,"screenRect":{{"x":0.1,"y":0.1,"width":0.8,"height":0.8}},
+                          "screenCover":true,"screenFollow":true,"screenRest":[0.7,0.5]}},
+                "effects":{{"padding":0.5,"blur":false,"shadow":0.5,"roundnessFrac":0.02,"motionBlur":0}},
+                "background":{{"kind":"color","color":"#1e1e2e"}},
+                "zoomRegions":[{{"clipIndex":0,"startSec":0.0,"endSec":5.0,"scale":2.0,"focusX":0.5,"focusY":0.5,"focusMode":"{mode}","rotation":null}}],
+                "cursor":{{"show":true,"size":1,"smoothing":0,"motionBlur":0,"clickBounce":1,"clipToBounds":false,"theme":"default"}},
+                "cropByClip":[null],
+                "output":{{"width":1080,"height":1920,"fps":60}}
+            }}"##
+            ))
+            .expect("scène remplie");
+            let cfg = crate::config::all().pop().expect("au moins une config");
+            let mut input = golden_input(&scene, &cfg);
+            input.render_px = [1080.0, 1920.0];
+            fill_seen(&plan_frame(&input))
+        };
+        // At 1.5 s (`golden_input`), the face is at x 0.3 and the zoom is at full strength.
+        let w = plan("face");
+        assert!((0.5 * (w[0] + w[2]) - 0.3).abs() < 1e-3, "the window on the face at 0.3: {w:?}");
+        // A manual zoom on its point holds the window there the same way.
+        let m = plan("manual");
+        assert!((0.5 * (m[0] + m[2]) - 0.5).abs() < 1e-3, "the window on the manual point: {m:?}");
+    }
+
+    /// A camera zoom with no camera layer, a layout without one or a clip without a camera file,
+    /// changes nothing: the camera stays as filmed on its default focus, and the screen is the
+    /// screen of the same scene without the camera zoom.
+    #[test]
+    fn a_camera_zoom_with_no_camera_changes_nothing() {
+        let check = |g: &FrameGeometry, g0: &FrameGeometry, what: &str| {
+            assert_eq!(g.webcam_zoom, 1.0, "{what}: no camera zoom");
+            assert_eq!(g.webcam_focus, CAMERA_ZOOM_FOCUS, "{what}: the default focus");
+            assert_eq!(g.w_dst, g0.w_dst, "{what}: the camera's box");
+            assert_eq!(g.s_dst, g0.s_dst, "{what}: the screen's box");
+            assert_eq!(g.cut, g0.cut, "{what}: the screen's cut");
+        };
+        let (zoomed, plain) = (
+            zoom_lanes_scene(NO_CAMERA, "", "", CAMERA_ZOOM, ""),
+            zoom_lanes_scene(NO_CAMERA, "", "", "", ""),
+        );
+        check(&plan_lanes(&zoomed, 4.5), &plan_lanes(&plain, 4.5), "a layout with no camera");
+        let (zoomed, plain) = (
+            zoom_lanes_scene(PIP, "", "", CAMERA_ZOOM, ""),
+            zoom_lanes_scene(PIP, "", "", "", ""),
+        );
+        check(
+            &plan_lanes_with(&zoomed, 4.5, false),
+            &plan_lanes_with(&plain, 4.5, false),
+            "a clip with no camera file",
+        );
+    }
+
+    /// The camera's crop position places the cover cut when the crop is the whole frame, in each
+    /// layout whose camera box is not the camera's own shape; centred stays today's cut exactly.
+    #[test]
+    fn the_camera_pan_places_the_cover_cut_at_full_size() {
+        let cfg = crate::config::all().pop().expect("au moins une config");
+        // Layout, preset name and the camera's slot (x, y, w, h in frame fractions).
+        let layouts = [
+            ("vertical-stack", r#"{"x":0,"y":0.5,"width":1,"height":0.5}"#),
+            ("dual-frame", r#"{"x":0.66,"y":0.25,"width":0.234,"height":0.55}"#),
+            ("picture-in-picture", r#"{"x":0.25,"y":0.3,"width":0.5,"height":0.4}"#), // cutout-stack, which native draws as a free camera
+        ];
+        let cut = |preset: &str, rect: &str, pan: &str| {
+            let scene = Scene::from_json(&format!(
+                r##"{{
+                "clips":[{{"screenPath":"/s.mp4","webcamPath":"/w.mp4","sourceStartSec":0,"sourceEndSec":10,"webcamOffsetSec":0,"hasAudio":false}}],
+                "layout":{{"preset":"{preset}","webcamSize":0.3,"webcamShape":"rectangle","webcamMirror":false,"webcamPosition":null,
+                          "webcamReactiveZoom":false,"screenRect":{{"x":0,"y":0,"width":1,"height":0.5}},
+                          "webcamRect":{rect}{crop}}},
+                "effects":{{"padding":0,"blur":false,"shadow":0,"roundnessFrac":0,"motionBlur":0}},
+                "background":{{"kind":"color","color":"#1e1e2e"}},
+                "zoomRegions":[],
+                "cursor":{{"show":false,"size":1,"smoothing":0,"motionBlur":0,"clickBounce":0,"clipToBounds":false,"theme":"default"}},
+                "output":{{"width":1080,"height":1920,"fps":60}}
+            }}"##,
+                crop = if pan.is_empty() { String::new() } else { format!(r#","webcamCrop":{{"x":0,"y":0,"width":1,"height":1{pan}}}"#) },
+            ))
+            .expect("scène");
+            let mut input = golden_input(&scene, &cfg);
+            input.render_px = [1080.0, 1920.0];
+            let g = plan_frame(&input);
+            let ar = g.w_px[0] / g.w_px[1].max(0.0001);
+            webcam_source_rect_zoomed([1280.0, 720.0], [1280.0, 720.0], g.webcam_crop, ar, g.webcam_zoom, g.webcam_focus)
+        };
+        for (preset, rect) in layouts {
+            let none = cut(preset, rect, "");
+            let centred = cut(preset, rect, r#","pan":[0.5,0.5]"#);
+            let left = cut(preset, rect, r#","pan":[0.0,0.0]"#);
+            let right = cut(preset, rect, r#","pan":[1.0,1.0]"#);
+            for k in 0..4 {
+                assert!((none[k] - centred[k]).abs() < 1e-5, "{preset} : centré = aujourd'hui, {none:?} {centred:?}");
+            }
+            // The camera is cover-cut to its box, so there is room on one axis, and the pan moves the cut.
+            let moved = (right[0] - left[0]).abs() + (right[1] - left[1]).abs();
+            assert!(moved > 1e-3, "{preset} : le pan doit déplacer la coupe {left:?} {right:?}");
+            // Never outside the picture.
+            for r in [left, right] {
+                assert!(r[0] >= -1e-6 && r[1] >= -1e-6 && r[2] <= 1.0 + 1e-6 && r[3] <= 1.0 + 1e-6, "{preset} : {r:?}");
+            }
+        }
+    }
+
+    /// A camera zoom pushes in from the camera's own cut: the crop and the Frame position (pan) place
+    /// the cut as with no zoom, then the zoom closes it in about its focus (a point of the whole
+    /// picture), inside that cut. No jump as the zoom starts, the box's ratio, the zoomed cut inside
+    /// the panned cut and around the focus, a focus outside the cut framed by its nearest edge, and a
+    /// centred pan the plain cover to the bit.
+    #[test]
+    fn the_camera_pan_holds_through_a_zoom() {
+        let tex = [1280.0, 720.0];
+        let visible = [1280.0, 720.0];
+        let box_ar = 1080.0 / 960.0; // a slot narrower than the 16:9 picture: the room is sideways
+        let whole = |pan: Option<[f32; 2]>| SceneCrop { x: 0.0, y: 0.0, width: 1.0, height: 1.0, pan };
+        let rect_on = |pan: Option<[f32; 2]>, ar: f32, zoom: f32, focus: [f32; 2]| {
+            webcam_source_rect_zoomed(visible, tex, Some(whole(pan)), ar, zoom, focus)
+        };
+        let rect = |pan: Option<[f32; 2]>, zoom: f32| rect_on(pan, box_ar, zoom, CAMERA_ZOOM_FOCUS);
+        let inside = |inner: [f32; 4], outer: [f32; 4]| {
+            inner[0] >= outer[0] - 1e-6 && inner[1] >= outer[1] - 1e-6 && inner[2] <= outer[2] + 1e-6 && inner[3] <= outer[3] + 1e-6
+        };
+        for pan in [[0.0, 0.0], [0.2, 0.9], [1.0, 1.0]] {
+            let (a, b) = (rect(Some(pan), 1.0), rect(Some(pan), 1.0001));
+            for k in 0..4 {
+                assert!((a[k] - b[k]).abs() < 1e-3, "{pan:?} : saut à l'entrée du zoom {a:?} {b:?}");
+            }
+            let z = rect(Some(pan), 1.8);
+            assert!(inside(z, a), "{pan:?} : the zoomed cut lies inside the panned cut {z:?} {a:?}");
+            // The cut's own shape is the box's, whatever the pan.
+            let ar = ((z[2] - z[0]) * 1280.0) / ((z[3] - z[1]) * 720.0);
+            assert!((ar - box_ar).abs() < 1e-3, "ratio {ar}");
+            assert!(((z[2] - z[0]) * 1.8 - (a[2] - a[0])).abs() < 1e-5, "smaller by the zoom");
+        }
+        // The pan still places the zoomed cut: the panned cuts differ, and so do the zoomed ones.
+        let (left, right) = (rect(Some([0.0, 0.5]), 1.8), rect(Some([1.0, 0.5]), 1.8));
+        assert!(right[0] > left[0] + 1e-3, "le pan doit placer la coupe zoomée : {left:?} {right:?}");
+        // Centred: the plain cover, bit for bit, at 1x and zoomed.
+        for zoom in [1.0, 1.8] {
+            assert_eq!(rect(Some([0.5, 0.5]), zoom), rect(None, zoom), "zoom {zoom}");
+        }
+
+        // A 9:16 box, the face framed at x 0.3 by a pan of 0.21: the 1x cut is x 0.144..0.460. At
+        // 1.8x the cut stays on the face (it used to end at 0.278, the face out of frame).
+        let nine_sixteen = 9.0 / 16.0;
+        let panned = rect_on(Some([0.21, 0.5]), nine_sixteen, 1.0, [0.3, 0.4]);
+        let zoomed = rect_on(Some([0.21, 0.5]), nine_sixteen, 1.8, [0.3, 0.4]);
+        assert!(inside(zoomed, panned), "inside the panned cut: {zoomed:?} {panned:?}");
+        assert!(zoomed[0] < 0.3 && zoomed[2] > 0.3, "the face at x 0.3 is in the cut: {zoomed:?}");
+        assert!(((zoomed[0] + zoomed[2]) / 2.0 - 0.3).abs() < 1e-4, "centred on it: {zoomed:?}");
+        assert!(((zoomed[1] + zoomed[3]) / 2.0 - 0.4).abs() < 1e-4, "across and down: {zoomed:?}");
+        // A focus outside the panned cut: the cut's edge nearest it is framed.
+        let far = rect_on(Some([0.21, 0.5]), nine_sixteen, 1.8, [0.8, 0.4]);
+        assert!(inside(far, panned), "inside the panned cut: {far:?} {panned:?}");
+        assert!((far[2] - panned[2]).abs() < 1e-6, "on the edge nearest the focus: {far:?} {panned:?}");
+    }
+
+    /// "Frame position" places the CAMERA of a screen take (1.2.0 Beta feedback: it used to move
+    /// the screen under a full-screen camera). At 9:16, with the camera filling the frame over a
+    /// screen take whose screen follows the pointer, the camera's cover pan moves the camera's cut
+    /// across the camera and leaves the screen's cut where it was.
+    ///
+    /// Both ways the camera fills the frame, with the region payloads `buildSceneDescription`
+    /// sends for them (copied from its output for a 16:9 take with a 1280×720 camera):
+    /// - a timeline camera-fullscreen region: its layout has no crop, so the scene's scalar
+    ///   `webcamCrop` (and its pan) must stand under it;
+    /// - the Camera layout of a clip (a look): the region carries the clip's own `webcamCrop`.
+    #[test]
+    fn the_camera_position_moves_the_camera_not_the_screen_while_it_fills_the_frame() {
+        let cfg = crate::config::all().pop().expect("au moins une config");
+        const RECTS: &str = r#""screenRect":{"x":0.2861111111111111,"y":0.2864583333333333,"width":0.42685185185185187,"height":0.4270833333333333},"webcamRect":{"x":0.5787037037037037,"y":0.6729166666666667,"width":0.4,"height":0.1265625},"webcamDodgeRect":null,"webcamCutoutLine":null,"screenRadiusFrac":null,"webcamRadiusFrac":0.14814814814814814,"webcamShape":"rectangle","screenCover":true"#;
+        let crop = |pan: &str| format!(r#""webcamCrop":{{"x":0,"y":0,"width":1,"height":1{pan}}}"#);
+        let plan = |scalar_crop: &str, region: &str| {
+            let scene = Scene::from_json(&format!(
+                r##"{{
+                "clips":[{{"screenPath":"/s.mp4","webcamPath":"/w.mp4","sourceStartSec":0,"sourceEndSec":10,"webcamOffsetSec":0,"hasAudio":true}}],
+                "layout":{{"preset":"picture-in-picture","webcamSize":0.4,"webcamMirror":false,
+                          "webcamPosition":{{"cx":0.7787037037037037,"cy":0.7361979166666667}},"cameraCover":true,
+                          "webcamReactiveZoom":true,"webcamAnchor":"bottom-right",{scalar_crop},
+                          {RECTS},"screenFollow":true,"webcamShadow":0.35,
+                          "layoutByClip":[{{{RECTS}}}]}},
+                "effects":{{"padding":0,"blur":false,"shadow":0.0,"roundnessFrac":0.0,"motionBlur":0.0}},
+                "background":{{"kind":"color","color":"#1e1e2e"}},
+                "zoomRegions":[],
+                "cameraFullscreenRegions":[{region}],
+                "cursor":{{"show":false,"size":1,"smoothing":0,"motionBlur":0,"clickBounce":0,"clipToBounds":false,"theme":"default"}},
+                "cropByClip":[null],
+                "output":{{"width":1080,"height":1920,"fps":60}}
+            }}"##
+            ))
+            .expect("scene");
+            let mut input = golden_input(&scene, &cfg);
+            input.render_px = [1080.0, 1920.0];
+            input.cursor = Some(parked_track(0.7, 0.5));
+            input.timeline_t_override = Some(5.0);
+            plan_frame(&input)
+        };
+        // A timeline region: the pan rides on the scene's own crop.
+        let timeline = |pan: &str| {
+            plan(
+                &crop(pan),
+                &format!(r#"{{"startSec":0,"endSec":10,"clipIndex":0,"layout":{{{RECTS}}},"fullCamera":true}}"#),
+            )
+        };
+        // The Camera layout of a clip: the pan rides on the region's own crop, the scene's has none.
+        let tile = |pan: &str| {
+            plan(
+                &crop(""),
+                &format!(
+                    r#"{{"startSec":0,"endSec":10,"clipIndex":0,"continuesBefore":true,"continuesAfter":true,"layout":{{{RECTS},"screenShadow":0.6,"roundnessFrac":0,"frame":"none","frameTheme":"light","webcamShadow":0.35,"webcamMirror":false,"webcamReactiveZoom":true,{},"webcamEffect":"none","webcamBlur":0.5,"webcamCutoutOverScreen":false}},"fullCamera":true}}"#,
+                    crop(pan)
+                ),
+            )
+        };
+        // What the camera shows of its own 16:9 picture, in 0..1.
+        let camera_cut = |g: &FrameGeometry| {
+            let ar = g.w_px[0] / g.w_px[1].max(0.0001);
+            webcam_source_rect_zoomed([1280.0, 720.0], [1280.0, 720.0], g.webcam_crop, ar, g.webcam_zoom, g.webcam_focus)
+        };
+        for (route, at) in [("timeline region", &timeline as &dyn Fn(&str) -> FrameGeometry), ("Camera layout", &tile)] {
+            let centred = at("");
+            let left = at(r#","pan":[0.0,0.5]"#);
+            let right = at(r#","pan":[1.0,0.5]"#);
+            for g in [&centred, &left, &right] {
+                assert_eq!(g.w_dst, [0.0, 0.0, 1.0, 1.0], "{route}: the camera fills the frame");
+            }
+            // The camera's cut is 9:16 of a 16:9 picture: full height, a little under a third wide.
+            let (c, l, r) = (camera_cut(&centred), camera_cut(&left), camera_cut(&right));
+            assert!((c[0] + c[2] - 1.0).abs() < 1e-4, "{route}: centred with no pan: {c:?}");
+            assert!(l[0].abs() < 1e-4 && (r[2] - 1.0).abs() < 1e-4, "{route}: edge to edge: {l:?} {r:?}");
+            for cut in [c, l, r] {
+                assert!(cut[1].abs() < 1e-4 && (cut[3] - 1.0).abs() < 1e-4, "{route}: full height: {cut:?}");
+            }
+            // The screen under it is not touched: same cut, same box, same window.
+            for g in [&left, &right] {
+                assert_eq!(g.cut, centred.cut, "{route}: the screen's cut stays");
+                assert_eq!(g.s_dst, centred.s_dst, "{route}: the screen's box stays");
+                assert_eq!(fill_seen(g), fill_seen(&centred), "{route}: the screen's window stays");
+            }
+        }
+    }
+
+    /// Un pan à part entière ne touche pas un crop plus petit que le cadre : celui-ci est déjà
+    /// placé par son propre décalage, et le cover reste centré dedans.
+    #[test]
+    fn a_smaller_crop_ignores_the_pan_for_the_cover_cut() {
+        let tex = [1280.0, 720.0];
+        let base = SceneCrop { x: 0.2, y: 0.2, width: 0.5, height: 0.5, pan: None };
+        let panned = SceneCrop { pan: Some([0.0, 1.0]), ..base };
+        assert_eq!(
+            webcam_source_rect_zoomed([1280.0, 720.0], tex, Some(base), 1.0, 1.0, CAMERA_ZOOM_FOCUS),
+            webcam_source_rect_zoomed([1280.0, 720.0], tex, Some(panned), 1.0, 1.0, CAMERA_ZOOM_FOCUS)
+        );
+    }
+
+    /// The camera's crop under a zoom: smaller by the zoom, on the focus it is given (by default a
+    /// little above centre, where a face is), and still the box's ratio, so the camera is never
+    /// stretched.
     #[test]
     fn a_zoomed_camera_crop_closes_in_above_centre() {
         let tex = [1920.0, 1080.0];
         let box_ar = 1080.0 / 1920.0;
-        let whole = webcam_source_rect_zoomed([1920.0, 1080.0], tex, None, box_ar, 1.0);
+        let whole = webcam_source_rect_zoomed([1920.0, 1080.0], tex, None, box_ar, 1.0, CAMERA_ZOOM_FOCUS);
         assert_eq!(whole, webcam_source_rect([1920.0, 1080.0], tex, None, box_ar), "1x is today's crop");
-        let [u0, v0, u1, v1] = webcam_source_rect_zoomed([1920.0, 1080.0], tex, None, box_ar, 2.0);
+        let elsewhere = webcam_source_rect_zoomed([1920.0, 1080.0], tex, None, box_ar, 1.0, [0.1, 0.9]);
+        assert_eq!(elsewhere, whole, "at 1x the focus does not matter");
+        let [u0, v0, u1, v1] =
+            webcam_source_rect_zoomed([1920.0, 1080.0], tex, None, box_ar, 2.0, CAMERA_ZOOM_FOCUS);
         assert!(((v1 - v0) - 0.5).abs() < 1e-4, "half the height at 2x: {}", v1 - v0);
         assert!((((u1 - u0) * 1920.0) / ((v1 - v0) * 1080.0) - box_ar).abs() < 1e-3, "the box's ratio");
         assert!(((u0 + u1) / 2.0 - 0.5).abs() < 1e-4, "centred across");
         assert!((v0 + v1) / 2.0 < 0.5, "above centre, where a face is");
+        // A face at the left and low: the cut is centred on it (a box of the picture's ratio, so the
+        // cover leaves the zoomed rect whole).
+        let [u0, v0, u1, v1] =
+            webcam_source_rect_zoomed([1920.0, 1080.0], tex, None, 16.0 / 9.0, 2.0, [0.3, 0.6]);
+        assert!(((u0 + u1) / 2.0 - 0.3).abs() < 1e-4, "on the face across: {u0} {u1}");
+        assert!(((v0 + v1) / 2.0 - 0.6).abs() < 1e-4, "on the face down: {v0} {v1}");
     }
 
     /// La caméra en orbite, en focus auto : celle qui bouge avec le pointeur. Sans piste, elle
@@ -6763,6 +7581,126 @@ mod tests {
         }
     }
 
+    // Mesurés sur le code d'avant `screenFixed` (pointeur et visage en 0.7, fenêtre 9:16 pleine
+    // hauteur dans du 16:9 : 0.3164 de large).
+    const GOLDEN_POINTER: [f32; 4] = [0.541_796_86, 0.0, 0.858_203_1, 1.0];
+    const GOLDEN_CENTRED: [f32; 4] = [0.341_796_88, 0.0, 0.658_203_1, 1.0];
+    const GOLDEN_FACE: [f32; 4] = [0.541_796_86, 0.0, 0.858_203_1, 1.0];
+
+    /// Ce que le slot montre de l'enregistrement rempli, en 0..1 : le slot reporté par s_dst → cut.
+    fn fill_seen(g: &FrameGeometry) -> [f32; 4] {
+        let (u, v) = (1.0f32, 1080.0f32 / 1088.0);
+        let (s, d, c) = (g.s_ann, g.s_dst, g.cut);
+        let x = |f: f32| (c[0] + (f - d[0]) / d[2] * (c[2] - c[0])) / u;
+        let y = |f: f32| (c[1] + (f - d[1]) / d[3] * (c[3] - c[1])) / v;
+        [x(s[0]), y(s[1]), x(s[0] + s[2]), y(s[1] + s[3])]
+    }
+
+    /// GOLDEN : sans position choisie à la main (absente, ou `null`), la fenêtre est exactement
+    /// celle d'avant la fonctionnalité : sur le pointeur, sinon sur le visage, sinon centrée.
+    #[test]
+    fn golden_filled_window_without_a_fixed_position() {
+        let near = |w: [f32; 4], e: [f32; 4], what: &str| {
+            for k in 0..4 {
+                assert!((w[k] - e[k]).abs() < 1e-4, "{what} : fenêtre {w:?}, attendue {e:?}");
+            }
+        };
+        let rest = r#","screenRest":[0.7,0.3]"#;
+        near(fill_seen(&fill_plan(true, Some((0.7, 0.5)))), GOLDEN_POINTER, "pointeur");
+        near(fill_seen(&fill_plan(true, None)), GOLDEN_CENTRED, "centrée");
+        near(fill_seen(&fill_plan_resting(true, None, "[]", rest)), GOLDEN_FACE, "visage");
+        // `screenFixed: null` et absent sont le même payload.
+        let null = format!(r#"{rest},"screenFixed":null"#);
+        near(fill_seen(&fill_plan_resting(true, None, "[]", &null)), GOLDEN_FACE, "visage, null");
+        near(
+            fill_seen(&fill_plan_resting(true, Some(parked_track(0.7, 0.5)), "[]", &null)),
+            GOLDEN_POINTER,
+            "pointeur, null",
+        );
+    }
+
+    /// Une position choisie à la main remplace le pointeur et le visage : la fenêtre se centre
+    /// dessus, bornée à l'enregistrement, et un zoom en focus manuel garde la main par-dessus.
+    #[test]
+    fn a_fixed_position_moves_the_filled_window() {
+        let centre = |g: &FrameGeometry| {
+            let w = fill_seen(g);
+            [0.5 * (w[0] + w[2]), 0.5 * (w[1] + w[3])]
+        };
+        let fixed = |x: f32, y: f32| format!(r#","screenRest":[0.7,0.3],"screenFixed":[{x},{y}]"#);
+        // Ni le visage ni le pointeur ne la mènent plus.
+        let on_fixed = fill_plan_resting(true, Some(parked_track(0.2, 0.5)), "[]", &fixed(0.4, 0.5));
+        assert!((centre(&on_fixed)[0] - 0.4).abs() < 1e-3, "centre {:?}", centre(&on_fixed));
+        let no_pointer = fill_plan_resting(true, None, "[]", &fixed(0.4, 0.5));
+        assert!((centre(&no_pointer)[0] - 0.4).abs() < 1e-3, "centre {:?}", centre(&no_pointer));
+        // Elle bouge avec la position, toute la hauteur gardée (la coupe est 9:16 dans du 16:9).
+        let left = fill_seen(&fill_plan_resting(true, None, "[]", &fixed(0.0, 0.5)));
+        let right = fill_seen(&fill_plan_resting(true, None, "[]", &fixed(1.0, 0.5)));
+        assert!(left[0].abs() < 1e-3, "bute à gauche : {left:?}");
+        assert!((right[2] - 1.0).abs() < 1e-3, "bute à droite : {right:?}");
+        assert!(left[1].abs() < 1e-3 && (left[3] - 1.0).abs() < 1e-3, "toute la hauteur : {left:?}");
+        // Hors de 0..1, la fenêtre reste dans l'enregistrement.
+        let past = fill_seen(&fill_plan_resting(true, None, "[]", &fixed(3.0, -2.0)));
+        assert!((past[2] - 1.0).abs() < 1e-3 && past[0] >= -1e-3, "dans l'enregistrement : {past:?}");
+        // Sans `screenFollow`, la position ne fait rien : le remplissage est centré.
+        let off = fill_plan_resting(false, None, "[]", &fixed(0.4, 0.5));
+        assert!((centre(&off)[0] - 0.5).abs() < 1e-3, "centre {:?}", centre(&off));
+        // Un zoom en focus manuel garde la fenêtre sur son point, par-dessus la position fixe.
+        let zoom = r#"[{"clipIndex":0,"startSec":0.0,"endSec":5.0,"scale":2.0,"focusX":0.8,"focusY":0.5}]"#;
+        let zoomed = fill_plan_resting(true, None, zoom, &fixed(0.4, 0.5));
+        let plain = fill_plan_resting(true, None, "[]", &fixed(0.4, 0.5));
+        assert!(
+            (fill_seen(&zoomed)[0] - fill_seen(&plain)[0]).abs() > 1e-3,
+            "le zoom doit encore agir : {:?} contre {:?}",
+            fill_seen(&zoomed),
+            fill_seen(&plain)
+        );
+    }
+
+    /// Plusieurs clips : chaque clip est une région de scène, dont le layout est installé par-dessus
+    /// celui du clip. La fenêtre posée à la main du clip 1 y survit, et le clip 2 en Auto garde son
+    /// visage (ni l'un ni l'autre ne passe par une interpolation vers `None`).
+    #[test]
+    fn clip_regions_keep_each_clips_window() {
+        let cfg = crate::config::all().pop().expect("au moins une config");
+        let region = |clip: usize, extra: &str| {
+            format!(
+                r#"{{"clipIndex":{clip},"startSec":{s},"endSec":{e},"layout":{{"screenRect":{{"x":0.1,"y":0.1,"width":0.8,"height":0.8}},"screenCover":true{extra}}}}}"#,
+                s = clip * 5,
+                e = clip * 5 + 5
+            )
+        };
+        let scene = Scene::from_json(&format!(
+            r##"{{
+            "clips":[{{"screenPath":"/s.mp4","webcamPath":"","sourceStartSec":0,"sourceEndSec":5,"webcamOffsetSec":0,"hasAudio":false}},
+                     {{"screenPath":"/s.mp4","webcamPath":"","sourceStartSec":5,"sourceEndSec":10,"webcamOffsetSec":0,"hasAudio":false}}],
+            "layout":{{"preset":"no-webcam","webcamSize":1,"webcamShape":"rounded","webcamMirror":false,"webcamPosition":null,
+                      "webcamReactiveZoom":false,"screenRect":{{"x":0.1,"y":0.1,"width":0.8,"height":0.8}},
+                      "screenCover":true,"screenFollow":true}},
+            "effects":{{"padding":0.5,"blur":false,"shadow":0.5,"roundnessFrac":0.02,"motionBlur":0}},
+            "background":{{"kind":"color","color":"#1e1e2e"}},
+            "zoomRegions":[],
+            "cameraFullscreenRegions":[{one},{two}],
+            "cursor":{{"show":true,"size":1,"smoothing":0,"motionBlur":0,"clickBounce":1,"clipToBounds":false,"theme":"default"}},
+            "cropByClip":[null,null],
+            "output":{{"width":1080,"height":1920,"fps":60}}
+        }}"##,
+            one = region(0, r#","screenFixed":[0.2,0.5],"screenRest":[0.7,0.3]"#),
+            two = region(1, r#","screenRest":[0.7,0.3]"#),
+        ))
+        .expect("scène à deux clips");
+        let plan = |clip: usize, t: f32| {
+            let scene = scene.for_clip_window(clip, clip as f64 * 5.0, clip as f64 * 5.0 + 5.0);
+            let mut input = golden_input(&scene, &cfg);
+            input.render_px = [1080.0, 1920.0];
+            input.timeline_t_override = Some(t);
+            fill_seen(&plan_frame(&input))
+        };
+        let centre = |w: [f32; 4]| 0.5 * (w[0] + w[2]);
+        assert!((centre(plan(0, 2.5)) - 0.2).abs() < 1e-3, "clip 1 : fenêtre posée à la main");
+        assert!((centre(plan(1, 7.5)) - 0.7).abs() < 1e-3, "clip 2 : Auto garde son visage");
+    }
+
     /// Une prise de caméra seule n'a pas de pointeur : la fenêtre se pose sur le visage.
     #[test]
     fn a_filled_take_with_no_pointer_rests_on_its_face() {
@@ -7881,19 +8819,25 @@ mod tests {
             g.s_radius, g.w_radius, g.w_px[0], g.w_px[1],
             g.frame_min_px, g.padding_scale, g.shape_fade, g.mb_taps, g.source_t,
             g.programme_t,
+            g.webcam_zoom, g.webcam_focus[0], g.webcam_focus[1],
         ];
         // Mesuré sur ce code, pas deviné : toute dérive est une divergence à expliquer,
         // pas un seuil à relâcher. Ordre : s_dst[4], w_dst[4], cut[4], s_radius, w_radius,
-        // w_px[2], frame_min_px, padding_scale, shape_fade, mb_taps, source_t, programme_t.
+        // w_px[2], frame_min_px, padding_scale, shape_fade, mb_taps, source_t, programme_t,
+        // webcam_zoom, webcam_focus[2].
         // `programme_t` ajouté avec l'horloge programme : c'est une recopie de l'entrée, les
         // 21 valeurs d'avant n'ont pas bougé d'un bit.
-        let want: [f32; 22] = [
+        // The camera lane (`webcam_zoom`, `webcam_focus`) added with the camera zoom: this scene has
+        // none, so the camera is as filmed on its default focus, and the 22 values before it have not
+        // moved a bit (the screen's zoom no longer reaches the camera, and the camera's never the screen).
+        let want: [f32; 25] = [
             0.10207555, 0.102, 0.7958489, 0.796,
             0.9058473, 0.8325926, 0.0733194, 0.13037036,
             0.0, 0.0, 0.61, 0.6055147,
             16.779, 42.89185, 85.7837, 85.7837,
             658.0, 0.796, 1.0, 6.25, 1.5,
             2.25,
+            1.0, 0.5, 0.4,
         ];
         for (i, (a, b)) in got.iter().zip(want.iter()).enumerate() {
             assert_eq!(
@@ -8181,14 +9125,14 @@ mod tests {
 
     #[test]
     fn crop_maps_visible_frame_fractions_to_texture_uvs() {
-        let crop = SceneCrop { x: 0.25, y: 0.1, width: 0.5, height: 0.6 };
+        let crop = SceneCrop { x: 0.25, y: 0.1, width: 0.5, height: 0.6, pan: None };
         assert_rect(screen_source_rect(0.8, 0.9, None, 1.0, [0.2, 0.7]), [0.0, 0.0, 0.8, 0.9]);
         assert_rect(screen_source_rect(0.8, 0.9, Some(crop), 1.0, [0.5, 0.5]), [0.2, 0.09, 0.6, 0.63]);
     }
 
     #[test]
     fn zoom_focus_is_applied_inside_the_crop() {
-        let crop = SceneCrop { x: 0.25, y: 0.1, width: 0.5, height: 0.6 };
+        let crop = SceneCrop { x: 0.25, y: 0.1, width: 0.5, height: 0.6, pan: None };
         assert_rect(screen_source_rect(0.8, 0.9, Some(crop), 2.0, [0.5, 0.5]), [0.3, 0.225, 0.5, 0.495]);
         assert_rect(screen_source_rect(0.8, 0.9, Some(crop), 2.0, [1.0, 1.0]), [0.4, 0.36, 0.6, 0.63]);
     }
@@ -8394,6 +9338,7 @@ mod tests {
             y: 0.20,
             width: 0.50,
             height: 0.60,
+            pan: None,
         };
         let uv = webcam_source_rect([100.0, 100.0], [100.0, 100.0], Some(crop), 0.50 / 0.60);
         assert_rect(uv, [0.25, 0.20, 0.75, 0.80]);
@@ -8424,6 +9369,7 @@ mod tests {
         FrameGeometry {
             camera_fullscreen_progress: 0.0,
             webcam_zoom: 1.0,
+            webcam_focus: CAMERA_ZOOM_FOCUS,
             webcam_cutout_line: None,
             segment_look: None,
             webcam_crop: None,

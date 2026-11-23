@@ -37,6 +37,10 @@ export type NativeMacCaptureStopResult =
 			screenVideoPath: string;
 			/** Why the take ended before the user stopped it, when it did. */
 			warning?: string;
+			/** 1.2.0: the camera's `.mov`, when the helper recorded the camera. */
+			webcamVideoPath?: string;
+			/** 1.2.0: the microphone WAV, when the helper wrote one. */
+			micAudioPath?: string;
 	  }
 	| {
 			ok: false;
@@ -169,9 +173,17 @@ export function readNativeMacStopOutcome(
 		if (systemAudioLost) {
 			warnings.push(SYSTEM_AUDIO_LOST_WARNING);
 		}
+		const extras = {
+			...(typeof stopped.webcamPath === "string" && stopped.webcamPath
+				? { webcamVideoPath: stopped.webcamPath }
+				: {}),
+			...(typeof stopped.micWavPath === "string" && stopped.micWavPath
+				? { micAudioPath: stopped.micWavPath }
+				: {}),
+		};
 		return warnings.length > 0
-			? { ok: true, screenVideoPath, warning: warnings.join(" ") }
-			: { ok: true, screenVideoPath };
+			? { ok: true, screenVideoPath, warning: warnings.join(" "), ...extras }
+			: { ok: true, screenVideoPath, ...extras };
 	}
 
 	if (failure) {
@@ -309,7 +321,13 @@ export function sendNativeMacStopCommand(proc: ChildProcessWithoutNullStreams): 
 export function nativeMacDiscardTargets(
 	result: NativeMacCaptureStopResult,
 	targetPath: string | null,
+	/** 1.2.0: the camera `.mov` and microphone WAV the take was asked to write. */
+	sidecarPaths: string[] = [],
 ): string[] {
 	const screenVideoPath = result.ok ? result.screenVideoPath : targetPath;
-	return screenVideoPath ? [screenVideoPath, `${screenVideoPath}.cursor.json`] : [];
+	const reported = result.ok
+		? [result.webcamVideoPath, result.micAudioPath].filter((p): p is string => Boolean(p))
+		: [];
+	const files = screenVideoPath ? [screenVideoPath, `${screenVideoPath}.cursor.json`] : [];
+	return [...new Set([...files, ...reported, ...sidecarPaths])];
 }

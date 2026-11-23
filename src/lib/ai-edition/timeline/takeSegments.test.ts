@@ -81,7 +81,12 @@ describe("takeSegments", () => {
 			{ atMs: 5000, segment: 1 },
 			{ atMs: 9900, segment: 2 },
 		];
-		expect(takeSegments(marks, 10).at(-1)).toEqual({ startSec: 5, endSec: 10, segment: 1, earlier: [] });
+		expect(takeSegments(marks, 10).at(-1)).toEqual({
+			startSec: 5,
+			endSec: 10,
+			segment: 1,
+			earlier: [],
+		});
 	});
 
 	it("covers the whole take when the first mark comes late", () => {

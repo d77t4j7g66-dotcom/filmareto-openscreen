@@ -35,6 +35,7 @@
 		"cycleAnnotationsForward": "注釈を順に切り替え",
 		"cycleAnnotationsBackward": "注釈を逆順に切り替え",
 		"deleteSelectedAlt": "選択を削除 (alt)",
+		"addCameraZoom": "Add Camera Zoom",
 		"panTimeline": "タイムラインをパン",
 		"zoomTimeline": "タイムラインをズーム",
 		"frameBack": "フレームを戻す",

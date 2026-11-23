@@ -4,6 +4,10 @@ import PrompterCore
 final class PrompterWindowController: MessageHandler {
     private let panel = PrompterPanel()
     private let view = ReadingView(frame: NSRect(x: 0, y: 0, width: 560, height: 200))
+    private let container = NSView(frame: NSRect(x: 0, y: 0, width: 560, height: 200))
+    private let camera = CameraBackdrop(frame: NSRect(x: 0, y: 0, width: 560, height: 200))
+    /// The camera the app has on, as Chromium labels it. Nil while it is off.
+    private var cameraName: String?
     private var settings = PrompterSettings.default
     private let frames = FrameStore(store: UserDefaultsStore())
     private var displayId = "unknown"
@@ -12,7 +16,12 @@ final class PrompterWindowController: MessageHandler {
     private var placing = false
 
     init() {
-        panel.contentView = view
+        camera.autoresizingMask = [.width, .height]
+        camera.isHidden = true
+        view.autoresizingMask = [.width, .height]
+        container.addSubview(camera)
+        container.addSubview(view)
+        panel.contentView = container
         // The recorder leaves this window out by id. It exists from launch, so the id is known
         // before any source is picked, and the recorder re-reads it while the panel is hidden.
         Outbox.send(["type": "prompter.window", "windowId": panel.windowNumber])
@@ -33,6 +42,7 @@ final class PrompterWindowController: MessageHandler {
             place()
             panel.orderFrontRegardless()
             visible = true
+            updateCamera()
             reportState()
         case let .prompterSetCursor(lineId, wordIndex):
             view.setCursor(lineId: lineId, wordIndex: wordIndex)
@@ -41,12 +51,17 @@ final class PrompterWindowController: MessageHandler {
             settings = s
             view.apply(settings: s)
             if geometryChanged { place() } else { applyMouseBehaviour() }
+            updateCamera()
             reportState()
+        case let .prompterSetCamera(name):
+            cameraName = name
+            updateCamera()
         case let .prompterSetPlaying(playing):
             view.setPlaying(playing)
         case let .prompterSetVisible(v):
             visible = v
             if v { panel.orderFrontRegardless() } else { panel.orderOut(nil) }
+            updateCamera()
             reportState()
         case let .prompterStageEnd(hint):
             view.showOverlay(hint)
@@ -59,6 +74,7 @@ final class PrompterWindowController: MessageHandler {
             visible = false
             screenTimer?.invalidate()
             screenTimer = nil
+            updateCamera()
             reportState()
         default:
             return false
@@ -66,8 +82,38 @@ final class PrompterWindowController: MessageHandler {
         return true
     }
 
+    private static func number(of screen: NSScreen) -> Int? {
+        (screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.intValue
+    }
+
+    /// The camera sits behind the text only while the prompter is shown full screen on a screen
+    /// other than the main one (the one being recorded), with an opacity and a camera that exists.
+    /// Anything else stops the session.
+    private func updateCamera() {
+        let main = NSScreen.screens.first
+        let isMain = main.map { Self.number(of: targetScreen()) == Self.number(of: $0) } ?? true
+        let wanted = visible && panel.isVisible && cameraName != nil
+        let available = wanted && cameraName.map { CameraBackdrop.device(named: $0) != nil } ?? false
+        if PrompterCamera.shouldShow(position: settings.position, isMainScreen: isMain, opacity: settings.cameraOpacity, cameraAvailable: available), let name = cameraName {
+            container.wantsLayer = true
+            camera.isHidden = false
+            view.drawsBackground = false
+            camera.show(cameraName: name, opacity: settings.cameraOpacity, mirror: settings.mirror)
+        } else {
+            camera.hide()
+            camera.isHidden = true
+            view.drawsBackground = true
+            container.wantsLayer = false
+        }
+    }
+
     private func targetScreen() -> NSScreen {
         let screens = NSScreen.screens
+        if settings.position == .screen {
+            // Top: the chosen display, else the main one. Never the mouse's.
+            if let id = settings.displayId, let chosen = screens.first(where: { Self.number(of: $0) == id }) { return chosen }
+            return screens[0]
+        }
         if settings.position == .notch || settings.position == .fullscreen, let id = settings.displayId,
            let chosen = screens.first(where: { ($0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.intValue == id }) {
             return chosen
@@ -103,7 +149,10 @@ final class PrompterWindowController: MessageHandler {
             // On the display being worked on, the recorder's bar and the settings must stay above it:
             // they hold Rec and Stop. Any other display it may cover whole, menu bar included.
             panel.level = screen.frame.contains(NSEvent.mouseLocation) ? NSWindow.Level(rawValue: 2) : .statusBar
-        case .free, .screen:
+        case .screen:
+            view.topInset = 0
+            panel.setFrame(Geometry.topFrame(visibleFrame: screen.visibleFrame, width: CGFloat(settings.width), height: content), display: true)
+        case .free:
             view.topInset = 0
             let saved = frames.frame(for: settings.position, display: displayId)
             let fallback = Geometry.centeredFrame(visibleFrame: screen.visibleFrame, width: CGFloat(settings.width), height: content)
@@ -113,7 +162,7 @@ final class PrompterWindowController: MessageHandler {
     }
 
     private func saveFrame() {
-        guard !placing, settings.position != .notch, settings.position != .fullscreen else { return }
+        guard !placing, settings.position == .free else { return }
         frames.save(panel.frame, for: settings.position, display: displayId)
     }
 

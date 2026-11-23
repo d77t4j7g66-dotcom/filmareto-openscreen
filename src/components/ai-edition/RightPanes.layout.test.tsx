@@ -316,6 +316,9 @@ describe("LayoutPane webcam crop pan", () => {
 			...doc,
 			legacyEditor: {
 				...doc.legacyEditor,
+				// The camera keeps its own shape, so a full frame has nothing to place (a square
+				// mask or a slot cover-cuts it, and then the pan moves at 100% too).
+				webcamMaskShape: "rectangle",
 				webcamCropRegion: { x: 0.25, y: 0.25, width: 0.5, height: 0.5 },
 				webcamCropPan: { x: 0.5, y: 0.5 },
 			},

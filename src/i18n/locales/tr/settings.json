@@ -164,7 +164,18 @@
 		"shadowLight": "Hafif",
 		"shadowMedium": "Orta",
 		"shadowStrong": "Güçlü",
-		"formatFillCover": "Fill"
+		"formatFillCover": "Fill",
+		"framePosition": "Frame position",
+		"framePositionAuto": "Auto",
+		"framePositionHorizontal": "Left to right",
+		"framePositionVertical": "Top to bottom",
+		"framePositionScope": "Apply to",
+		"framePositionWhole": "Whole project",
+		"framePositionClip": "This clip",
+		"framePositionOwnOne": "1 clip has its own position",
+		"framePositionOwnMany": "{{count}} clips have their own position",
+		"framePositionUseProject": "Use project position",
+		"framePositionCameraHint": "Places your camera when it fills the frame."
 	},
 	"stylePresets": {
 		"button": "Ön ayarlar",
@@ -451,6 +462,7 @@
 		"reactiveWebcamTip": "Video yakınlaştırılınca kamera küçülür",
 		"webcamBackground": "Kamera Arka Planı",
 		"helpNoWebcam": "Bu projede kamera yok; bu yüzden yerleşim denetimleri kapalı ve ön ayar “Web kamerası yok” gösteriyor. Kaydettiğiniz yerleşim, bir kamera eklediğinizde kullanılmak üzere korunur.",
+		"helpCameraOnly": "This take is your camera alone. Choose where its cut sits when the format is narrower than the take.",
 		"title": "Kamera düzeni",
 		"noWebcam": "Web kamerası yok"
 	},

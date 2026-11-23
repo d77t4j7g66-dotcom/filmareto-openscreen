@@ -51,7 +51,8 @@
 		"permissionDenied": "Permission d'enregistrement refusée. Veuillez autoriser l'enregistrement d'écran.",
 		"accessibilityAllowAndRetry": "Autorisez l'accès Accessibilité pour Filmareto, puis appuyez de nouveau sur enregistrer pour lancer le compte à rebours.",
 		"cursorAccessibilityUnavailable": "L'accès à Accessibilité est désactivé. L'enregistrement continue, mais les effets du curseur peuvent être limités. Activez-le dans Réglages Système pour profiter de tous les effets du curseur.",
-		"selectSource": "Veuillez sélectionner une source à enregistrer"
+		"selectSource": "Veuillez sélectionner une source à enregistrer",
+		"cameraNotBroadcast": "Caméra enregistrée en qualité standard : l’enregistreur broadcast n’a pas pu l’ouvrir."
 	},
 	"loadingVideo": "Chargement de la vidéo...",
 	"loadingEditor": "Chargement de l'éditeur...",
@@ -81,6 +82,7 @@
 		"nothingToPaste": "Aucun attribut copié pour l'instant",
 		"pasteAssetMissing": "Le fichier de cette piste audio n'est pas dans ce projet",
 		"pasteEffectOverlap": "Un autre effet joue déjà à cet endroit : un seul effet à la fois",
+		"pasteCameraZoomOverlap": "Another camera zoom already plays there: one camera zoom at a time",
 		"kinds": {
 			"zoom": "Zoom",
 			"speed": "Vitesse",
@@ -109,7 +111,8 @@
 			"script": "Script",
 			"edit": "Édition",
 			"rec": "Enregistrement"
-		}
+		},
+		"exportForResolve": "Export for Resolve…"
 	},
 	"rec": {
 		"source": "Source",
@@ -155,6 +158,17 @@
 		"recordingsFolderFailed": "Impossible de passer à ce dossier"
 	},
 	"mediaStage": {
+		"moreActions": "More actions",
+		"removeFromProject": "Remove from project",
+		"deleteFromDisk": "Delete from disk…",
+		"removedFromProject": "Removed {{label}} from the project",
+		"deleteDialogTitle": "Delete {{name}} from disk?",
+		"deleteDialogBody": "These files move to the Trash, and every clip that uses {{name}} is removed from this project. Undo brings the clips back, not the files: restore them from the Trash.",
+		"cannotDelete": "{{label}} can't be deleted from the disk here",
+		"deleteDialogConfirm": "Move to the Trash",
+		"movedToTrash": "Moved {{label}} to the Trash — restore it from the Trash",
+		"removedStillUsed": "Removed {{label}} from this project. A project still uses the file, so it stays on disk.",
+		"trashFailed": "Removed {{label}} from the project, but the file could not be moved to the Trash",
 		"openProjectFirst": "Ouvrez d'abord un projet",
 		"couldNotAddAsset": "Impossible d'ajouter le fichier",
 		"searchPlaceholder": "Rechercher des médias…",
@@ -230,6 +244,10 @@
 	},
 	"inspector": {
 		"resetFocusPoint": "Réinitialiser le point de focus",
+		"moveToCameraZoom": "Move to camera zoom",
+		"moveToScreenZoom": "Move to screen zoom",
+		"cameraFocusAuto": "Follows your face",
+		"moveZoomBlocked": "There is already a zoom there. Move or shorten one first.",
 		"setColor": "Définir la couleur {{color}}",
 		"trimHiddenDuration": "{{duration}} s de média source masqués de la timeline éditée.",
 		"restoreDeleteTrim": "Restaurer (supprimer le découpage)",
@@ -346,6 +364,16 @@
 			"screenRecordingDesc": "Démarrer la capture système",
 			"importMediaDesc": "Vidéo, audio, images depuis le disque"
 		}
+	},
+	"recordingKindDialog": {
+		"title": "What are you recording?",
+		"subtitle": "Sets the camera, screen and microphone for the recording bar",
+		"talkingHead": "Talking head",
+		"talkingHeadDesc": "Camera only, with your microphone",
+		"screenCamera": "Screen + camera",
+		"screenCameraDesc": "Your screen with you on camera",
+		"screenOnly": "Screen only",
+		"screenOnlyDesc": "Your screen and microphone, no camera"
 	},
 	"openProjectDialog": {
 		"title": "Ouvrir un projet",
@@ -538,5 +566,19 @@
 		"unsafePath": "Certains chemins du projet pointent hors de son dossier, il n’a donc pas été empaqueté.",
 		"notFound": "Projet introuvable. Enregistrez-le et réessayez.",
 		"reloadFailed": "Le projet n’a pas pu être rechargé après l’ouverture du paquet."
+	},
+	"resolveExport": {
+		"runningTitle": "Exporting for DaVinci Resolve",
+		"runningBody": "Preparing the media and the framing data. This can take a few minutes.",
+		"doneTitle": "Ready for DaVinci Resolve",
+		"doneBody": "The export is in {{path}}.",
+		"reveal": "Show in Finder",
+		"restartNeeded": "Restart DaVinci Resolve once first, so it loads the Filmareto Screen effect.",
+		"nextStep": "In DaVinci Resolve: Workspace → Scripts → Filmareto Import.",
+		"errorTitle": "Export for Resolve failed",
+		"notFound": "The project could not be found.",
+		"disabled": "Export for DaVinci Resolve is switched off in the app menu.",
+		"noFfmpeg": "ffmpeg was not found, so the media cannot be prepared.",
+		"noClips": "The project has no clip to export."
 	}
 }

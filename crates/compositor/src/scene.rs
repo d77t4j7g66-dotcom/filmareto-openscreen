@@ -19,6 +19,11 @@ pub struct SceneClip {
     /// Une source sans piste audio décodable garde sa durée via du silence natif.
     #[serde(default)]
     pub has_audio: bool,
+    /// The face in this clip's camera picture over time, as `[t, x, y]`: `t` in this clip's source
+    /// seconds (the time base of its zoom regions), `x` and `y` in 0..1 of the whole picture. A zoom
+    /// in focus mode "face" reads it (`regions::face_at`). Absent: no track, the region's own point.
+    #[serde(default)]
+    pub face_track: Vec<[f32; 3]>,
 }
 
 #[derive(Debug, Clone, Copy, Deserialize)]
@@ -125,6 +130,14 @@ pub struct SceneLayout {
     /// l'enregistrement) : le visage d'une prise de caméra seule. Absent : au centre.
     #[serde(default)]
     pub screen_rest: Option<[f32; 2]>,
+    /// Position choisie à la main pour le centre de la fenêtre du remplissage (0..1 dans
+    /// l'enregistrement). Présente, elle remplace le curseur et le visage : la fenêtre reste là,
+    /// bornée à l'enregistrement (`frame_geometry::follow_cover_uv_rect`). Sans effet si
+    /// `screen_follow` est faux.
+    ///
+    /// `#[serde(default)]` : absent → `None` → automatique (curseur, puis visage), comme avant.
+    #[serde(default)]
+    pub screen_fixed: Option<[f32; 2]>,
     /// Un layout résolu PAR CLIP visible, aligné par index sur `Scene::clips` / `crop_by_clip`.
     /// Les champs scalaires ci-dessus sont ceux du PREMIER clip (repli pour un payload sans ce
     /// tableau, et valeur de départ tant qu'aucun clip n'est actif).
@@ -198,6 +211,9 @@ pub struct ResolvedClipLayout {
     /// Each take has its own face to rest on (`SceneLayout::screen_rest`).
     #[serde(default)]
     pub screen_rest: Option<[f32; 2]>,
+    /// This take's own hand-placed window (`SceneLayout::screen_fixed`). Absent: the scene's.
+    #[serde(default)]
+    pub screen_fixed: Option<[f32; 2]>,
     // What else a segment's own look can change. Absent: the scene's value stands.
     #[serde(default)]
     pub screen_shadow: Option<f32>,
@@ -314,10 +330,10 @@ pub(crate) fn lerp_clip_layout(
         } else {
             from.screen_cover || to.screen_cover
         },
-        screen_rest: match (from.screen_rest, to.screen_rest) {
-            (Some(a), Some(b)) => Some([a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]),
-            _ => nearer.screen_rest,
-        },
+        // Where the filled window sits belongs to the take being composed, which is `to`: a
+        // hand-placed position is never eased into an Auto one (or the neighbour's) and lost.
+        screen_rest: to.screen_rest,
+        screen_fixed: to.screen_fixed,
     }
 }
 
@@ -864,9 +880,13 @@ pub struct SceneZoomRegion {
     pub end_sec: f64,
     /// échelle cible (>1 = zoom avant).
     pub scale: f32,
+    /// Le point de focus, 0..1 : du recadrage de l'écran pour un zoom écran ; de l'image ENTIÈRE de
+    /// la caméra (avant tout recadrage) pour un zoom caméra (`Scene::camera_zoom_regions`).
     pub focus_x: f32,
     pub focus_y: f32,
-    /// "manual" | "auto" (suit la télémétrie curseur) | null (= manual).
+    /// "manual" | "auto" (suit la télémétrie curseur) | "face" (suit la piste du visage du clip
+    /// actif, `SceneClip::face_track`) | null (= manual). Sur la caméra (`Scene::camera_zoom_regions`),
+    /// "auto" se lit comme "face" : le pointeur est un point de l'écran.
     #[serde(default)]
     pub focus_mode: Option<String>,
     /// La caméra 3D du zoom : un angle fixe ("iso" | "left" | "right"), la caméra réelle qui
@@ -1079,6 +1099,11 @@ pub struct SceneCrop {
     pub y: f32,
     pub width: f32,
     pub height: f32,
+    /// The camera's crop position (0..1 per axis, 0.5 centred): where the cover window sits when
+    /// the crop is the whole frame and so has no room of its own to pan in. Camera only; absent
+    /// (and for the screen's crop): centred, as before.
+    #[serde(default)]
+    pub pan: Option<[f32; 2]>,
 }
 
 /// Audio finishing. Deliberately limited to a linear gain — the one operation the editor
@@ -1255,6 +1280,13 @@ pub struct Scene {
     pub effects: SceneEffects,
     pub background: SceneBackground,
     pub zoom_regions: Vec<SceneZoomRegion>,
+    /// The camera's own zooms, the same shape as `zoom_regions`: each pushes in on the camera's
+    /// picture inside its box, wherever the camera is, and never moves the screen (as a screen zoom
+    /// never zooms the camera). Their `focus_x/y` is 0..1 of the WHOLE camera picture (before any
+    /// crop), like the face track; the compositor maps it into the camera's crop and cut. Absent: no
+    /// camera zoom, as in every scene written before this.
+    #[serde(default)]
+    pub camera_zoom_regions: Vec<SceneZoomRegion>,
     /// `#[serde(default)]` : champ ajouté après coup, absent des JSON de test existants.
     #[serde(default)]
     pub annotations: Vec<SceneAnnotation>,
@@ -1330,6 +1362,9 @@ impl Scene {
         scene.zoom_regions.retain(|region| {
             belongs(region.clip_index, region.start_sec, region.end_sec)
         });
+        scene.camera_zoom_regions.retain(|region| {
+            belongs(region.clip_index, region.start_sec, region.end_sec)
+        });
         scene.speed_regions.retain(|region| {
             belongs(region.clip_index, region.start_sec, region.end_sec)
         });
@@ -1355,6 +1390,7 @@ impl Scene {
             scene.layout.webcam_radius_frac = l.webcam_radius_frac;
             scene.layout.screen_cover = l.screen_cover;
             scene.layout.screen_rest = l.screen_rest;
+            scene.layout.screen_fixed = l.screen_fixed;
             if let Some(shape) = l.webcam_shape {
                 scene.layout.webcam_shape = shape;
             }
@@ -1373,6 +1409,7 @@ impl Scene {
         self.layout.webcam_radius_frac = resolved.webcam_radius_frac;
         self.layout.screen_cover = resolved.screen_cover;
         self.layout.screen_rest = resolved.screen_rest;
+        self.layout.screen_fixed = resolved.screen_fixed;
         if let Some(shape) = resolved.webcam_shape {
             self.layout.webcam_shape = shape;
         }
@@ -1427,6 +1464,8 @@ impl Scene {
             webcam_radius_frac: self.layout.webcam_radius_frac,
             webcam_shape: Some(self.layout.webcam_shape.clone()),
             screen_cover: self.layout.screen_cover,
+            screen_rest: self.layout.screen_rest,
+            screen_fixed: self.layout.screen_fixed,
             ..Default::default()
         };
         // On the way out a scene returns to the clip's layout; only the way in has a neighbour.
@@ -1434,7 +1473,26 @@ impl Scene {
             (Some(previous), false) => (previous, region.from_full_camera),
             _ => (&own, false),
         };
-        let resolved = lerp_clip_layout(from, to, active.eased);
+        // A camera filling the frame hides its layout's camera rect: `plan_frame` moves the box
+        // between that rect and the full frame by `scene_full_camera`. Easing the rect at the
+        // same time, from or to the hidden one, multiplied the two moves and sent the camera on
+        // a detour through its hidden corner. So the full-camera side takes the other side's
+        // rect, and the box goes straight between the full frame and the visible rect.
+        // The corner radius and the dodge rect go with it: `plan_frame` sizes the radius off the
+        // nominal box and dodges from it, so the hidden side's values would grow the corners on a
+        // near-full camera and pull the box towards the hidden layout's dodge rect.
+        let (mut from, mut to) = (from.clone(), to.clone());
+        let take_visible = |hidden: &mut ResolvedClipLayout, visible: &ResolvedClipLayout| {
+            hidden.webcam_rect = visible.webcam_rect;
+            hidden.webcam_radius_frac = visible.webcam_radius_frac;
+            hidden.webcam_dodge_rect = visible.webcam_dodge_rect;
+        };
+        match (from_full, region.full_camera) {
+            (true, false) => take_visible(&mut from, &to),
+            (false, true) => take_visible(&mut to, &from),
+            _ => {}
+        }
+        let resolved = lerp_clip_layout(&from, &to, active.eased);
         let full = |t: f32| lerp_f32(from_full as u8 as f32, region.full_camera as u8 as f32, t);
         let (scene_full_camera, scene_full_camera_phase) = (full(active.eased), full(active.phase));
         let mut scene = self.clone();
@@ -1879,6 +1937,36 @@ mod annotation_tests {
             filtered.annotations.iter().map(|a| a.id.as_str()).collect::<Vec<_>>(),
             vec!["keep", "under-trim"]
         );
+    }
+
+    /// The camera's zooms and each clip's face track arrive from the scene JSON, and the camera's
+    /// zooms are narrowed to the composed clip by the same rule as the screen's.
+    #[test]
+    fn camera_zooms_and_face_tracks_parse_and_follow_the_composed_clip() {
+        let zoom = |id: &str, clip: usize| {
+            format!(r#"{{"id":"{id}","clipIndex":{clip},"startSec":1.0,"endSec":2.0,"scale":1.8,"focusX":0.5,"focusY":0.4,"focusMode":"face","rotation":null}}"#)
+        };
+        let json = scene_json("[]")
+            .replace(
+                r#""clips":[]"#,
+                r#""clips":[{"screenPath":"/s.mp4","webcamPath":"/w.mp4","sourceStartSec":0,"sourceEndSec":10,"webcamOffsetSec":0,"faceTrack":[[0,0.3,0.4],[2,0.7,0.4]]},
+                            {"screenPath":"/s.mp4","webcamPath":"/w.mp4","sourceStartSec":0,"sourceEndSec":10,"webcamOffsetSec":0}]"#,
+            )
+            .replace(
+                r#""zoomRegions":[]"#,
+                &format!(r#""zoomRegions":[],"cameraZoomRegions":[{},{}]"#, zoom("mine", 0), zoom("other", 1)),
+            );
+        let scene = Scene::from_json(&json).expect("parse");
+        assert_eq!(scene.clips[0].face_track, vec![[0.0, 0.3, 0.4], [2.0, 0.7, 0.4]]);
+        assert!(scene.clips[1].face_track.is_empty(), "absent: no track");
+        assert_eq!(scene.camera_zoom_regions[0].focus_mode.as_deref(), Some("face"));
+        let filtered = scene.for_clip_window(0, 0.0, 10.0);
+        assert_eq!(
+            filtered.camera_zoom_regions.iter().map(|r| r.id.as_str()).collect::<Vec<_>>(),
+            vec!["mine"]
+        );
+        // Absent from every scene written before this.
+        assert!(Scene::from_json(&scene_json("[]")).expect("parse").camera_zoom_regions.is_empty());
     }
 
     #[test]
